@@ -763,9 +763,9 @@ export function DmKodConnection({
 function WorkspaceSkeleton() {
     return (
         <Card aria-busy="true" aria-label="Loading DMkod">
-            <CardHeader>
+            <CardHeader className="min-w-0">
                 <Skeleton className="h-5 w-40" />
-                <Skeleton className="h-4 w-72 max-w-full" />
+                <Skeleton className="h-4 w-full max-w-72" />
             </CardHeader>
             <CardContent className="space-y-4">
                 <Skeleton className="h-9 w-full" />
