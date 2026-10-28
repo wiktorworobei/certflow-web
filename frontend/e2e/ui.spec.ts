@@ -182,6 +182,7 @@ test('login distinguishes an unavailable server from incorrect credentials and c
 test('declaration archive requires confirmation and keeps documents accessible in the archive and history', async ({ page }) => {
   const fixture = await fixtures(page); await login(page);
   await page.getByRole('link', { name: 'Декларации', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Декларации', exact: true })).toBeVisible();
   const title = 'Оборудование для упаковки'; const row = page.getByRole('row').filter({ hasText: title });
   await row.getByRole('button', { name: 'Действия CF-26-100', exact: true }).click();
   await page.getByRole('menuitem', { name: 'В архив', exact: true }).click();
@@ -237,6 +238,7 @@ for (const status of ['InReview', 'Suspended']) {
 test('declaration archive displays errors and blocks repeated confirmation while submitting', async ({ page }) => {
   const fixture = await fixtures(page); fixture.failStatusChanges(true); await login(page);
   await page.getByRole('link', { name: 'Декларации', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Декларации', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Действия CF-26-100', exact: true }).click();
   await page.getByRole('menuitem', { name: 'В архив', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Отправить в архив?' });
@@ -256,6 +258,7 @@ test('declaration archive displays errors and blocks repeated confirmation while
 test('declaration archive can be read by a viewer who cannot archive documents', async ({ page }) => {
   const fixture = await fixtures(page, false, {}, 'Viewer'); await login(page);
   await page.getByRole('link', { name: 'Декларации', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Декларации', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Действия CF-26-100', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: 'В архив', exact: true })).toHaveCount(0);
   await page.keyboard.press('Escape'); fixture.getDeclarations()[0].status = 'Archived';
@@ -434,6 +437,8 @@ test('code batch import preserves GS and requires physical confirmation', async 
   await login(page); await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click();
   await page.getByRole('tab', { name: 'Партии и коды' }).click();
   await page.getByRole('combobox', { name: 'Декларация партии' }).click(); await page.getByRole('option', { name: /CF-26-100/ }).click();
+  await expect(page).toHaveURL(/declarationId=44444444-4444-4444-8444-000000000000/);
+  await expect(page.getByLabel('Название партии')).not.toHaveValue('');
   await page.getByLabel('GTIN партии').fill('05011846021161');
   await page.getByLabel('Полные коды Data Matrix').fill('010501184602116121SYNTHETIC<GS>93TEST');
   await expect(page.getByRole('button', { name: 'Сохранить партию и связать с декларацией' })).toBeDisabled();
@@ -447,6 +452,7 @@ test('code batch import preserves GS and requires physical confirmation', async 
 async function fillBatch(page: Page) {
   await login(page); await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click(); await page.getByRole('tab', { name: 'Партии и коды' }).click();
   await page.getByRole('combobox', { name: 'Декларация партии' }).click(); await page.getByRole('option', { name: /CF-26-100/ }).click();
+  await expect(page).toHaveURL(/declarationId=44444444-4444-4444-8444-000000000000/);
   await page.getByLabel('Название партии').fill('Масло · партия OIL-42'); await page.getByLabel('GTIN партии').fill('05011846021161');
 }
 
@@ -584,6 +590,7 @@ test('login screen and overview desktop rendering', async ({ page }) => {
 });
 test('search, filtering and responsive registry', async ({ page }) => {
   await fixtures(page); await login(page); await page.getByRole('link', { name: 'Декларации', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Декларации', exact: true })).toBeVisible();
   await page.getByRole('textbox', { name: 'Поиск деклараций' }).fill('Одежда');
   await expect(page.getByRole('link', { name: 'Одежда второго слоя', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Мебель для офиса', exact: true })).toHaveCount(0);
