@@ -1,0 +1,25 @@
+/* Decoration stays behind content and never intercepts a pointer or focus. */
+:root[data-color-theme='dragonfly'] .workspace { position: relative; isolation: isolate; }
+:root[data-color-theme='dragonfly'] .workspace::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: var(--cf-accent); opacity: .065;
+  mask: url('/themes/dragonfly.svg') repeat 16px 36px / 220px 220px;
+}
+:root[data-color-theme='dragonfly'] .overview-welcome::after {
+  width: 220px; height: 220px; right: -35px; top: -25px; border: 0; border-radius: 0;
+  background: var(--cf-accent); opacity: .1;
+  mask: url('/themes/dragonfly.svg') center / contain no-repeat;
+}
+.color-theme-preview[data-preview-theme='dragonfly'] .color-preview-nav { position: relative; }
+.color-theme-preview[data-preview-theme='dragonfly'] .color-preview-nav::after {
+  content: ''; position: absolute; inset: auto 0 5px; height: 42px;
+  background: var(--preview-accent); opacity: .8;
+  mask: url('/themes/dragonfly.svg') center / contain no-repeat;
+}
+@media (max-width: 620px) {
+  :root[data-color-theme='dragonfly'] .workspace::before { mask-size: 180px 180px; opacity: .045; }
+  :root[data-color-theme='dragonfly'] .overview-welcome::after { width: 160px; height: 160px; top: -20px; right: -45px; }
+}
+@media (forced-colors: active) {
+  :root[data-color-theme='dragonfly'] .workspace::before, :root[data-color-theme='dragonfly'] .overview-welcome::after { display: none; }
+}

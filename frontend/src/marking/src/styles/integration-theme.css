@@ -1,0 +1,39 @@
+/* The same semantic tokens serve the route and its Radix portals. Namespaced
+   aliases avoid collisions with Tailwind's surface-oriented --accent/--muted. */
+.marking-surface, .integration-theme, .dmkod-theme, [data-integration="dmkod"] {
+    --background: var(--cf-canvas);
+    --foreground: var(--cf-text);
+    --card: var(--cf-surface);
+    --card-foreground: var(--cf-text);
+    --popover: var(--cf-surface);
+    --popover-foreground: var(--cf-text);
+    --primary: var(--cf-accent);
+    --primary-foreground: var(--cf-on-accent);
+    --secondary: var(--cf-surface-hover);
+    --secondary-foreground: var(--cf-text);
+    --muted: var(--cf-surface-soft);
+    --muted-foreground: var(--cf-muted);
+    --accent: var(--cf-accent-soft);
+    --accent-foreground: var(--cf-text);
+    --border: var(--cf-border);
+    --input: var(--cf-border);
+    --ring: var(--cf-accent);
+    --destructive: var(--cf-danger);
+    color: var(--foreground);
+}
+.integration-brand { background: var(--cf-sidebar); color: #fff; border-bottom-color: var(--cf-sidebar-accent); }
+.integration-brand svg { color: var(--cf-sidebar-accent); }
+.integration-theme [data-slot="tabs-trigger"][data-state="active"]::after { background: var(--primary); }
+.integration-theme [data-slot="tabs-trigger"][data-state="active"] { color: var(--foreground); }
+.integration-theme .integration-symbol { background: var(--primary); color: var(--primary-foreground); }
+.marking-surface [data-slot="dialog-content"] { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.marking-surface [data-slot="dialog-close"] { min-width: 32px; min-height: 32px; display: grid; place-items: center; }
+@media (max-width: 620px) {
+    .marking-surface [data-slot="dialog-content"] { max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 20px 16px; overflow-wrap: anywhere; }
+    .marking-surface [data-slot="dialog-header"] { padding-right: 32px; }
+    .marking-surface [data-slot="popover-content"], .marking-surface [data-slot="select-content"] { max-width: calc(100vw - 24px); }
+}
+@media (hover: none) and (pointer: coarse) {
+    .marking-surface [data-slot="dialog-close"] { min-width: 44px; min-height: 44px; }
+    .marking-surface input, .marking-surface textarea, .marking-surface select { font-size: 16px; }
+}

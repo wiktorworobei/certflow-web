@@ -1,0 +1,134 @@
+/* Layout refinements shared by every palette. */
+html { scrollbar-color: var(--border) transparent; }
+body { overflow-wrap: break-word; }
+:where(a, button, input, select, textarea) { touch-action: manipulation; }
+:where(a, button, input, select, textarea) { scroll-margin-block: 100px 28px; }
+:where(button, a):focus-visible { outline: 3px solid var(--cf-accent, var(--accent)); outline-offset: 3px; }
+:where(button, input, select, textarea):disabled { cursor: not-allowed; }
+.brand-icon { border: 1px solid #ffffff18; box-shadow: none; }
+.sidebar-inner .sidebar-create { box-shadow: none; border: 1px solid #ffffff25; }
+.sidebar-inner .sidebar-create:hover { filter: brightness(1.12); }
+.workspace-label strong { font-size: 13px; }
+.workspace-label-icon { background: #ffffff09; border-color: #ffffff18; }
+.sidebar-caption { letter-spacing: .1em; font-size: 10px; }
+.nav-item.active:before { content: ''; position: absolute; left: 0; top: 13px; bottom: 13px; width: 3px; background: var(--sidebar-accent); border-radius: 3px; }
+.nav-active-mark { width: 5px; height: 5px; flex-shrink: 0; }
+.sidebar-workspace-logo { background: #ffffff09; border-color: #ffffff20; color: var(--sidebar-text); }
+.sidebar-workspace strong, .sidebar-workspace div>span { color: var(--sidebar-muted); font-size: 11px; line-height: 1.5; }
+.sidebar-workspace { align-items: flex-start; }
+.sidebar-bottom { padding-top: 32px; }
+.topbar-left { min-width: 0; }
+.breadcrumb-page { overflow: hidden; text-overflow: ellipsis; }
+.topbar-right { flex-shrink: 0; }
+.profile-button.MuiButton-root { min-height: 44px; }
+.theme-switch.MuiIconButton-root { width: 38px; height: 38px; color: var(--muted); }
+.profile-button strong { font-size: 13px; }
+.profile-button span:not(.MuiTouchRipple-root) { font-size: 11px; }
+.page-title .MuiTypography-body1 { font-size: 14px; max-width: 650px; }
+.eyebrow { font-size: 10px; letter-spacing: .13em; }
+.stat-value, .readiness-number, .plan-hero-aside strong { font-variant-numeric: tabular-nums; }
+.stat-card.MuiPaper-root { border-radius: 12px; }
+.stat-top { font-size: 12px; line-height: 1.5; }
+.stat-note { font-size: 12px; line-height: 1.6; }
+.stat-value { margin-block: 13px 8px; }
+.stat-card:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.section-heading .MuiTypography-body2 { font-size: 13px; }
+.document-title { line-height: 1.6; }
+.document-table { scrollbar-width: thin; }
+.activity-row { border-radius: 4px; }
+.activity-text strong { font-size: 13px; }
+.registry-filter-tabs { scrollbar-width: thin; }
+.filter-tab { min-height: 52px; font-size: 13px; }
+.settings-tabs.MuiPaper-root { box-shadow: none; }
+.login-page { min-height: 100dvh; }
+.login-story { background: var(--sidebar); }
+.login-story:before { opacity: .07; }
+.login-story-content { padding-top: 40px; }
+.login-doc-head>div:nth-child(2) { min-width: 0; }
+.login-document { box-shadow: 0 20px 40px #00000015; }
+.login-theme-controls { display: flex; gap: 8px; }
+.login-form { max-width: 400px; }
+.login-toolbar>span { font-size: 10px; letter-spacing: .08em; }
+.login-branding { display: block; max-width: 400px; margin-top: 44px; }
+.login-company strong { font-size: clamp(28px, 3.1vw, 42px); letter-spacing: -1.6px; line-height: 1.15; }.login-company strong span { white-space: nowrap; }
+.login-main-footer { font-size: 11px; line-height: 1.6; }
+.field-label { font-size: 13px; color: var(--text); }
+@media (max-width: 1250px) {
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat-card.MuiPaper-root { padding: 20px; }.stat-top, .stat-note { font-size: 12px; }
+  .sidebar-inner { padding-inline: 12px; }.nav-item { gap: 10px; padding-inline: 12px; font-size: 12px; }
+}
+@media (max-width: 950px) {
+  .topbar-right { gap: 8px; }.page-content { padding-top: 28px; }
+  .overview-welcome .page-actions { width: auto; }
+}
+@media (max-width: 620px) {
+  .page-content { padding: 24px 16px; }
+  .topbar { min-height: 68px; padding-inline: 12px; }.topbar-left { flex: 1; gap: 4px; }.topbar-right { gap: 6px; }
+  .topbar-right .theme-switch { width: 36px; height: 36px; }
+  .firm-select.MuiInputBase-root { max-width: 110px; font-size: 12px; }
+  .firm-select select { text-overflow: ellipsis; padding-left: 10px; }
+  .profile-avatar.MuiAvatar-root { width: 32px; height: 32px; }
+  .overview-welcome { padding: 23px 20px; }.overview-welcome .page-actions { width: 100%; }
+  .welcome-details { font-size: 12px; gap: 12px; }
+  .stats-grid { gap: 12px; }.stat-card.MuiPaper-root { padding: 16px; }.stat-top { align-items: flex-start; }.stat-icon { width: 30px; height: 30px; }.stat-icon svg { font-size: 17px; }.stat-value { font-size: 30px; }.stat-note { font-size: 11px; }
+  .page-title .MuiTypography-body1 { font-size: 13px; }
+  .registry-summary { font-size: 12px; line-height: 1.8; }
+  .registry-toolbar { padding: 16px; }.registry-toolbar .MuiFormControl-root { min-width: 0; }
+  .table-footer { gap: 8px; }.table-footer .MuiTablePagination-root { width: 100%; }.table-footer .MuiTablePagination-toolbar { padding-inline: 8px; min-height: 52px; }.table-footer .MuiTablePagination-actions { margin-left: 8px; }
+  .document-table table, .document-table tbody { display: block; width: 100%; }
+  .document-table thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .document-table .document-row { display: flex; flex-wrap: wrap; position: relative; gap: 12px 16px; padding: 20px; border-bottom: 1px solid var(--border); }
+  .document-table .document-row:last-child { border-bottom: 0; }
+  .document-table .document-row td { display: block; border: 0; padding: 0; max-width: 100%; min-width: 0; }
+  .document-table .document-row .document-main-cell { flex: 1 1 calc(100% - 52px); padding-right: 36px; }
+  .document-table .document-row .document-select { flex: 0 0 28px; margin: -4px -5px 0 -8px; }
+  .document-table .document-row .document-select+.document-main-cell { flex-basis: calc(100% - 62px); }
+  .document-table td[data-label] { flex: 1 1 calc(50% - 16px); }
+  .document-table td[data-label="Заявитель / продукция"], .document-table td[data-label="Статус"] { flex-basis: 100%; }
+  .document-table td[data-label]:before { content: attr(data-label); display: block; margin-bottom: 5px; font-size: 11px; color: var(--faint); }
+  .document-table .document-row .document-actions-cell { position: absolute; top: 16px; right: 12px; }
+  .document-title, .table-primary, .table-secondary { max-width: none; white-space: normal; overflow-wrap: anywhere; }
+  .document-icon { width: 30px; height: 36px; }.document-name { gap: 9px; }.document-subtitle { flex-wrap: wrap; font-size: 11px; }
+  .login-main { padding: 22px 24px; min-height: 100dvh; }.login-toolbar { gap: 12px; }.login-branding { margin-top: 36px; gap: 12px; }.login-company strong { font-size: clamp(26px, 7.2vw, 34px); letter-spacing: -1.2px; }.login-form { padding: 36px 0 44px; }.login-help { font-size: 12px; }
+  .appearance-note { flex-direction: row; }.workspace-footer { font-size: 11px; }
+}
+@media (max-width: 370px) {
+  .breadcrumb-page { display: none; }.firm-select.MuiInputBase-root { max-width: 100px; }
+  .stat-top { flex-direction: column-reverse; gap: 10px; }.stat-top>span { min-height: 36px; }
+  .table-footer .MuiTablePagination-selectLabel { display: none; }
+  .login-toolbar>span { max-width: 150px; line-height: 1.7; }
+}
+@media (prefers-reduced-motion: reduce) { .stat-card:hover, .login-document { transform: none; } }
+@media (forced-colors: active) { .nav-item.active, .selected { outline: 2px solid Highlight; outline-offset: -2px; } }
+.document-select-all { display: none; }
+@media (max-width: 620px) {
+  .document-select-all { display: block; padding: 8px 20px; border-block: 1px solid var(--border); background: var(--surface-soft); }
+  .document-select-all .MuiTypography-root { font-size: 12px; }
+}
+
+/* Mobile browsers: prevent focus zoom and respect notches and home indicators. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+.workspace { min-height: 100dvh; }
+@media (max-width: 620px) {
+  .page-content { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .topbar { padding-top: env(safe-area-inset-top); padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  .workspace-footer, .login-main-footer { padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+  .login-main { padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); padding-top: max(22px, env(safe-area-inset-top)); }
+  .MuiInputBase-input, .MuiInputBase-inputSizeSmall, .marking-surface input, .marking-surface select, .marking-surface textarea { font-size: 16px; }
+  .firm-select.MuiInputBase-root { font-size: 16px; }
+  .sidebar-inner { padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+}
+@media (hover: none) and (pointer: coarse) {
+  .MuiIconButton-root, .topbar-right .theme-switch, .profile-button.MuiButton-root { min-width: 44px; min-height: 44px; }
+  .nav-item { min-height: 48px; }
+  .sidebar-nav .nav-item { font-size: 14px; }
+}
+@media (hover: none) and (pointer: coarse) and (max-width: 370px) {
+  .firm-select.MuiInputBase-root { max-width: 92px; }
+  .topbar-right { gap: 4px; }
+}
+@media (max-height: 520px) and (max-width: 1000px) {
+  .login-story { display: none; }.login-main { width: 100%; min-height: 100dvh; }
+  .login-branding { margin-top: 24px; }.login-form { padding-block: 24px; }
+}

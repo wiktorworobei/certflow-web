@@ -1,0 +1,73 @@
+/* Semantic order states remain independent of the selected application palette. */
+.dmkod-theme, [data-integration="dmkod"] {
+  --dmkod-warning: var(--cf-warning); --dmkod-warning-surface: var(--cf-warning-soft);
+  --dmkod-success: var(--cf-success); --dmkod-info: var(--cf-info);
+  font-family: Inter, Arial, sans-serif;
+}
+[data-integration="dmkod"] [data-slot="card"],
+.dmkod-theme [data-slot="card"] {
+    border-radius: 14px;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 6%);
+}
+.dmkod-order-card {
+    --dmkod-status: var(--dmkod-warning);
+    border-color: var(--dmkod-warning);
+    background: var(--dmkod-warning-surface);
+}
+.dmkod-order-card[data-flag="REJECTED"] {
+    --dmkod-status: var(--destructive);
+    border-color: var(--destructive);
+    background: color-mix(in oklab, var(--destructive) 8%, var(--background));
+}
+.dmkod-order-card[data-flag="ACTIVE"] {
+    --dmkod-status: var(--dmkod-success);
+    border-color: var(--dmkod-success);
+    background: color-mix(in oklab, var(--dmkod-success) 8%, var(--background));
+}
+.dmkod-order-card[data-flag="HELD"] {
+    --dmkod-status: var(--dmkod-info);
+    border-color: var(--dmkod-info);
+    background: color-mix(in oklab, var(--dmkod-info) 8%, var(--background));
+}
+.dmkod-order-card[data-flag="CLOSED"] {
+    --dmkod-status: var(--foreground);
+    border-color: var(--border);
+    background: var(--card);
+}
+.dmkod-order-status {
+    background: var(--dmkod-status);
+    color: var(--background);
+    font-weight: 400;
+    text-transform: lowercase;
+}
+.dmkod-order-card hr {
+    border-color: var(--dmkod-status);
+}
+.dmkod-flag-count[data-dmkod-flag="CREATED"] {
+    border-color: var(--dmkod-warning);
+    color: var(--dmkod-warning);
+}
+.dmkod-flag-count[data-dmkod-flag="ACTIVE"] {
+    border-color: var(--dmkod-success);
+    color: var(--dmkod-success);
+}
+.dmkod-flag-count[data-dmkod-flag="HELD"] {
+    border-color: var(--dmkod-info);
+    color: var(--dmkod-info);
+}
+.dmkod-flag-count[data-dmkod-flag="REJECTED"] {
+    border-color: var(--destructive);
+    color: var(--destructive);
+}
+[data-integration="dmkod"]
+    [data-slot="tabs-trigger"][data-state="active"]::after {
+    display: none;
+}
+[data-integration="dmkod"] [data-slot="tabs-trigger"][data-state="active"] {
+    background: var(--primary);
+    color: var(--primary-foreground);
+}
+
+.dmkod-order-card[data-flag="CLOSED"] .dmkod-order-status {
+    color: var(--background);
+}

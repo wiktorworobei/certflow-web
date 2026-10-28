@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"/><meta name="theme-color" content="#111b30"/><title>CertFlow — управление декларациями</title><link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+<script>
+(function(){
+  var palettes={sapphire:['#f3f5fc','#111522'],ocean:['#f1f7f8','#101b20'],sage:['#f3f7f3','#141c17'],sandstone:['#f8f5f0','#201a16'],graphite:['#f5f5f7','#18191e'],dragonfly:['#eff7f3','#101e1c']};
+  var preference='system',palette='sapphire';
+  try{preference=localStorage.getItem('certflow.theme');var saved=localStorage.getItem('certflow.color-theme');if(Object.prototype.hasOwnProperty.call(palettes,saved))palette=saved;}catch{}
+  var mode=preference==='light'||preference==='dark'?preference:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+  var root=document.documentElement;root.dataset.theme=mode;root.dataset.colorTheme=palette;root.classList.toggle('dark',mode==='dark');root.style.colorScheme=mode;root.style.setProperty('--canvas',palettes[palette][mode==='dark'?1:0]);
+})();
+</script>
+<style>html{background:var(--canvas,#f3f5fc)}</style></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>

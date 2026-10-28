@@ -1,0 +1,80 @@
+/* Content can shrink inside flex/grid layouts without widening the page. */
+.page-content > *, .page-title > *, .editor-title > *, .section-heading > *, .section-content > *, .connection-summary > * { min-width: 0; }
+.page-title h1, .editor-title h1, .section-heading, .attachment-row, .connection-card, .responsive-table td { overflow-wrap: anywhere; }
+.page-actions { flex-wrap: wrap; max-width: 100%; min-width: 0; }
+.page-actions > .MuiButton-root { max-width: 100%; }
+.profile-button > div:not(.MuiAvatar-root) { min-width: 0; }
+.profile-button strong { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-avatar, .topbar-left > .MuiIconButton-root { flex-shrink: 0; }
+.editor-title > div:first-child { flex: 1 1 280px; }
+.editor-title-meta { flex-wrap: wrap; }
+.document-name > * { min-width: 0; }
+.document-name > .MuiAvatar-root { flex-shrink: 0; }
+.responsive-table .document-name > strong { overflow-wrap: anywhere; }
+.responsive-table { max-width: 100%; }
+
+/* The form itself must shrink so its content, rather than its actions, scrolls. */
+.MuiDialog-paper > form { display: flex; flex-direction: column; min-height: 0; max-height: inherit; }
+.MuiDialogTitle-root, .MuiDialogActions-root { flex-shrink: 0; overflow-wrap: anywhere; }
+.MuiDialogContent-root { min-width: 0; min-height: 0; overscroll-behavior: contain; }
+.MuiDialogContent-root .MuiGrid-item { min-width: 0; }
+.MuiDialogActions-root { flex-wrap: wrap; gap: 8px; }
+.MuiAlert-message { min-width: 0; }
+.MuiAlert-action { flex-shrink: 0; }
+
+@media (max-width: 1100px) {
+  .profile-button > div:not(.MuiAvatar-root), .profile-button > svg { display: none; }
+  .firm-select.MuiInputBase-root { max-width: 180px; }
+  .responsive-table table, .responsive-table tbody { display: block; width: 100%; }
+  .responsive-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .responsive-table tbody { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 16px; }
+  .responsive-table tr { display: flex; flex-direction: column; gap: 16px; min-width: 0; border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .responsive-table td { display: block; border: 0; padding: 0; max-width: 100%; min-width: 0; }
+  .responsive-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 5px; color: var(--faint); font-size: 12px; }
+  .responsive-table .responsive-table-title { font-size: 14px; }
+  .responsive-table .responsive-table-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); }
+  .overview-bottom { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .responsive-table tbody { grid-template-columns: minmax(0, 1fr); padding: 0; gap: 0; }
+  .responsive-table tr { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; }
+  .responsive-table tr:last-child { border-bottom: 0; }
+}
+@media (max-width: 620px) {
+  .firm-select.MuiInputBase-root { max-width: 110px; }
+  .section-heading { align-items: flex-start; }
+  .page-actions { gap: 8px; }
+  .page-actions > .MuiButton-root { flex: 1 1 150px; white-space: normal; }
+  .overview-welcome .page-actions > .MuiButton-root { flex-basis: 100%; }
+  .editor-title { gap: 18px; }.editor-title > div:first-child { flex-basis: 100%; }
+  .editor-title .page-actions { width: 100%; }
+  .editor-title-meta { line-height: 1.7; gap: 8px 12px; }
+  .report-form { padding: 16px; }
+  .report-form-header { flex-wrap: wrap; gap: 12px; }
+  .attachment-row { flex-wrap: wrap; }
+  .attachment-row > div { flex-basis: calc(100% - 56px); }
+  .overview-bottom { grid-template-columns: minmax(0, 1fr); }
+  .activity-text { flex: 1; }.activity-text strong { max-width: 100%; white-space: normal; }
+  .MuiDialog-paper.MuiDialog-paper { margin: 12px; width: calc(100% - 24px); max-width: calc(100% - 24px); max-height: calc(100dvh - 24px); }
+  .MuiDialog-paper .MuiDialogTitle-root { padding: 18px 16px; font-size: 18px; }
+  .MuiDialog-paper .MuiDialogContent-root { padding-inline: 16px; }
+  .MuiDialogActions-root.MuiDialogActions-root { flex-direction: column-reverse; align-items: stretch; padding: 12px 16px; gap: 8px; }
+  .MuiDialogActions-root > .MuiButton-root { margin: 0; width: 100%; min-height: 44px; white-space: normal; overflow-wrap: anywhere; }
+  .MuiAlert-root { flex-wrap: wrap; }
+  .MuiAlert-icon { flex-shrink: 0; }
+  .MuiAlert-message { flex: 1 1 140px; }
+  .MuiAlert-action { margin-left: auto; padding-left: 0; }
+  .registry-footnote { overflow-wrap: anywhere; }
+  .organization-list td > strong { overflow-wrap: anywhere; }
+  .marking-batch-declaration { min-width: 0; }
+  .marking-link-row > .MuiButton-root { max-width: 100%; white-space: normal; }
+  .document-table .document-row .document-select { flex-basis: 36px; margin: -4px 0 0 -8px; }
+}
+@media (hover: none) and (pointer: coarse) and (max-width: 370px) {
+  .firm-select.MuiInputBase-root { max-width: 92px; }
+}
+@media (max-height: 520px) {
+  .MuiDialog-paper.MuiDialog-paper { max-height: calc(100dvh - 24px); margin-block: 12px; }
+  .sidebar-inner { padding-top: 16px; }
+  .sidebar-inner .brand { margin-bottom: 20px; }
+}
