@@ -16,6 +16,10 @@ import type {
     DmKodUtilisationDetails,
 } from "@marking/lib/dmkod-workflow-types";
 const base = "/api/dmkod";
+const workflowRequestConfig = (scope: DmKodScope) => ({
+    ...dmKodRequestConfig(scope),
+    timeout: 120_000,
+});
 export const dmKodWorkflowApi = {
     synchronizePoas: (
         scope: DmKodScope,
@@ -25,7 +29,7 @@ export const dmKodWorkflowApi = {
             .post(
                 `${base}/poas/sync`,
                 { clientRequestId },
-                dmKodRequestConfig(scope),
+                workflowRequestConfig(scope),
             )
             .then((r) => r.data),
     options: (scope: DmKodScope): Promise<DmKodWorkflowOptions> =>
@@ -41,21 +45,21 @@ export const dmKodWorkflowApi = {
             .post(
                 `${base}/orders/${orderId}/operations`,
                 request,
-                dmKodRequestConfig(scope),
+                workflowRequestConfig(scope),
             )
             .then((r) => r.data),
     receipt: (scope: DmKodScope, id: string): Promise<DmKodWorkflowReceipt> =>
         apiClient
             .get(
                 `${base}/orders/workflow/receipts/${id}`,
-                dmKodRequestConfig(scope),
+                workflowRequestConfig(scope),
             )
             .then((r) => r.data),
     task: (scope: DmKodScope, id: string): Promise<DmKodWorkflowTask> =>
         apiClient
             .get(
                 `${base}/orders/workflow/tasks/${id}`,
-                dmKodRequestConfig(scope),
+                workflowRequestConfig(scope),
             )
             .then((r) => r.data),
     file: (scope: DmKodScope, id: string): Promise<Blob> =>
@@ -83,7 +87,7 @@ export const dmKodWorkflowApi = {
         apiClient
             .get(
                 `${base}/orders/${orderId}/code-requests/${id}/signing-data`,
-                dmKodRequestConfig(scope),
+                workflowRequestConfig(scope),
             )
             .then((r) => r.data),
     sign: (
@@ -96,7 +100,7 @@ export const dmKodWorkflowApi = {
             .post(
                 `${base}/orders/${orderId}/code-requests/${id}/sign`,
                 request,
-                dmKodRequestConfig(scope),
+                workflowRequestConfig(scope),
             )
             .then((r) => r.data),
     signedReceipt: (
@@ -106,7 +110,7 @@ export const dmKodWorkflowApi = {
         apiClient
             .get(
                 `${base}/orders/workflow/signatures/${id}`,
-                dmKodRequestConfig(scope),
+                workflowRequestConfig(scope),
             )
             .then((r) => r.data),
     sessions: (

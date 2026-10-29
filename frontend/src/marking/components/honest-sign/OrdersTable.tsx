@@ -358,7 +358,12 @@ export function OrdersTable({
                                                                   "",
                                                           )
                                                       }
-                                                      disabled={orderId === "-"}
+                                                      disabled={
+                                                          orderId === "-" ||
+                                                          Boolean(
+                                                              uploadingToConverterOrderId,
+                                                          )
+                                                      }
                                                   >
                                                       {t(
                                                           "honestSign.workspace.getCodes",
@@ -375,7 +380,9 @@ export function OrdersTable({
                                                       }
                                                       disabled={
                                                           orderId === "-" ||
-                                                          isUploading
+                                                          Boolean(
+                                                              uploadingToConverterOrderId,
+                                                          )
                                                       }
                                                   >
                                                       {isUploading

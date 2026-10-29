@@ -1,314 +1,334 @@
-import { BookOpen, RefreshCw } from "lucide-react";
-import { useState } from "react";
-import { toast } from 'sonner';
-import { useMarkingDeclaration } from '@marking/DeclarationContext';
-import { apiClient } from '@marking/lib/api-client';
-import { api, store } from '../../../store';
+import { ArrowLeft, BookOpen, History, Package, Plus } from "lucide-react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CatalogCardForm } from "@marking/components/honest-sign/CatalogCardForm";
 import { CatalogCardWorkflow } from "@marking/components/honest-sign/CatalogCardWorkflow";
+import { CatalogErrorDetails } from "@marking/components/honest-sign/CatalogErrorDetails";
+import { CatalogFeedProcessing } from "@marking/components/honest-sign/CatalogFeedProcessing";
+import { CatalogProductsPanel } from "@marking/components/honest-sign/CatalogProductsPanel";
+import { CatalogPermitsPanel } from "@marking/components/honest-sign/CatalogPermitsPanel";
+import { CatalogSubmissionHistory } from "@marking/components/honest-sign/CatalogSubmissionHistory";
 import { Notice } from "@marking/components/honest-sign/ui/notice";
-import { Badge } from "@marking/components/ui/badge";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@marking/components/ui/alert-dialog";
 import { Button } from "@marking/components/ui/button";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+} from "@marking/components/ui/dialog";
 import { Skeleton } from "@marking/components/ui/skeleton";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@marking/components/ui/table";
-import {
-    useCatalogCategories,
-    useCatalogFeedStatus,
-    useCatalogSubmissions,
-} from "@marking/hooks/use-honest-sign-catalog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@marking/components/ui/tabs";
+import { useCatalogProductGroups } from "@marking/hooks/use-honest-sign-catalog";
 
-export function NationalCatalogWorkspace({
-    companyId,
-    selectedThumbprint = "",
-}: {
+type WorkspaceProps = {
     companyId: string;
     selectedThumbprint?: string;
-}) {
-    const { t, i18n } = useTranslation();
-    const declaration = useMarkingDeclaration();
-    const [page, setPage] = useState(1);
-    const [selectedId, setSelectedId] = useState("");
-    const categories = useCatalogCategories(companyId);
-    const submissions = useCatalogSubmissions(companyId, page);
-    const status = useCatalogFeedStatus(companyId, selectedId);
+    initialView?: "products" | "create";
+};
+type SelectedCard = {
+    id: string;
+    name?: string;
+    gtin?: string;
+    signing: boolean;
+    showFeed: boolean;
+};
+
+export function NationalCatalogWorkspace(props: WorkspaceProps) {
+    return <CatalogWorkspace key={props.companyId} {...props} />;
+}
+
+function CatalogWorkspace({
+    companyId,
+    selectedThumbprint = "",
+    initialView = "products",
+}: WorkspaceProps) {
+    const { t } = useTranslation();
+    const [view, setView] = useState(initialView);
+    const [tab, setTab] = useState("products");
+    const [selected, setSelected] = useState<SelectedCard | null>(null);
+    const [createDirty, setCreateDirty] = useState(false);
+    const [createBusy, setCreateBusy] = useState(false);
+    const [detailDirty, setDetailDirty] = useState(false);
+    const [detailBusy, setDetailBusy] = useState(false);
+    const [discard, setDiscard] = useState<"create" | "detail" | null>(null);
+    const cancelDiscard = useRef<HTMLButtonElement>(null);
+    const addButton = useRef<HTMLButtonElement>(null);
+    const productGroups = useCatalogProductGroups(companyId);
+    const create = () => {
+        setCreateDirty(false);
+        setCreateBusy(false);
+        setView("create");
+    };
+    const back = () => {
+        if (createBusy) return;
+        if (createDirty) setDiscard("create");
+        else setView("products");
+    };
+    const closeDetail = () => {
+        if (detailBusy) return;
+        if (detailDirty) setDiscard("detail");
+        else {
+            setSelected(null);
+            setDetailDirty(false);
+        }
+    };
+    const open = (card: SelectedCard) => {
+        setDetailDirty(false);
+        setDetailBusy(false);
+        setSelected(card);
+    };
     return (
-        <div className="space-y-6 p-4 md:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <h2 className="flex items-center gap-2 text-lg font-semibold">
+        <div className="min-w-0 space-y-5 p-4 md:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                         <BookOpen className="size-5" aria-hidden="true" />
-                        {t("honestSign.catalog.title")}
-                    </h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        {t("honestSign.catalog.description")}
-                    </p>
+                    </div>
+                    <div className="min-w-0">
+                        <h2 className="text-xl font-semibold tracking-tight">
+                            {t("honestSign.catalog.title")}
+                        </h2>
+                        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                            {t(
+                                view === "create"
+                                    ? "honestSign.catalog.description"
+                                    : "honestSign.catalog.products.description",
+                            )}
+                        </p>
+                    </div>
                 </div>
-                <Badge variant="outline">
-                    {t("honestSign.catalog.motorOils")}
-                </Badge>
-            </div>
-            {categories.isPending ? (
-                <Skeleton className="h-48 w-full" />
-            ) : categories.isError ? (
-                <Notice variant="error" role="alert">
-                    <p>{categories.error.message}</p>
+                {view === "products" ? (
                     <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                        onClick={() => void categories.refetch()}
+                        ref={addButton}
+                        type="button"
+                        onClick={create}
+                        className="h-10 w-full shadow-sm sm:w-auto"
                     >
-                        {t("honestSign.catalog.retry")}
+                        <Plus className="size-4" aria-hidden="true" />
+                        {t("honestSign.catalog.products.add")}
                     </Button>
-                </Notice>
-            ) : !categories.data?.some((c) => c.isActive) ? (
-                <Notice>{t("honestSign.catalog.noCategories")}</Notice>
-            ) : (
-                <CatalogCardForm
-                    companyId={companyId}
-                    categories={categories.data}
-                    onSubmitted={(row) => {
-                        setSelectedId(row.id);
-                        setPage(1);
-                        if (declaration && row.state !== 'Rejected') {
-                            void apiClient.get(`/api/firms/${companyId}/marking/settings`).then(settings => apiClient.post(`/api/firms/${companyId}/marking/links`, {
-                                declarationId: declaration.id, gtin: row.gtin, provider: 'ChZ', environment: settings.data.profile,
-                                externalOrderId: `catalog:${row.id}`, batchNumber: '',
-                            })).then(() => store.dispatch(api.util.invalidateTags(['Marking']))).catch(() => toast.error('Карточка отправлена. Не удалось сохранить связь с декларацией — добавьте её во вкладке «Связи с декларациями».'));
-                        }
-                    }}
-                />
-            )}
-            <section
-                className="space-y-3 border-t pt-5"
-                aria-label={t("honestSign.catalog.history")}
-            >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="font-semibold">
-                        {t("honestSign.catalog.history")}
-                    </h3>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={submissions.isFetching}
-                        onClick={() => void submissions.refetch()}
-                    >
-                        <RefreshCw className="size-4" aria-hidden="true" />
-                        {t("honestSign.catalog.refresh")}
-                    </Button>
-                </div>
-                {submissions.isError ? (
-                    <Notice variant="error" role="alert">
-                        {submissions.error.message}
-                    </Notice>
-                ) : submissions.isPending ? (
-                    <Skeleton className="h-20 w-full" />
-                ) : !submissions.data?.items.length ? (
-                    <p className="text-sm text-muted-foreground">
-                        {t("honestSign.catalog.emptyHistory")}
-                    </p>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>GTIN</TableHead>
-                                    <TableHead>
-                                        {t("honestSign.catalog.created")}
-                                    </TableHead>
-                                    <TableHead>
-                                        {t("honestSign.catalog.delivery")}
-                                    </TableHead>
-                                    <TableHead>
-                                        {t("honestSign.catalog.feedId")}
-                                    </TableHead>
-                                    <TableHead>
-                                        {t("honestSign.catalog.actions")}
-                                    </TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {submissions.data.items.map((row) => (
-                                    <TableRow key={row.id}>
-                                        <TableCell className="font-mono">
-                                            {row.gtin}
-                                        </TableCell>
-                                        <TableCell>
-                                            {new Date(
-                                                row.createdAtUtc,
-                                            ).toLocaleString(i18n.language)}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge variant="outline">
-                                                {t(
-                                                    `honestSign.catalog.deliveryStates.${row.state}`,
-                                                )}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell className="font-mono">
-                                            {row.feedId ?? "—"}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() =>
-                                                    setSelectedId(row.id)
-                                                }
-                                            >
-                                                {t(
-                                                    "honestSign.catalog.checkStatus",
-                                                )}
-                                            </Button>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </div>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        disabled={createBusy}
+                        onClick={back}
+                    >
+                        <ArrowLeft className="size-4" aria-hidden="true" />
+                        {t("honestSign.catalog.products.back")}
+                    </Button>
                 )}
-                <div className="flex items-center justify-end gap-3">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={page === 1 || submissions.isFetching}
-                        onClick={() => setPage(page - 1)}
-                    >
-                        {t("honestSign.catalog.previous")}
-                    </Button>
-                    <span className="text-sm text-muted-foreground">
-                        {t("honestSign.catalog.page", { page })}
-                    </span>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={
-                            !submissions.data?.hasNextPage ||
-                            submissions.isFetching
-                        }
-                        onClick={() => setPage(page + 1)}
-                    >
-                        {t("honestSign.catalog.next")}
-                    </Button>
-                </div>
-            </section>
-            {selectedId && (
-                <CatalogCardWorkflow
-                    key={selectedId}
-                    companyId={companyId}
-                    submissionId={selectedId}
-                    selectedThumbprint={selectedThumbprint}
-                    categories={categories.data ?? []}
-                />
-            )}
-            {selectedId && (
+            </div>
+            {view === "create" ? (
                 <section
-                    className="space-y-3 border-t pt-5"
-                    aria-live="polite"
-                    aria-label={t("honestSign.catalog.processing")}
+                    className="space-y-4"
+                    aria-label={t("honestSign.catalog.products.createTitle")}
                 >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="font-semibold">
-                            {t("honestSign.catalog.processing")}
-                        </h3>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={status.isFetching}
-                            onClick={() => void status.refetch()}
-                        >
-                            {t("honestSign.catalog.refresh")}
-                        </Button>
-                    </div>
-                    {status.isPending ? (
-                        <Skeleton className="h-20 w-full" />
-                    ) : status.isError ? (
+                    <h3 className="font-semibold">
+                        {t("honestSign.catalog.products.createTitle")}
+                    </h3>
+                    {productGroups.isPending ? (
+                        <Skeleton className="h-48 w-full" />
+                    ) : productGroups.isError ? (
                         <Notice variant="error" role="alert">
-                            {status.error.message}
+                            <p>{productGroups.error.message}</p>
+                            <CatalogErrorDetails error={productGroups.error} />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="mt-2"
+                                onClick={() => void productGroups.refetch()}
+                            >
+                                {t("honestSign.catalog.retry")}
+                            </Button>
+                        </Notice>
+                    ) : !productGroups.data?.length ? (
+                        <Notice>
+                            {t("honestSign.catalog.noProductGroups")}
                         </Notice>
                     ) : (
-                        status.data && (
-                            <>
-                                <Notice
-                                    variant={
-                                        status.data.errors.length ||
-                                        status.data.status === "Rejected" ||
-                                        status.data.submissionState ===
-                                            "Rejected"
-                                            ? "error"
-                                            : "info"
-                                    }
-                                >
-                                    <p className="font-medium">
-                                        {t("honestSign.catalog.feedId")}:{" "}
-                                        {status.data.feedId ?? "—"} ·{" "}
-                                        {t(
-                                            status.data.status
-                                                ? `honestSign.catalog.feedStates.${status.data.status}`
-                                                : `honestSign.catalog.deliveryStates.${status.data.submissionState}`,
-                                        )}
-                                    </p>
-                                    <p className="mt-1">
-                                        {t(
-                                            status.data.submissionState ===
-                                                "Rejected"
-                                                ? "honestSign.catalog.rejectedNotice"
-                                                : !status.data.feedId
-                                                  ? "honestSign.catalog.unknownNotice"
-                                                  : status.data.status ===
-                                                      "Moderated"
-                                                    ? "honestSign.catalog.moderatedNotice"
-                                                    : status.data.status ===
-                                                        "Signed"
-                                                      ? "honestSign.catalog.signedNotice"
-                                                      : "honestSign.catalog.acceptedNotice",
-                                        )}
-                                    </p>
-                                </Notice>
-                                {status.data.errors.length > 0 && (
-                                    <ul className="space-y-2 text-sm">
-                                        {status.data.errors.map((e, index) => (
-                                            <li
-                                                key={index}
-                                                className="rounded-md border border-destructive/20 p-3"
-                                            >
-                                                {e.gtin && (
-                                                    <span className="mr-2 font-mono">
-                                                        {e.gtin}
-                                                    </span>
-                                                )}
-                                                {e.attributeId && (
-                                                    <span>
-                                                        {t(
-                                                            "honestSign.catalog.attributeId",
-                                                            {
-                                                                id: e.attributeId,
-                                                            },
-                                                        )}{" "}
-                                                        ·{" "}
-                                                    </span>
-                                                )}
-                                                {e.code && (
-                                                    <span>{e.code}: </span>
-                                                )}
-                                                {e.message}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
-                            </>
-                        )
+                        <CatalogCardForm
+                            companyId={companyId}
+                            productGroups={productGroups.data}
+                            onDirtyChange={setCreateDirty}
+                            onBusyChange={setCreateBusy}
+                            onSubmitted={(row) => {
+                                setCreateDirty(false);
+                                setCreateBusy(false);
+                                setView("products");
+                                setTab("products");
+                                open({
+                                    id: row.id,
+                                    gtin: row.gtin,
+                                    signing: false,
+                                    showFeed: true,
+                                });
+                            }}
+                        />
                     )}
                 </section>
+            ) : (
+                <Tabs
+                    value={tab}
+                    onValueChange={setTab}
+                    className="min-w-0 gap-0"
+                >
+                    <TabsList
+                        aria-label={t("honestSign.catalog.products.views")}
+                        variant="line"
+                        className="mb-4 h-auto min-h-11 w-full max-w-full items-stretch justify-start gap-3 border-b p-0 group-data-[orientation=horizontal]/tabs:h-auto sm:w-fit sm:gap-4"
+                    >
+                        <TabsTrigger
+                            value="products"
+                            className="h-auto min-w-0 gap-2 px-1 py-3 whitespace-normal after:bottom-0 after:rounded-t-full after:bg-primary motion-reduce:transition-none sm:whitespace-nowrap"
+                        >
+                            <Package className="size-4" aria-hidden="true" />
+                            {t("honestSign.catalog.products.title")}
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="history"
+                            className="h-auto min-w-0 gap-2 px-1 py-3 whitespace-normal after:bottom-0 after:rounded-t-full after:bg-primary motion-reduce:transition-none sm:whitespace-nowrap"
+                        >
+                            <History className="size-4" aria-hidden="true" />
+                            {t("honestSign.catalog.products.journal")}
+                        </TabsTrigger>
+                        <TabsTrigger value="permits" className="h-auto min-w-0 px-1 py-3 whitespace-normal">
+                            {t("honestSign.catalog.permits.title")}
+                        </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="permits" className="min-w-0">
+                        <CatalogPermitsPanel key={companyId} companyId={companyId} />
+                    </TabsContent>
+                    <TabsContent value="products" className="min-w-0">
+                        <CatalogProductsPanel
+                            companyId={companyId}
+                            onCreate={create}
+                            onOpen={(product, id, signing) =>
+                                open({
+                                    id,
+                                    name: product.name,
+                                    gtin: product.gtin,
+                                    signing,
+                                    showFeed: false,
+                                })
+                            }
+                        />
+                    </TabsContent>
+                    <TabsContent value="history" className="min-w-0">
+                        <CatalogSubmissionHistory
+                            companyId={companyId}
+                            onOpen={(id) =>
+                                open({ id, signing: false, showFeed: true })
+                            }
+                        />
+                    </TabsContent>
+                </Tabs>
             )}
+            <Dialog
+                open={Boolean(selected)}
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) closeDetail();
+                }}
+            >
+                <DialogContent
+                    className="max-h-[90dvh] overflow-y-auto sm:max-w-5xl"
+                    onCloseAutoFocus={(event) => {
+                        event.preventDefault();
+                        addButton.current?.focus();
+                    }}
+                >
+                    <DialogHeader>
+                        <DialogTitle>
+                            {selected?.name ||
+                                t("honestSign.catalog.workflow.title")}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {selected?.gtin
+                                ? `${t("honestSign.catalog.gtin")}: ${selected.gtin}`
+                                : t("honestSign.catalog.description")}
+                        </DialogDescription>
+                    </DialogHeader>
+                    {selected && (
+                        <CatalogCardWorkflow
+                            key={selected.id}
+                            showTitle={false}
+                            companyId={companyId}
+                            submissionId={selected.id}
+                            selectedThumbprint={selectedThumbprint}
+                            productGroups={productGroups.data ?? []}
+                            focusSigning={selected.signing}
+                            onDirtyChange={setDetailDirty}
+                            onBusyChange={setDetailBusy}
+                        />
+                    )}
+                    {selected?.showFeed && (
+                        <CatalogFeedProcessing
+                            companyId={companyId}
+                            submissionId={selected.id}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
+            <AlertDialog
+                open={discard !== null}
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) setDiscard(null);
+                }}
+            >
+                <AlertDialogContent
+                    onOpenAutoFocus={(event) => {
+                        event.preventDefault();
+                        cancelDiscard.current?.focus();
+                    }}
+                >
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            {t("honestSign.catalog.products.discardTitle")}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {t(
+                                "honestSign.catalog.products.discardDescription",
+                            )}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel ref={cancelDiscard}>
+                            {t("honestSign.catalog.products.keepEditing")}
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            variant="destructive"
+                            disabled={
+                                discard === "create" ? createBusy : detailBusy
+                            }
+                            onClick={() => {
+                                if (discard === "create" && !createBusy) {
+                                    setCreateDirty(false);
+                                    setView("products");
+                                }
+                                if (discard === "detail" && !detailBusy) {
+                                    setDetailDirty(false);
+                                    setSelected(null);
+                                }
+                                setDiscard(null);
+                            }}
+                        >
+                            {t("honestSign.catalog.products.discard")}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

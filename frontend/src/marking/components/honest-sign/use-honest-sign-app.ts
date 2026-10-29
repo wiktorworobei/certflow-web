@@ -27,7 +27,10 @@ import {
 import { resolveAvailableThumbprint } from "@marking/lib/honest-sign/certificateSelection";
 import { buildCreateOrderBody } from "@marking/lib/honest-sign/createOrderPayload";
 import { cryptoProSignatureService } from "@marking/lib/honest-sign/cryptoProSignatureService";
-import { getHttpErrorStatus } from "@marking/lib/honest-sign/httpClient";
+import {
+    getHttpErrorCode,
+    getHttpErrorStatus,
+} from "@marking/lib/honest-sign/httpClient";
 import { ordersApiService } from "@marking/lib/honest-sign/ordersApiService";
 import {
     clearOrdersFilters,
@@ -57,6 +60,7 @@ type GetCodesModalResult = {
     codesCount: number;
     queuedForConverter: boolean;
     queuedOrderId: string;
+    fileDownloaded?: boolean;
     converterUpload?: {
         orderId: string;
         codesCount: number;
@@ -65,6 +69,13 @@ type GetCodesModalResult = {
 
 export function useMarkingApp(companyId: string, catalogOnly = false) {
     const { t } = useTranslation();
+    const active = useRef(true);
+    useEffect(() => {
+        active.current = true;
+        return () => {
+            active.current = false;
+        };
+    }, []);
     const queryClient = useQueryClient();
     const [checkingSession, setCheckingSession] = useState(true);
 
@@ -138,6 +149,53 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
         setUploadOrderCodesToConverterErrorMessage,
     ] = useState("");
     const [getCodesResult, setGetCodesResult] = useState<unknown>(null);
+    const [converterPreparationMessage, setConverterPreparationMessage] =
+        useState("");
+    const codesViewVersionRef = useRef(0);
+    const codesActionRef = useRef<object | null>(null);
+
+    useEffect(
+        () => () => {
+            codesViewVersionRef.current += 1;
+        },
+        [],
+    );
+
+    const invalidateCodesView = () => {
+        codesViewVersionRef.current += 1;
+        setConverterPreparationMessage("");
+    };
+
+    const openCodesDialog = (orderId: string, gtin = "", preparation = "") => {
+        invalidateCodesView();
+        setGetCodesOrderId(orderId);
+        setGetCodesGtin(gtin);
+        setGetCodesQuantity("1");
+        setGetCodesErrorMessage("");
+        setUploadOrderCodesToConverterErrorMessage("");
+        setGetCodesResult(null);
+        setConverterPreparationMessage(preparation);
+        setIsGetCodesModalOpen(true);
+    };
+
+    const beginCodesAction = () => {
+        if (codesActionRef.current) return null;
+        const action = {};
+        codesActionRef.current = action;
+        const version = codesViewVersionRef.current;
+        return {
+            isCurrent: () =>
+                codesViewVersionRef.current === version &&
+                codesActionRef.current === action,
+            finish: () => {
+                if (codesActionRef.current !== action) return;
+                codesActionRef.current = null;
+                setGettingCodes(false);
+                setUploadingOrderCodesToConverter(false);
+                setUploadingOrderCodesToConverterOrderId("");
+            },
+        };
+    };
 
     const sessionGuardInFlightRef = useRef(false);
     const lastSessionHeartbeatAtRef = useRef(0);
@@ -169,6 +227,7 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
         nextStatusMessage = "",
         nextStatusVariant: StatusVariant = "info",
     ) => {
+        invalidateCodesView();
         clearOrdersFilters(companyId);
         const queries = { queryKey: [...honestSignKeys.all, companyId] };
         void queryClient.cancelQueries(queries);
@@ -276,6 +335,9 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
     };
 
     const applyViewState = (viewState: BrowserViewState) => {
+        invalidateCodesView();
+        setIsGetCodesModalOpen(false);
+        setGetCodesResult(null);
         if (viewState.view === "orders-list") {
             setCreateOrderStep(null);
             setOpenedOrder(null);
@@ -771,6 +833,7 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
     );
 
     const handleGetCodesCsv = async () => {
+        if (codesActionRef.current) return;
         const normalizedOrderId = getCodesOrderId.trim();
         if (!normalizedOrderId) {
             setGetCodesErrorMessage(t("honestSign.messages.orderIdRequired"));
@@ -791,6 +854,8 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
             return;
         }
 
+        const action = beginCodesAction();
+        if (!action) return;
         setGettingCodes(true);
         setUploadingOrderCodesToConverter(false);
         setGetCodesErrorMessage("");
@@ -803,6 +868,7 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
                 normalizedGtin,
                 quantityValue,
             );
+            if (!action.isCurrent()) return;
             const dataMatrixCodes = csvResponse.codes;
 
             if (dataMatrixCodes.length === 0) {
@@ -810,28 +876,51 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
                 return;
             }
 
-            const downloadedFileName = downloadCodesFile(
-                csvResponse.fileName,
-                csvResponse.file,
-            );
-            setGetCodesResult({
-                downloadedFileName,
+            const preparedResult: GetCodesModalResult = {
+                downloadedFileName: downloadCodesFile(csvResponse.fileName, csvResponse.file),
                 queuedForConverter: false,
                 queuedOrderId: normalizedOrderId,
                 codesCount: dataMatrixCodes.length,
-            });
+                fileDownloaded: false,
+            };
+            setGetCodesResult(preparedResult);
+            try {
+                const downloadedFileName = downloadCodesFile(
+                    csvResponse.fileName,
+                    csvResponse.file,
+                );
+                setGetCodesResult({
+                    ...preparedResult,
+                    downloadedFileName,
+                    fileDownloaded: true,
+                });
+            } catch {
+                setGetCodesErrorMessage(
+                    t("honestSign.messages.codesDownloadFailed"),
+                );
+            }
         } catch (error) {
+            if (!action.isCurrent()) return;
             const message =
                 error instanceof Error
                     ? error.message
                     : t("honestSign.messages.codesFailed");
             setGetCodesErrorMessage(message);
         } finally {
-            setGettingCodes(false);
+            action.finish();
         }
     };
 
     const handleUploadOrderCodesToConverter = async () => {
+        if (codesActionRef.current) return;
+        const prepared = getCodesResult as GetCodesModalResult | null;
+        if (
+            !prepared?.queuedForConverter ||
+            prepared.codesCount <= 0 ||
+            prepared.converterUpload ||
+            prepared.queuedOrderId !== getCodesOrderId.trim()
+        )
+            return;
         const normalizedOrderId = getCodesOrderId.trim();
         if (!normalizedOrderId) {
             setUploadOrderCodesToConverterErrorMessage(
@@ -840,6 +929,8 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
             return;
         }
 
+        const action = beginCodesAction();
+        if (!action) return;
         setUploadingOrderCodesToConverter(true);
         setUploadingOrderCodesToConverterOrderId(normalizedOrderId);
         setUploadOrderCodesToConverterErrorMessage("");
@@ -849,9 +940,10 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
                 await ordersApiService.uploadOrderCodesToConverter(
                     normalizedOrderId,
                 );
+            if (!action.isCurrent()) return;
             setGetCodesResult((current: unknown) => {
                 const currentResult = current as GetCodesModalResult | null;
-                if (!currentResult) {
+                if (currentResult?.queuedOrderId !== normalizedOrderId) {
                     return current;
                 }
 
@@ -871,20 +963,21 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
                 "success",
             );
         } catch (error) {
+            if (!action.isCurrent()) return;
             const message =
                 error instanceof Error
                     ? error.message
                     : t("honestSign.messages.converterFailed");
             setUploadOrderCodesToConverterErrorMessage(message);
         } finally {
-            setUploadingOrderCodesToConverter(false);
-            setUploadingOrderCodesToConverterOrderId("");
+            action.finish();
         }
     };
 
     const handleUploadOrderCodesToConverterByOrderId = async (
         orderId: string,
     ) => {
+        if (codesActionRef.current) return;
         const normalizedOrderId = orderId.trim();
         if (!normalizedOrderId || normalizedOrderId === "-") {
             setUploadOrderCodesToConverterErrorMessage(
@@ -893,6 +986,8 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
             return;
         }
 
+        const action = beginCodesAction();
+        if (!action) return;
         setUploadingOrderCodesToConverter(true);
         setUploadingOrderCodesToConverterOrderId(normalizedOrderId);
         setUploadOrderCodesToConverterErrorMessage("");
@@ -902,6 +997,7 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
                 await ordersApiService.uploadOrderCodesToConverter(
                     normalizedOrderId,
                 );
+            if (!action.isCurrent()) return;
             updateStatus(
                 t("honestSign.messages.converterUploaded", {
                     orderId: response.orderId,
@@ -910,14 +1006,29 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
                 "success",
             );
         } catch (error) {
+            if (!action.isCurrent()) return;
+            if (
+                getHttpErrorStatus(error) === 404 &&
+                getHttpErrorCode(error) ===
+                    "error.honest_sign_converter_order_not_found"
+            ) {
+                const order = orders.find(
+                    (item) => item.orderId === normalizedOrderId,
+                );
+                openCodesDialog(
+                    normalizedOrderId,
+                    order?.firstGtin ?? "",
+                    t("honestSign.messages.converterPreparationRequired"),
+                );
+                return;
+            }
             const message =
                 error instanceof Error
                     ? error.message
                     : t("honestSign.messages.converterFailed");
             setUploadOrderCodesToConverterErrorMessage(message);
         } finally {
-            setUploadingOrderCodesToConverter(false);
-            setUploadingOrderCodesToConverterOrderId("");
+            action.finish();
         }
     };
 
@@ -1091,6 +1202,7 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
 
     const handleTopTabChange = (tab: TopTab) => {
         if (tab !== "orders") {
+            invalidateCodesView();
             setIsGetCodesModalOpen(false);
             setGettingCodes(false);
             setUploadingOrderCodesToConverter(false);
@@ -1112,6 +1224,9 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
             return;
         }
 
+        invalidateCodesView();
+        setIsGetCodesModalOpen(false);
+        setGetCodesResult(null);
         const nextFilters = { ...filters, orderStatus: "" };
         setOrdersView(view);
         setFilters(nextFilters);
@@ -1180,6 +1295,7 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
         getCodesOrderId,
         getCodesQuantity,
         getCodesResult,
+        converterPreparationMessage,
         gettingCodes,
         hasNextPage,
         isAuthorized,
@@ -1205,6 +1321,8 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
         uploadingOrderCodesToConverter,
         uploadingOrderCodesToConverterOrderId,
         closeGetCodesModal: () => {
+            if (codesActionRef.current) return;
+            invalidateCodesView();
             setIsGetCodesModalOpen(false);
             setGettingCodes(false);
             setUploadingOrderCodesToConverter(false);
@@ -1265,19 +1383,12 @@ export function useMarkingApp(companyId: string, catalogOnly = false) {
         navigateToOrdersList,
         onLogout,
         openGetCodesModal: (orderId: string, gtin = "") => {
+            if (codesActionRef.current) return;
             if (!orderId || orderId === "-") {
                 return;
             }
 
-            setGetCodesOrderId(orderId);
-            setGetCodesGtin(gtin);
-            setGetCodesQuantity("1");
-            setUploadingOrderCodesToConverter(false);
-            setUploadingOrderCodesToConverterOrderId("");
-            setGetCodesErrorMessage("");
-            setUploadOrderCodesToConverterErrorMessage("");
-            setGetCodesResult(null);
-            setIsGetCodesModalOpen(true);
+            openCodesDialog(orderId, gtin);
         },
         setCreateOrderPaymentType,
         setCreateOrderReleaseMethod,

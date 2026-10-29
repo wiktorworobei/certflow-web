@@ -23,6 +23,7 @@ export function WorkspacePage({
 
 export function WorkspaceHeader({
     title,
+    titleClassName,
     titleId,
     heading: Heading = "h1",
     description,
@@ -31,6 +32,7 @@ export function WorkspaceHeader({
     className,
 }: {
     title: ReactNode;
+    titleClassName?: string;
     titleId?: string;
     heading?: "h1" | "h2";
     description?: ReactNode;
@@ -44,7 +46,7 @@ export function WorkspaceHeader({
             className={cn("space-y-3", className)}
         >
             <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0 flex-1 space-y-1">
+                <div className={cn("min-w-0 flex-1 space-y-1", titleClassName)}>
                     <Heading
                         id={titleId}
                         tabIndex={-1}

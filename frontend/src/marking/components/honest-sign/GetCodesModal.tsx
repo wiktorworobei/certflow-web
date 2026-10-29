@@ -17,6 +17,8 @@ type GetCodesModalResult = {
     codesCount: number;
     queuedForConverter: boolean;
     queuedOrderId: string;
+    fileDownloaded?: boolean;
+    converterUpload?: { orderId: string; codesCount: number };
 };
 
 type GetCodesModalProps = {
@@ -25,12 +27,16 @@ type GetCodesModalProps = {
     gtin: string;
     quantity: string;
     gettingCodes: boolean;
+    uploadingToConverter: boolean;
+    preparationMessage: string;
+    uploadErrorMessage: string;
     errorMessage: string;
     result: unknown;
     onClose: () => void;
     onGtinChange: (value: string) => void;
     onQuantityChange: (value: string) => void;
     onSubmit: () => Promise<void>;
+    onUploadToConverter: () => Promise<void>;
 };
 
 function isGetCodesModalResult(value: unknown): value is GetCodesModalResult {
@@ -50,19 +56,33 @@ export function GetCodesModal({
     gtin,
     quantity,
     gettingCodes,
+    uploadingToConverter,
+    preparationMessage,
+    uploadErrorMessage,
     errorMessage,
     result,
     onClose,
     onGtinChange,
     onQuantityChange,
     onSubmit,
+    onUploadToConverter,
 }: GetCodesModalProps) {
     const { t } = useTranslation();
-    const resolvedResult = isGetCodesModalResult(result) ? result : null;
+    const resolvedResult =
+        isGetCodesModalResult(result) && result.queuedOrderId === orderId
+            ? result
+            : null;
+    const busy = gettingCodes || uploadingToConverter;
 
     return (
-        <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-            <DialogContent className="integration-theme">
+        <Dialog
+            open={open}
+            onOpenChange={(nextOpen) => !nextOpen && !busy && onClose()}
+        >
+            <DialogContent
+                className="integration-theme"
+                showCloseButton={!busy}
+            >
                 <DialogHeader>
                     <DialogTitle>
                         {t("honestSign.workspace.getCodes")}
@@ -73,6 +93,9 @@ export function GetCodesModal({
                 </DialogHeader>
 
                 <div className="space-y-4">
+                    {preparationMessage && !resolvedResult ? (
+                        <Notice role="status">{preparationMessage}</Notice>
+                    ) : null}
                     <FormField label="Order ID" htmlFor="codesOrderId">
                         <Input id="codesOrderId" value={orderId} readOnly />
                     </FormField>
@@ -80,6 +103,7 @@ export function GetCodesModal({
                         <Input
                             id="codesGtin"
                             value={gtin}
+                            disabled={busy || Boolean(resolvedResult)}
                             onChange={(event) =>
                                 onGtinChange(event.target.value)
                             }
@@ -97,6 +121,7 @@ export function GetCodesModal({
                             type="number"
                             min={1}
                             value={quantity}
+                            disabled={busy || Boolean(resolvedResult)}
                             onChange={(event) =>
                                 onQuantityChange(event.target.value)
                             }
@@ -107,20 +132,34 @@ export function GetCodesModal({
                     </FormField>
 
                     {errorMessage ? (
-                        <Notice variant="error">{errorMessage}</Notice>
+                        <Notice variant="error" role="alert">
+                            {errorMessage}
+                        </Notice>
+                    ) : null}
+                    {uploadErrorMessage ? (
+                        <Notice variant="error" role="alert">
+                            {uploadErrorMessage}
+                        </Notice>
                     ) : null}
                     {resolvedResult ? (
-                        <Notice variant="success">
+                        <Notice variant="success" role="status">
                             <p className="font-semibold">
                                 {t("honestSign.workspace.codesFileReady")}
                             </p>
                             <p className="mt-1">
-                                {t("honestSign.workspace.codesFileResult", {
-                                    fileName: resolvedResult.downloadedFileName,
-                                    count: resolvedResult.codesCount,
-                                })}
+                                {t(
+                                    resolvedResult.fileDownloaded === false
+                                        ? "honestSign.workspace.codesPreparedResult"
+                                        : "honestSign.workspace.codesFileResult",
+                                    {
+                                        fileName:
+                                            resolvedResult.downloadedFileName,
+                                        count: resolvedResult.codesCount,
+                                    },
+                                )}
                             </p>
-                            {resolvedResult.queuedForConverter ? (
+                            {resolvedResult.queuedForConverter &&
+                            !resolvedResult.converterUpload ? (
                                 <p className="mt-1">
                                     {t(
                                         "honestSign.workspace.converterQueueReady",
@@ -131,23 +170,59 @@ export function GetCodesModal({
                                     )}
                                 </p>
                             ) : null}
+                            {resolvedResult.converterUpload ? (
+                                <p className="mt-1">
+                                    {t(
+                                        "honestSign.messages.converterUploaded",
+                                        {
+                                            orderId:
+                                                resolvedResult.converterUpload
+                                                    .orderId,
+                                            count: resolvedResult
+                                                .converterUpload.codesCount,
+                                        },
+                                    )}
+                                </p>
+                            ) : null}
                         </Notice>
                     ) : null}
                 </div>
 
                 <DialogFooter>
-                    <Button type="button" variant="outline" onClick={onClose}>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={onClose}
+                        disabled={busy}
+                    >
                         {t("common.close")}
                     </Button>
                     <Button
                         type="button"
                         onClick={() => void onSubmit()}
-                        disabled={gettingCodes}
+                        variant={resolvedResult ? "outline" : "default"}
+                        disabled={busy || Boolean(resolvedResult)}
                     >
                         {gettingCodes
                             ? t("honestSign.workspace.requesting")
                             : t("honestSign.workspace.getCodes")}
                     </Button>
+                    {resolvedResult?.queuedForConverter &&
+                    resolvedResult.codesCount > 0 ? (
+                        <Button
+                            type="button"
+                            onClick={() => void onUploadToConverter()}
+                            disabled={
+                                busy || Boolean(resolvedResult.converterUpload)
+                            }
+                        >
+                            {t(
+                                uploadingToConverter
+                                    ? "converters.wizard.sendingCodes"
+                                    : "converters.wizard.sendAndContinue",
+                            )}
+                        </Button>
+                    ) : null}
                 </DialogFooter>
             </DialogContent>
         </Dialog>

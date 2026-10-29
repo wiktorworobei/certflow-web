@@ -5,12 +5,13 @@ import { dmKodActorKey } from './dmkod-scope';
 import { useAuthStore } from '../src/store/auth';
 import { assertMarkingScope, captureMarkingScope } from './workspace-scope';
 declare module 'axios' {
-  interface AxiosRequestConfig { dmKodActorId?: string; certflowActor?: string; certflowFirm?: string; certflowRetried?: boolean; certflowScope?: ReturnType<typeof captureMarkingScope> }
+  interface AxiosRequestConfig { dmKodActorId?: string; certflowActor?: string; certflowFirm?: string; certflowRetried?: boolean; certflowScope?: ReturnType<typeof captureMarkingScope>; authVersion?: number }
 }
 export const apiClient = axios.create({ baseURL: API_SERVER_ORIGIN, timeout: 60000, withCredentials: true });
 apiClient.interceptors.request.use(config => {
   const session = store.getState().session;
   if (config.certflowScope) assertMarkingScope(config.certflowScope); else config.certflowScope = captureMarkingScope();
+  if (config.authVersion !== undefined && config.authVersion !== config.certflowScope.epoch) throw new Error('Компания или пользователь изменились. Операция остановлена.');
   if (!session.user || !session.token || !session.firmId) throw new Error('Войдите в CertFlow и выберите компанию.');
   const expectedFirm = config.headers.get('X-Company-Id') || config.certflowFirm || session.firmId;
   if (expectedFirm !== session.firmId || config.certflowActor && config.certflowActor !== session.user.id || config.dmKodActorId && config.dmKodActorId !== dmKodActorKey(useAuthStore.getState().user)) throw new Error('Компания или пользователь изменились. Повторите действие в текущем пространстве.');

@@ -20,6 +20,7 @@ import {
     PanelBody,
     PanelHeader,
 } from "@marking/components/honest-sign/ui/panel";
+import { UtilisationBatchesHistory } from "@marking/components/honest-sign/UtilisationBatchesHistory";
 import { Badge } from "@marking/components/ui/badge";
 import { Button } from "@marking/components/ui/button";
 import {
@@ -124,6 +125,7 @@ export function DocumentsCenter({
     const { t, i18n } = useTranslation();
     const [view, setView] = useState<DocumentsView>("reports");
     const [creatingReport, setCreatingReport] = useState(false);
+    const [reportMode, setReportMode] = useState<"single" | "batch">("single");
     const reports = useUtilisationReportsStore(
         (state) => state.reportsByCompany[companyId] ?? EMPTY_REPORTS,
     );
@@ -147,6 +149,7 @@ export function DocumentsCenter({
                 </nav>
                 <DocumentsWorkspace
                     companyId={companyId}
+                    initialMode={reportMode}
                     productGroups={productGroups}
                     selectedThumbprint={selectedThumbprint}
                     onCancel={() => setCreatingReport(false)}
@@ -228,11 +231,25 @@ export function DocumentsCenter({
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-56">
                                 <DropdownMenuItem
-                                    onSelect={() => setCreatingReport(true)}
+                                    onSelect={() => {
+                                        setReportMode("single");
+                                        setCreatingReport(true);
+                                    }}
                                 >
                                     <FileText aria-hidden="true" />
                                     {t(
                                         "honestSign.documentsCenter.applicationReport",
+                                    )}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onSelect={() => {
+                                        setReportMode("batch");
+                                        setCreatingReport(true);
+                                    }}
+                                >
+                                    <FileText aria-hidden="true" />
+                                    {t(
+                                        "honestSign.documents.batch.multipleCreate",
                                     )}
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -242,6 +259,8 @@ export function DocumentsCenter({
                     <Notice variant="warning">
                         {t("honestSign.documentsCenter.processingNote")}
                     </Notice>
+
+                    <UtilisationBatchesHistory companyId={companyId} />
 
                     <Panel>
                         <PanelHeader>

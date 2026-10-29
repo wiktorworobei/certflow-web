@@ -19,14 +19,14 @@ export function Catalog() {
   const [query] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } }));
   useEffect(() => () => query.clear(), [query, firmId]);
   return <>
-    <PageTitle eyebrow="НАЦИОНАЛЬНЫЙ КАТАЛОГ" title="Карточки ЧЗ" subtitle="Создавайте карточки моторных масел, заполняйте характеристики и отслеживайте обработку в Честном знаке.">
+    <PageTitle eyebrow="НАЦИОНАЛЬНЫЙ КАТАЛОГ" title="Карточки ЧЗ" subtitle="Работайте со своими карточками товаров, разрешительными документами и характеристиками выбранной товарной группы.">
       <Button component={RouterLink} to="/settings" variant="outlined" startIcon={<SettingsOutlined/>}>Настройки подключения</Button>
     </PageTitle>
     {!canEdit ? <Alert severity="info">Создание и изменение карточек ЧЗ доступны специалисту или администратору компании.</Alert>
       : settings.isLoading ? <Loading/>
       : settings.error ? <ErrorState error={settings.error} retry={settings.refetch}/>
       : <>
-        <Alert severity={settings.data?.profile === 'Production' ? 'warning' : 'info'} sx={{ mb: 2 }}>Честный знак · {settings.data?.profile === 'Production' ? 'рабочий контур' : 'песочница'}. Для новой карточки нужны GTIN, описание товара и характеристики выбранной категории. Создание черновика, модерация и публикация выполняются отдельными действиями.</Alert>
+        <Alert severity={settings.data?.profile === 'Production' ? 'warning' : 'info'} sx={{ mb: 2 }}>Честный знак · {settings.data?.profile === 'Production' ? 'рабочий контур' : 'песочница'}. Существующую карточку можно открыть из списка. Для новой заполните товарную группу и характеристики; GTIN можно выбрать из доступных кодов НК или указать самостоятельно. Сохранение локального черновика, отправка, модерация и публикация выполняются отдельными действиями.</Alert>
         <div className={`marking-surface ${mode === 'dark' ? 'dark' : ''}`}>
           <QueryClientProvider client={query}><I18nextProvider i18n={i18n}><MarkingDeclarationContext.Provider value={null}>
             <HonestSignApp companyId={firmId} catalogOnly/>

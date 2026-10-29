@@ -4,6 +4,52 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+test('laboratory registry keeps the CSV source and confirms manual changes before saving', async ({ page }) => {
+  await fixtures(page);
+  const firmId='11111111-1111-4111-8111-111111111111';
+  const original={key:'Россия:123',rowNumber:2,recordKind:'Laboratory',country:'Россия',nationalId:'123',name:'Испытательная лаборатория из CSV',registryStatus:'действует',accreditationStatus:'действует',accreditationNumber:'RA.TEST.21',registeredAt:'2020-01-15',validUntil:null,legalAddress:'Юридический адрес из CSV',activityAddress:'Адрес испытаний из CSV',headName:'Руководитель CSV',phone:'+7 111 000-00-00',scope:'Масла и смазочные материалы; ТР ТС 030/2012',registryUrl:''};
+  let lab={id:'88888888-8888-4888-8888-888888888888',firmId,name:original.name,accreditationNumber:original.accreditationNumber,address:original.activityAddress,recordKind:'Laboratory',revision:randomUUID(),details:{country:original.country,type:'Accredited',accreditationStatus:'Active',validFrom:original.registeredAt,validUntil:null,scope:original.scope,registryUrl:'',phone:original.phone,email:'',manuallyCheckedAt:null,verificationNote:'',nationalRegistryId:original.nationalId,registryStatus:original.registryStatus,headName:original.headName,legalAddress:original.legalAddress,shortName:''},registrySource:{fileName:'conformityAuthority.CSV',sha256:'fixture-sha',importedAtUtc:'2026-10-29T12:00:00Z',original},manuallyEditedFields:[] as string[]};
+  const writes: Record<string,unknown>[]=[];
+  await page.route('**/laboratories/**',route=>{
+    const request=route.request();const url=new URL(request.url());
+    if(request.method()==='PUT'){
+      const body=request.postDataJSON();writes.push(body);lab={...lab,...body,revision:randomUUID(),registrySource:lab.registrySource,manuallyEditedFields:['details.phone','details.shortName']};
+      return route.fulfill({json:lab});
+    }
+    const items=url.pathname.includes(firmId)?[lab]:[];
+    return route.fulfill({json:{items,total:items.length,page:1,pageSize:25}});
+  });
+  await login(page);await page.goto('/#/directories');await page.getByRole('tab',{name:'Лаборатории',exact:true}).click();
+  await expect(page.getByRole('table',{name:'Справочник лабораторий'})).toContainText('RA.TEST.21');
+  await page.getByRole('button',{name:`Редактировать ${original.name}`,exact:true}).click();
+  const editor=page.getByRole('dialog',{name:'Редактирование лаборатории',exact:true});
+  await expect(editor.getByLabel('Юридический адрес лаборатории')).toHaveValue(original.legalAddress);
+  await editor.getByLabel('Телефон лаборатории',{exact:true}).fill('+7 МОЙ НОМЕР');
+  await editor.getByLabel('Краткое обозначение лаборатории',{exact:true}).fill('ИЛ МАСЛА');
+  await editor.getByRole('button',{name:'Сохранить',exact:true}).click();
+  const warning=page.getByRole('dialog',{name:'Ручное изменение данных реестра',exact:true});
+  await expect(warning.getByText(/на свой страх и риск/)).toBeVisible();
+  await expect(warning.getByRole('button',{name:'Сохранить мои изменения',exact:true})).toBeDisabled();
+  expect(writes).toHaveLength(0);
+  await warning.getByRole('button',{name:'Вернуться к редактированию'}).click();
+  expect(writes).toHaveLength(0);await expect(editor.getByLabel('Телефон лаборатории',{exact:true})).toHaveValue('+7 МОЙ НОМЕР');
+  await editor.getByRole('button',{name:'Сохранить',exact:true}).click();
+  await warning.getByRole('checkbox').check();
+  await page.screenshot({path:path.resolve('..','artifacts','screenshots','laboratory-manual-warning.png'),animations:'disabled'});
+  await warning.getByRole('button',{name:'Сохранить мои изменения',exact:true}).click();await expect(warning).toBeHidden();await expect(editor).toBeHidden();
+  expect(writes).toHaveLength(1);expect(writes[0].acceptRegistryOverride).toBe(true);
+  await expect(page.getByText('CSV + правки',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:`Редактировать ${original.name}`,exact:true}).click();
+  await editor.getByText('Исходная запись CSV',{exact:true}).click();
+  await expect(editor.getByText(original.phone,{exact:true})).toBeVisible();
+  await expect(editor.getByLabel('Телефон лаборатории',{exact:true})).toHaveValue('+7 МОЙ НОМЕР');
+  await editor.getByRole('button',{name:'Отмена',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});await page.emulateMedia({colorScheme:'dark'});
+  await expect(page.getByText('ИЛ МАСЛА',{exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:path.resolve('..','artifacts','screenshots','laboratory-registry-mobile.png'),fullPage:true,animations:'disabled'});
+});
+
 async function fixtures(page: Page, lookupConfigured = false, declarationOverrides: Record<string, unknown> = {}, role = 'Admin', showOverwriteWarning = false, profile: { displayName?: string; firmName?: string } = {}) {
   const firm = { id: '11111111-1111-4111-8111-111111111111', name: profile.firmName ?? 'Моя компания', inn: '', role };
   const user = { id: '33333333-3333-4333-8333-333333333333', userName: 'SuperViktor', displayName: profile.displayName ?? 'Виктор', email: '', firms: [firm, { ...firm, id: '22222222-2222-4222-8222-222222222222', name: 'Вектор Импорт' }] };
@@ -126,6 +172,7 @@ async function fixtures(page: Page, lookupConfigured = false, declarationOverrid
       }
       return json(organizations.filter(o => o.firmId === firmId));
     }
+    if (p.endsWith('/laboratories/search')) return json({ items: [], total: 0, page: 1, pageSize: 25 });
     if (p.endsWith('/laboratories')) return json([]);
     if (p.endsWith('/declarations') && request.method() === 'POST') {
       savedBody = request.postDataJSON();
@@ -159,6 +206,125 @@ async function login(page: Page, displayName = 'Виктор') {
   await page.getByLabel('Пароль', { exact: true }).fill('test12345-'); await page.getByRole('button', { name: 'Войти в CertFlow' }).click();
   await expect(page.getByRole('heading', { name: `Добрый день, ${displayName}` })).toBeVisible();
 }
+
+const tnVedGroup = { id: 2000, code: '8479', text: 'Машины и оборудование специального назначения', validFrom: null, validTo: null, hasChildren: true, isActive: true };
+const tnVedLeaf = { id: 3000, code: '8479899707', text: 'Машины и механические устройства прочие', validFrom: '2022-01-01', validTo: null, hasChildren: false, isActive: true };
+async function tnVedFixtures(page: Page, configured = true) {
+  await fixtures(page);
+  await page.route('**/classifiers/tnved/**', route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/settings')) return route.fulfill({ json: { isConfigured: configured, provider: 'ТКС' } });
+    const items = url.pathname.endsWith('/search') ? [tnVedGroup, tnVedLeaf] : url.searchParams.get('parentId') === '2000'
+      ? [tnVedLeaf, { ...tnVedLeaf, id: 4000, code: '8479899708', text: 'Устаревший код оборудования', validTo: '2020-01-01', isActive: false }]
+      : [tnVedGroup];
+    return route.fulfill({ json: { items, retrievedAt: '2026-10-29T10:00:00Z', fromCache: false, truncated: false } });
+  });
+  await login(page); await page.goto('/#/declarations/new');
+  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+}
+
+test('TN VED tree navigation previews a current leaf and fills only the product code', async ({ page }) => {
+  await tnVedFixtures(page);
+  await page.getByLabel('Наименование продукции', { exact: true }).fill('Моя упаковочная машина');
+  await page.getByLabel('ОКПД2', { exact: true }).fill('28.29.21');
+  await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
+  await dialog.getByRole('button', { name: /Машины и оборудование специального назначения/ }).click();
+  await expect(dialog.getByRole('button', { name: /Устаревший код оборудования/ })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: /Машины и механические устройства прочие/ }).click();
+  await expect(dialog.getByRole('region', { name: 'Выбранный код ТН ВЭД' })).toContainText('8479 89 970 7');
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'tnved-picker-desktop.png'), fullPage: true });
+  await dialog.getByRole('button', { name: 'Подставить код', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('8479899707');
+  await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Моя упаковочная машина');
+  await expect(page.getByLabel('ОКПД2', { exact: true })).toHaveValue('28.29.21');
+  await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
+  await expect(dialog.getByRole('textbox', { name: 'Код или название товара', exact: true })).toHaveValue('8479899707');
+  await dialog.getByRole('button', { name: 'Все разделы', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: /Машины и оборудование специального назначения/ })).toBeVisible();
+});
+
+test('TN VED search supports the product name and clears selection when the query changes', async ({ page }) => {
+  await tnVedFixtures(page);
+  await page.getByLabel('Наименование продукции', { exact: true }).fill('Упаковочная машина');
+  await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
+  const request = page.waitForRequest(request => request.url().includes('/tnved/search?query=') && new URL(request.url()).searchParams.get('query') === 'Упаковочная машина');
+  await dialog.getByRole('button', { name: 'Искать по названию продукции', exact: true }).click(); await request;
+  await dialog.getByRole('button', { name: /Машины и механические устройства прочие/ }).click();
+  await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeEnabled();
+  await dialog.getByRole('textbox', { name: 'Код или название товара', exact: true }).fill('84');
+  await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: /Машины и оборудование специального назначения/ }).click();
+  await dialog.getByRole('button', { name: 'На уровень выше в ТН ВЭД', exact: true }).click();
+  await expect(dialog.getByRole('textbox', { name: 'Код или название товара', exact: true })).toHaveValue('84');
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('');
+});
+
+test('TN VED distinguishes provider errors, empty results and a missing certificate', async ({ page }) => {
+  await tnVedFixtures(page);
+  let state = 'error';
+  await page.route('**/classifiers/tnved/search?**', route => state === 'error'
+    ? route.fulfill({ status: 502, json: { detail: 'ТКС временно недоступен.' } })
+    : route.fulfill({ json: { items: [], retrievedAt: '2026-10-29T10:00:00Z', fromCache: false, truncated: false } }));
+  await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
+  await dialog.getByRole('textbox', { name: 'Код или название товара', exact: true }).fill('насос');
+  await expect(dialog).toContainText('ТКС временно недоступен.');
+  await expect(dialog).not.toContainText('Ничего не найдено');
+  state = 'empty'; await dialog.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await expect(dialog).toContainText('Ничего не найдено');
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await page.route('**/classifiers/tnved/settings', route => route.fulfill({ json: { isConfigured: false, provider: 'ТКС' } }));
+  await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
+  await expect(dialog).toContainText('Справочник ТН ВЭД пока не подключён');
+  await expect(dialog.getByRole('textbox', { name: 'Код или название товара', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await page.getByLabel('Код ТН ВЭД', { exact: true }).fill('8479');
+  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('8479');
+});
+
+test('TN VED picker fits a mobile screen in dark mode', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await tnVedFixtures(page);
+  await page.getByRole('button', { name: 'Включить тёмную тему' }).click();
+  await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
+  await dialog.getByRole('button', { name: /Машины и оборудование специального назначения/ }).click();
+  await dialog.getByRole('button', { name: /Машины и механические устройства прочие/ }).click();
+  await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeInViewport({ ratio: 1 });
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  const bounds = (await dialog.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'tnved-picker-mobile-dark.png') });
+  await dialog.getByRole('button', { name: 'Подставить код', exact: true }).click();
+  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('8479899707');
+});
+
+test('TN VED ignores older search responses without applying a code', async ({ page }) => {
+  await tnVedFixtures(page);
+  let releaseOld!: () => void;
+  const oldResponse = new Promise<void>(resolve => { releaseOld = resolve; });
+  await page.route('**/classifiers/tnved/search?**', async route => {
+    const old = new URL(route.request().url()).searchParams.get('query') === 'старый';
+    if (old) await oldResponse;
+    await route.fulfill({ json: { items: [{ ...tnVedLeaf, text: old ? 'Старый результат' : 'Новый результат' }], retrievedAt: '2026-10-29T10:00:00Z', fromCache: false, truncated: false } });
+  });
+  await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
+  const oldRequest = page.waitForRequest(request => request.url().includes('/tnved/search') && new URL(request.url()).searchParams.get('query') === 'старый');
+  await dialog.getByRole('textbox', { name: 'Код или название товара', exact: true }).fill('старый'); await oldRequest;
+  await dialog.getByRole('textbox', { name: 'Код или название товара', exact: true }).fill('новый');
+  await expect(dialog.getByRole('button', { name: /Новый результат/ })).toBeVisible();
+  const oldFinished = page.waitForResponse(response => response.url().includes('/tnved/search') && new URL(response.url()).searchParams.get('query') === 'старый');
+  releaseOld(); await oldFinished;
+  await expect(dialog).not.toContainText('Старый результат');
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('');
+});
 
 test('login distinguishes an unavailable server from incorrect credentials and can recover', async ({ page }) => {
   await fixtures(page);
@@ -265,6 +431,7 @@ test('declaration archive can be read by a viewer who cannot archive documents',
   await page.getByRole('button', { name: 'Архив', exact: true }).click();
   await page.getByRole('link', { name: 'Оборудование для упаковки', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Открыть архив', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Восстановить/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'В архив', exact: true })).toHaveCount(0);
   expect(fixture.getStatusRequests()).toHaveLength(0);
 });
@@ -284,7 +451,8 @@ test('declaration archive returns to a valid page after the last row on a page i
 test('declaration selects a ChZ product with preview and preserves fields missing from NK', async ({ page }) => {
   const state = await fixtures(page);
   let lookupHeaders: Record<string, string> = {};
-  await page.route('**/catalog/products?*', route => {
+  await page.route('**/catalog/permits/by-product', route => route.fulfill({ json: { documents: [], errors: [], retrievedAtUtc: '2026-10-29T10:00:00Z' } }));
+  await page.route('**/catalog/products/lookup?*', route => {
     lookupHeaders = route.request().headers();
     return route.fulfill({ json: [{ gtin: '05011846021161', name: 'Масло моторное 5W-30', brand: 'Oil Brand', tnved: '2710198200', identification: 'Торговая марка: Oil Brand; Модель: Premium', okpd2: '', storageConditions: '', status: 'published' }] });
   });
@@ -315,7 +483,7 @@ test('declaration selects a ChZ product with preview and preserves fields missin
 test('declaration ChZ lookup distinguishes unavailable service from missing card and clears stale results', async ({ page }) => {
   await fixtures(page);
   let fail = true;
-  await page.route('**/catalog/products?*', route => fail
+  await page.route('**/catalog/products/lookup?*', route => fail
     ? route.fulfill({ status: 502, json: { message: 'Национальный каталог временно недоступен' } })
     : route.fulfill({ json: [] }));
   await login(page); await page.goto('/#/declarations/new');
@@ -335,26 +503,100 @@ test('declaration ChZ lookup distinguishes unavailable service from missing card
   await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('');
 });
 
+test('declaration selects a related NK declaration without INN and explicitly imports its fields and source', async ({ page }) => {
+  test.slow();
+  const state = await fixtures(page);
+  let permitRequest: Record<string, unknown> | undefined;
+  await page.route('**/catalog/products/lookup?*', route => route.fulfill({ json: [{ gtin: '05011846021161', name: 'Товар из карточки', brand: '', tnved: '2710', identification: '', okpd2: '', storageConditions: '', status: 'published' }] }));
+  const permit = { attributeId: 23557, number: 'ЕАЭС TEST-1', fromDate: '2026-10-01', toDate: '2027-10-01', productName: 'Масло из выбранной декларации', applicantName: 'Новый заявитель НК', manufacturerName: 'Завод НК', tnved: '2710198200', identification: 'Масло 5W-30, артикул 123', regulations: 'ТР ТС 030/2012', status: 'Действует', statusGroup: 1, active: null, updatedAt: null };
+  await page.route('**/catalog/permits/by-product', route => { permitRequest = route.request().postDataJSON(); return route.fulfill({ json: { documents: [permit, { ...permit, number: 'ЕАЭС TEST-2' }, { ...permit, attributeId: 23561, number: 'Сертификат OTHER' }], errors: [], retrievedAtUtc: '2026-10-29T10:00:00Z' } }); });
+  await login(page); await page.goto('/#/declarations/new');
+  await page.getByLabel('Название декларации').fill('Подстановка декларации НК');
+  await page.getByRole('button', { name: 'Включить тёмную тему' }).click();
+  await page.getByRole('tab', { name: 'Участники', exact: true }).click();
+  await page.getByLabel('Полное наименование', { exact: true }).first().fill('Старый заявитель');
+  await page.getByLabel('ИНН', { exact: true }).first().fill('7707083893');
+  await page.getByLabel('Телефон', { exact: true }).first().fill('Старый телефон');
+  await page.getByLabel('Полное наименование', { exact: true }).last().fill('Завод НК');
+  await page.getByLabel('Адрес', { exact: true }).last().fill('Сохранённый адрес завода');
+  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await page.getByRole('button', { name: 'Выбрать товар из ЧЗ', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Выбрать товар из ЧЗ', exact: true });
+  await dialog.getByLabel('GTIN для поиска в ЧЗ').fill('5011846021161'); await dialog.getByRole('button', { name: 'Найти в ЧЗ', exact: true }).click();
+  await dialog.getByRole('combobox', { name: /^Декларация из ЧЗ/ }).click();
+  await expect(page.getByRole('option', { name: /Сертификат OTHER/ })).toHaveCount(0);
+  await page.getByRole('option', { name: /ЕАЭС TEST-2/ }).click();
+  expect(permitRequest).toEqual({ gtin: '05011846021161' });
+  await expect(dialog.getByRole('region', { name: 'Предпросмотр декларации из ЧЗ' })).toContainText('Новый заявитель НК');
+  await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'declaration-related-nk-mobile.png'), animations: 'disabled', timeout: 8000 });
+  await dialog.getByRole('button', { name: 'Подставить товар и выбранную декларацию', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue(permit.productName);
+  await expect(page.getByRole('region', { name: 'Декларация-источник из НК' })).toContainText('ЕАЭС TEST-2');
+  await page.getByRole('tab', { name: 'Участники', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Полное наименование', exact: true }).first()).toHaveValue('Новый заявитель НК');
+  await expect(page.getByRole('textbox', { name: 'ИНН', exact: true }).first()).toHaveValue('');
+  await expect(page.getByRole('textbox', { name: 'Телефон', exact: true }).first()).toHaveValue('');
+  await expect(page.getByRole('textbox', { name: 'Адрес', exact: true }).last()).toHaveValue('Сохранённый адрес завода');
+  await page.getByRole('tab', { name: 'Сведения', exact: true }).click();
+  await expect(page.getByLabel('Дата принятия', { exact: true })).toHaveValue('2026-10-01');
+  await expect(page.getByLabel('Действует до', { exact: true })).toHaveValue('2027-10-01');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect.poll(() => state.getSaved()?.evidence).toMatchObject({ catalogDeclaration: { number: 'ЕАЭС TEST-2', ownerInn: null } });
+  await expect(page).toHaveURL(/declarations\/[a-f0-9-]+$/);
+  await expect(page.getByText('Есть изменения', { exact: true })).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' }); await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Декларация-источник из НК' })).toContainText('ЕАЭС TEST-2');
+});
+
+test('related NK declaration lookup distinguishes a failure from pending registry data and clears selection on GTIN changes', async ({ page }) => {
+  await fixtures(page); let fail = true;
+  await page.route('**/catalog/products/lookup?*', route => route.fulfill({ json: [{ gtin: '05011846021161', name: 'Масло', brand: '', tnved: '2710', identification: '', okpd2: '', storageConditions: '', status: 'published' }] }));
+  await page.route('**/catalog/permits/by-product', route => fail
+    ? route.fulfill({ status: 502, json: { message: 'Сведения НК временно недоступны' } })
+    : route.fulfill({ json: { documents: [], errors: [{ code: '18', number: 'ЕАЭС PENDING', message: 'Запрос направлен', registryRequestPending: true, statusGroup: 9 }], retrievedAtUtc: '2026-10-29T10:00:00Z' } }));
+  await login(page); await page.goto('/#/declarations/new'); await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await page.getByRole('button', { name: 'Выбрать товар из ЧЗ', exact: true }).click(); const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('GTIN для поиска в ЧЗ').fill('05011846021161'); await dialog.getByRole('button', { name: 'Найти в ЧЗ', exact: true }).click();
+  await expect(dialog).toContainText('Сведения НК временно недоступны');
+  await expect(dialog.getByRole('button', { name: 'Подставить данные товара', exact: true })).toBeEnabled();
+  await expect(dialog.getByRole('combobox', { name: 'Декларация из ЧЗ', exact: true })).toHaveCount(0);
+  fail = false; await dialog.getByRole('button', { name: 'Повторить загрузку деклараций', exact: true }).click();
+  await expect(dialog).toContainText('НК запросил сведения в государственном реестре');
+  await expect(dialog).not.toContainText('НК не вернул связанных деклараций');
+  await dialog.getByLabel('GTIN для поиска в ЧЗ').fill('04021799149677');
+  await expect(dialog.getByText('ЕАЭС PENDING', { exact: false })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Подставить данные товара', exact: true })).toHaveCount(0);
+});
+
 test('standalone NK card creation needs no declaration and does not save or link one', async ({ page }) => {
   const state = await fixtures(page);
   let externalCard: Record<string, unknown> | null = null;
-  let orderRequests = 0; let linkWrites = 0;
-  page.on('request', request => { if (request.url().includes('/orders/')) orderRequests++; if (request.url().includes('/marking/links') && request.method() === 'POST') linkWrites++; });
+  let orderRequests = 0; let linkWrites = 0; let externalWrites = 0;
+  page.on('request', request => { if (request.url().includes('/orders/')) orderRequests++; if (request.url().includes('/marking/links') && request.method() === 'POST') linkWrites++; if (/\/(cards|send)(\?|$)/.test(request.url()) && request.method() === 'POST') externalWrites++; });
   await page.route('**/marking/honest-sign/**', route => {
     const p = new URL(route.request().url()).pathname;
     if (p.endsWith('/session')) return route.fulfill({ json: { isAuthenticated: true, hasHonestSignSession: true, certificateThumbprint: 'A'.repeat(40), honestSignSessionExpiresAtUtc: '2099-01-01T00:00:00Z' } });
     if (p.endsWith('/connectivity')) return route.fulfill({ json: { isAvailable: true } });
+    if (p.endsWith('/catalog/product-groups')) return route.fulfill({ json: [{ code: 43, name: 'Моторные масла' }] });
+    if (p.endsWith('/catalog/products')) return route.fulfill({ json: { items: [], page: 1, pageSize: 50, total: 0, hasNextPage: false, fromDate: '2000-01-01', toDate: '2026-10-28' } });
     if (p.endsWith('/categories')) return route.fulfill({ json: [{ id: 100, name: 'Моторные масла', parentId: 0, level: 1, isActive: true }] });
     if (p.endsWith('/attributes')) return route.fulfill({ json: [] });
     if (p.endsWith('/submissions')) return route.fulfill({ json: { items: [], hasNextPage: false } });
-    if (p.endsWith('/autofluids/cards')) { externalCard = route.request().postDataJSON(); return route.fulfill({ json: { id: '88888888-8888-4888-8888-888888888888', gtin: '05011846021161', state: 'Accepted', feedId: '42', sendToModeration: false, createdAtUtc: '2026-10-21T10:00:00Z' } }); }
-    if (p.endsWith('/status')) return route.fulfill({ json: { submissionId: '88888888-8888-4888-8888-888888888888', feedId: '42', submissionState: 'Accepted', status: 'Received', receivedAtUtc: null, updatedAtUtc: null, errors: [] } });
-    if (p.endsWith('/card')) return route.fulfill({ json: { submissionId: '88888888-8888-4888-8888-888888888888', gtin: '05011846021161', goodId: 42, status: 'draft', detailedStatuses: ['draft'], isSigned: false, canOrderCodes: false, canIntroduce: false, canEdit: false, canModerate: false, canSign: false, draft: null, blockingOperation: null } });
+    if (p.endsWith('/drafts')) { externalCard = route.request().postDataJSON(); return route.fulfill({ json: { id: '88888888-8888-4888-8888-888888888888', gtin: '05011846021161', state: 'Draft', feedId: null, draftVersion: 'version-1', sendToModeration: false, createdAtUtc: '2026-10-28T10:00:00Z' } }); }
+    if (p.endsWith('/status')) return route.fulfill({ json: { submissionId: '88888888-8888-4888-8888-888888888888', feedId: null, submissionState: 'Draft', status: 'Draft', receivedAtUtc: null, updatedAtUtc: null, errors: [] } });
+    if (p.endsWith('/card')) return route.fulfill({ json: { submissionId: '88888888-8888-4888-8888-888888888888', gtin: '05011846021161', goodId: 0, status: 'draft', detailedStatuses: ['draft'], isSigned: false, canOrderCodes: false, canIntroduce: false, canEdit: true, canModerate: false, canSign: false, draft: externalCard, blockingOperation: null } });
     return route.fulfill({ status: 404, json: { message: 'Unconfigured catalog test route' } });
   });
   await login(page); await page.getByRole('link', { name: 'Карточки ЧЗ', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Карточки ЧЗ', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Включить тёмную тему' }).click();
+  await page.getByRole('button', { name: 'Добавить новый товар', exact: true }).first().click();
   await expect(page.locator('#catalog-name')).toHaveValue('');
+  await page.locator('#catalog-productGroup').selectOption('43');
   await expect(page.getByLabel('Название декларации')).toHaveCount(0);
   expect(externalCard).toBeNull();
   await page.locator('#catalog-name').fill('Новое масло Premium');
@@ -364,15 +606,15 @@ test('standalone NK card creation needs no declaration and does not save or link
   await page.getByRole('button', { name: 'Подобрать категории' }).click();
   await page.getByRole('combobox', { name: 'Категория НК *', exact: true }).selectOption('100');
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'standalone-catalog.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Создать черновик', exact: true }).click();
+  await page.getByRole('button', { name: 'Сохранить в CertFlow', exact: true }).click();
   await expect.poll(() => externalCard).toMatchObject({ name: 'Новое масло Premium', gtin: '05011846021161', categoryId: 100, brand: 'Oil Brand', sendToModeration: false });
-  await expect(page.locator('main')).toContainText('42');
-  expect(state.getSaved()).toBeNull(); expect(linkWrites).toBe(0); expect(orderRequests).toBe(0);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText('Сохранён в CertFlow');
+  expect(state.getSaved()).toBeNull(); expect(linkWrites).toBe(0); expect(orderRequests).toBe(0); expect(externalWrites).toBe(0);
   await expect(page).toHaveURL(/#\/catalog$/);
-  await page.getByRole('button', { name: 'Включить тёмную тему' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator('.marking-surface')).toHaveClass(/dark/);
-  await expect(page.locator('#catalog-name')).toHaveValue('Новое масло Premium');
+  await expect(page.getByRole('dialog')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'standalone-catalog-dark-mobile.png'), animations: 'disabled', timeout: 8000 });
 });
@@ -552,6 +794,47 @@ test('company switch during certificate signing prevents authentication submissi
   expect(submissions).toBe(0);
 });
 
+test('NK permit lookup preserves pending registry status and supports owner GTIN lookup', async ({ page }) => {
+  const state = await fixtures(page); const searches: { path: string; body: unknown }[] = [];
+  let failLookup = false;
+  await page.route('**/marking/honest-sign/**', route => {
+    const p = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ json: body });
+    if (p.endsWith('/session')) return json({ isAuthenticated: true, hasHonestSignSession: true, certificateThumbprint: 'A'.repeat(40), honestSignSessionExpiresAtUtc: '2099-01-01T00:00:00Z' });
+    if (p.endsWith('/catalog/product-groups')) return json([{ code: 43, name: 'Моторные масла' }]);
+    if (p.endsWith('/catalog/products')) return json({ items: [], page: 1, pageSize: 50, total: 0, hasNextPage: false, fromDate: '2000-01-01', toDate: '2026-10-28' });
+    if (p.includes('/catalog/permits/')) {
+      searches.push({ path: p, body: route.request().postDataJSON() });
+      if (failLookup) return route.fulfill({ status: 502, json: { message: 'НК временно недоступен' } });
+      return json({ documents: p.endsWith('/by-product') ? [{ attributeId: 23561, number: 'Сертификат TEST', fromDate: '2026-10-28', toDate: null, productName: 'Масло', applicantName: 'ООО Заявитель', manufacturerName: 'Завод TEST', tnved: '2710', identification: null, regulations: null, status: 'Действует', statusGroup: 1, active: null, updatedAt: null }] : [], errors: p.endsWith('/by-document') ? [{ code: '18', number: 'ЕАЭС TEST', message: 'Запрос направлен', registryRequestPending: true, statusGroup: 9 }] : [], retrievedAtUtc: '2026-10-28T12:00:00Z' });
+    }
+    return json({});
+  });
+  await login(page); await page.getByRole('link', { name: 'Карточки ЧЗ', exact: true }).click();
+  await page.getByRole('tab', { name: 'Разрешительные документы', exact: true }).click();
+  expect(searches).toHaveLength(0);
+  await page.getByLabel('Номер документа', { exact: true }).fill('ЕАЭС TEST');
+  await page.getByLabel('Дата регистрации', { exact: true }).fill('2026-10-28');
+  await page.getByRole('button', { name: 'Проверить в НК', exact: true }).click();
+  await expect(page.getByText(/НК запросил сведения в государственном реестре/)).toBeVisible();
+  expect(searches[0].body).toEqual({ documents: [{ attributeId: 23557, number: 'ЕАЭС TEST', date: '2026-10-28' }] });
+  await page.getByLabel('Способ поиска').selectOption('product');
+  await page.getByLabel('GTIN', { exact: true }).fill('05011846021161');
+  await page.getByRole('button', { name: 'Проверить в НК', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Сертификат соответствия: Сертификат TEST' })).toBeVisible();
+  await expect(page.getByText('Завод TEST', { exact: true })).toBeVisible();
+  expect(searches[1].body).toEqual({ gtin: '05011846021161' });
+  await page.getByLabel('ИНН владельца карточки').fill('7707083893');
+  await page.getByRole('button', { name: 'Проверить в НК', exact: true }).click();
+  await expect.poll(() => searches.length).toBe(3);
+  expect(searches[2].body).toEqual({ gtin: '05011846021161', inn: '7707083893' });
+  failLookup = true;
+  await page.getByRole('button', { name: 'Проверить в НК', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Разрешительные документы', exact: true }).getByRole('alert')).toContainText('НК временно недоступен');
+  await expect(page.getByText('Завод TEST', { exact: true })).toHaveCount(0);
+  expect(state.getSaved()).toBeNull();
+});
+
 test('motor oil catalog prefills product and declaration permit using loaded category attributes', async ({ page }) => {
   await fixtures(page, false, { registrationNumber: 'ЕАЭС N TEST-123', adoptedAt: '2026-10-15', product: { name: 'Масло 5W-30', gtin: '05011846021161', tnVed: '2710198200' } });
   await page.route('**/marking/honest-sign/**', route => {
@@ -562,21 +845,26 @@ test('motor oil catalog prefills product and declaration permit using loaded cat
     if (p.endsWith('/connectivity')) return json({ isAvailable: true });
     if (p.endsWith('/orders/search')) return json({ items: [], totalItems: 0 });
     if (p.endsWith('/catalog/submissions')) return json({ items: [], hasNextPage: false });
+    if (p.endsWith('/catalog/product-groups')) return json([{ code: 43, name: 'Моторные масла' }]);
+    if (p.endsWith('/catalog/products')) return json({ items: [], page: 1, pageSize: 50, total: 0, hasNextPage: false, fromDate: '2000-01-01', toDate: '2026-10-28' });
     if (p.endsWith('/categories')) return json([{ id: 100, name: 'Моторные масла', parentId: 0, level: 1, isActive: true }]);
-    if (p.endsWith('/attributes')) return json([{ id: 23555, name: 'Декларация о соответствии', groupName: 'Разрешительные документы', fieldType: 'string', requirement: 'o', isMultiple: false, multiplicityType: null, presetOnly: false, options: [], valueTypes: [], dependencies: [], isFirstLayer: true, isSecondLayer: false, hasUnsupportedDictionary: false }]);
+    if (p.endsWith('/attributes')) return json([{ id: 23557, name: 'Декларация о соответствии', groupName: 'Разрешительные документы', fieldType: 'string', requirement: 'o', isMultiple: false, multiplicityType: null, presetOnly: false, options: [], valueTypes: [], dependencies: [], isFirstLayer: true, isSecondLayer: false, hasUnsupportedDictionary: false }]);
     return json({});
   });
   await login(page); await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click();
   await page.getByRole('combobox', { name: 'Декларация для товара' }).click(); await page.getByRole('option', { name: /CF-26-100/ }).click();
   await page.getByRole('tab', { name: 'Честный знак', exact: true }).click(); await page.getByRole('button', { name: 'Национальный каталог', exact: true }).click();
+  await page.getByRole('button', { name: 'Добавить новый товар', exact: true }).first().click();
+  await page.locator('#catalog-productGroup').selectOption('43');
   await page.getByRole('button', { name: 'Подставить данные декларации' }).click();
   await expect(page.getByLabel('Полное наименование товара *', { exact: true })).toHaveValue('Масло 5W-30');
   await page.getByRole('button', { name: 'Подобрать категории' }).click();
   await page.getByRole('combobox', { name: 'Категория НК *', exact: true }).selectOption('100');
+  await page.getByRole('button', { name: /^Разрешительные документы/ }).click();
   await expect(page.getByRole('group', { name: 'Декларация о соответствии' })).toBeVisible();
   await page.getByRole('button', { name: 'Подставить данные декларации' }).click();
-  await expect(page.locator('#catalog-attribute-23555-0')).toHaveValue('ЕАЭС N TEST-123');
-  await expect(page.locator('#catalog-attribute-23555-0-date')).toHaveValue('2026-10-15');
+  await expect(page.locator('#catalog-attribute-23557-0')).toHaveValue('ЕАЭС N TEST-123');
+  await expect(page.locator('#catalog-attribute-23557-0-date')).toHaveValue('2026-10-15');
   await expect(page.locator('#catalog-gtin')).toHaveValue('05011846021161');
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'marking-catalog-declaration.png'), fullPage: true });
 });
@@ -1362,7 +1650,7 @@ test.describe('responsive layout', () => {
     const fixture = await fixtures(page, false, {}, 'Admin', false, { displayName, firmName: 'Международная компания по сертификации и испытаниям оборудования' });
     fixture.seedOrganization({ name: 'ОрганизацияСОченьДлиннымНаименованием'.repeat(3), address: 'Республика Беларусь, Минск, улица Испытательная, административный корпус 14', country: 'Беларусь', inn: '7707083893' });
     const longName = 'ИспытательнаяЛабораторияСпециальногоОборудования'.repeat(2);
-    await page.route(/\/api\/firms\/[^/]+\/laboratories\/?$/, route => route.fulfill({ json: [{ id: '88888888-8888-4888-8888-888888888888', name: longName, accreditationNumber: 'RA.RU.21.АБ12345678901234567890', address: 'Минск, испытательный центр оборудования и промышленной продукции, корпус 22', details: { type: 'Accredited', country: 'Беларусь' } }] }));
+    await page.route(/\/api\/firms\/[^/]+\/laboratories\/search\?/, route => route.fulfill({ json: { items: [{ id: '88888888-8888-4888-8888-888888888888', firmId: '11111111-1111-4111-8111-111111111111', name: longName, accreditationNumber: 'RA.RU.21.АБ12345678901234567890', address: 'Минск, испытательный центр оборудования и промышленной продукции, корпус 22', details: { type: 'Accredited', country: 'Беларусь' } }], total: 1, page: 1, pageSize: 25 } }));
     await page.route(/\/api\/firms\/[^/]+\/team\/?$/, route => route.fulfill({ json: [{ id: '99999999-9999-4999-8999-999999999999', displayName, userName: 'certification.specialist.with.a.long.login', email: 'international.certification.department.long.address@example.com', role: 'Admin' }] }));
     await login(page, displayName);
     const failures: unknown[] = [];

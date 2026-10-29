@@ -1,6 +1,11 @@
 import { apiClient, toHttpError } from "@marking/lib/honest-sign/httpClient";
 import i18n from "@marking/src/i18n";
 
+import type {
+    CreateUtilisationBatchRequest,
+    UtilisationBatch,
+    UtilisationBatchesPage,
+} from "@marking/lib/honest-sign/utilisationBatch";
 import type { UtilisationReportPayload } from "@marking/lib/honest-sign/utilisationReport";
 
 export type SubmitUtilisationReportPayload = UtilisationReportPayload;
@@ -101,6 +106,92 @@ function readErrorMessage(body: unknown): string {
 }
 
 export const documentsApiService = {
+    async listUtilisationBatches(
+        page: number,
+        signal?: AbortSignal,
+    ): Promise<UtilisationBatchesPage> {
+        try {
+            return (
+                await apiClient.get<UtilisationBatchesPage>(
+                    `${SUBMIT_UTILISATION_REPORT_URL}/batches`,
+                    { params: { page }, signal },
+                )
+            ).data;
+        } catch (error) {
+            throw toHttpError(
+                i18n.t("honestSign.documents.batch.errors.load"),
+                error,
+            );
+        }
+    },
+    async getUtilisationBatch(
+        id: string,
+        signal?: AbortSignal,
+    ): Promise<UtilisationBatch> {
+        try {
+            return (
+                await apiClient.get<UtilisationBatch>(
+                    `${SUBMIT_UTILISATION_REPORT_URL}/batches/${encodeURIComponent(id)}`,
+                    { signal },
+                )
+            ).data;
+        } catch (error) {
+            throw toHttpError(
+                i18n.t("honestSign.documents.batch.errors.load"),
+                error,
+            );
+        }
+    },
+    async createUtilisationBatch(
+        request: CreateUtilisationBatchRequest,
+    ): Promise<UtilisationBatch> {
+        try {
+            return (
+                await apiClient.post<UtilisationBatch>(
+                    `${SUBMIT_UTILISATION_REPORT_URL}/batches`,
+                    request,
+                )
+            ).data;
+        } catch (error) {
+            throw toHttpError(
+                i18n.t("honestSign.documents.batch.errors.store"),
+                error,
+            );
+        }
+    },
+    async processUtilisationBatchNext(id: string): Promise<UtilisationBatch> {
+        try {
+            return (
+                await apiClient.post<UtilisationBatch>(
+                    `${SUBMIT_UTILISATION_REPORT_URL}/batches/${encodeURIComponent(id)}/process-next`,
+                    {},
+                )
+            ).data;
+        } catch (error) {
+            throw toHttpError(
+                i18n.t("honestSign.documents.batch.errors.process"),
+                error,
+            );
+        }
+    },
+    async skipUtilisationBatchItem(
+        id: string,
+        itemId: string,
+    ): Promise<UtilisationBatch> {
+        try {
+            return (
+                await apiClient.post<UtilisationBatch>(
+                    `${SUBMIT_UTILISATION_REPORT_URL}/batches/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/skip`,
+                    {},
+                )
+            ).data;
+        } catch (error) {
+            throw toHttpError(
+                i18n.t("honestSign.documents.batch.errors.skip"),
+                error,
+            );
+        }
+    },
     async listUtilisationDocuments(
         page: number,
         search: string,

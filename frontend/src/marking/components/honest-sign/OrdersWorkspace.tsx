@@ -115,12 +115,16 @@ export function OrdersWorkspace({ app }: OrdersWorkspaceProps) {
                 gtin={app.getCodesGtin}
                 quantity={app.getCodesQuantity}
                 gettingCodes={app.gettingCodes}
+                uploadingToConverter={app.uploadingOrderCodesToConverter}
+                preparationMessage={app.converterPreparationMessage}
+                uploadErrorMessage={app.uploadOrderCodesToConverterErrorMessage}
                 errorMessage={app.getCodesErrorMessage}
                 result={app.getCodesResult}
                 onClose={app.closeGetCodesModal}
                 onGtinChange={app.setGetCodesGtin}
                 onQuantityChange={app.setGetCodesQuantity}
                 onSubmit={app.handleGetCodes}
+                onUploadToConverter={app.handleUploadOrderCodesToConverterModal}
             />
         </div>
     );

@@ -1,3 +1,4 @@
+import { CodesCheckWorkspace } from "@marking/components/honest-sign/CodesCheckWorkspace";
 import { DocumentsCenter } from "@marking/components/honest-sign/DocumentsCenter";
 import { NationalCatalogWorkspace } from "@marking/components/honest-sign/NationalCatalogWorkspace";
 import { OrdersWorkspace } from "@marking/components/honest-sign/OrdersWorkspace";
@@ -22,6 +23,15 @@ export function AuthorizedAppContent({
                 key={companyId}
                 companyId={companyId}
                 selectedThumbprint={app.selectedThumbprint}
+            />
+        );
+    }
+    if (app.activeTopTab === "codes-check") {
+        return (
+            <CodesCheckWorkspace
+                key={companyId}
+                companyId={companyId}
+                productGroups={app.productGroups}
             />
         );
     }

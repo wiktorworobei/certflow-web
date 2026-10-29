@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { DmKodApiTools } from "@marking/components/dmkod/dmkod-api-tools";
+import { DmKodAggregationWorkspace } from "@marking/components/dmkod/dmkod-aggregation-workspace";
 import { DmKodOrderActivity } from "@marking/components/dmkod/dmkod-order-activity";
 import { DmKodOrderOperations } from "@marking/components/dmkod/dmkod-order-operations";
 import { DmKodReports } from "@marking/components/dmkod/dmkod-reports";
@@ -530,11 +530,12 @@ export function DmKodOrderWorkspace({
                                         }
                                     />
                                 ) : (
-                                    <DmKodApiTools
+                                    <DmKodAggregationWorkspace
                                         companyId={companyId}
-                                        module="marking"
-                                        category={markingCategory}
                                         orderId={orderId}
+                                        foreignOrder={
+                                            order.external || !order.owner
+                                        }
                                         session={session}
                                         enabled={
                                             enabled &&

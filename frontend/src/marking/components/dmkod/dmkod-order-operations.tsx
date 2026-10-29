@@ -58,6 +58,11 @@ import {
     workflowTaskOutcome,
     workflowNeedsConfirmation,
 } from "@marking/lib/dmkod-workflow-policy";
+import {
+    dmKodWorkflowRecoveryOptions,
+    isDmKodWorkflowReceiptPending,
+    isDmKodWorkflowOutcomeUncertain,
+} from "@marking/lib/dmkod-workflow-recovery";
 import { dmKodOperations } from "@marking/lib/dmkod-workflow-types";
 import { cryptoProSignatureService } from "@marking/lib/honest-sign/cryptoProSignatureService";
 import { downloadInBrowser } from "@marking/lib/save-file";
@@ -147,6 +152,10 @@ export function DmKodOrderOperations({
     > | null>(null);
     const [reconcile, setReconcile] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [uncertainError, setUncertainError] = useState<string | null>(null);
+    const [submittingRequestId, setSubmittingRequestId] = useState<
+        string | null
+    >(null);
     const [signingRetryId, setSigningRetryId] = useState<number | null>(null);
     const [signingData, setSigningData] =
         useState<DmKodRequestSigningData | null>(null);
@@ -183,14 +192,7 @@ export function DmKodOrderOperations({
                 : false,
     });
     const recovery = useQuery({
-        queryKey: [
-            ...dmKodKeys.scoped(scope),
-            "workflow-receipt",
-            intent?.requestId,
-        ],
-        queryFn: () => dmKodWorkflowApi.receipt(scope, intent!.requestId),
-        enabled: !!intent && !intent.taskId,
-        retry: false,
+        ...dmKodWorkflowRecoveryOptions(scope, intent, submittingRequestId),
     });
     const task = useQuery({
         queryKey: [...dmKodKeys.scoped(scope), "workflow-task", intent?.taskId],
@@ -292,9 +294,11 @@ export function DmKodOrderOperations({
         values: Record<string, string>,
     ) => {
         const requestId = crypto.randomUUID();
+        setSubmittingRequestId(requestId);
         setOperation(selectedOperation);
         remember({ requestId, taskId: null, operation: selectedOperation });
         setError(null);
+        setUncertainError(null);
         setConfirmValues(null);
         setActionOpen(false);
         try {
@@ -309,7 +313,17 @@ export function DmKodOrderOperations({
                 operation: selectedOperation,
             });
         } catch (value) {
-            setError(readError(value));
+            // A lost response does not establish whether the provider accepted
+            // the operation. Keep its UUID and recover through reads only.
+            if (isDmKodWorkflowOutcomeUncertain(value))
+                setUncertainError(
+                    isAxiosError(value) && value.response
+                        ? readError(value)
+                        : null,
+                );
+            else setError(readError(value));
+        } finally {
+            setSubmittingRequestId(null);
         }
     };
     const submitOperation = async () => {
@@ -760,8 +774,12 @@ export function DmKodOrderOperations({
                 </p>
             ) : null}
             {(error && !signingData) ||
-            task.isError ||
-            (recovery.isError && !intent?.taskId && !run.isPending) ? (
+            (task.isError && !isDmKodWorkflowOutcomeUncertain(task.error)) ||
+            (recovery.isError &&
+                !intent?.taskId &&
+                !run.isPending &&
+                !isDmKodWorkflowReceiptPending(recovery.error) &&
+                !isDmKodWorkflowOutcomeUncertain(recovery.error)) ? (
                 <Alert variant="destructive">
                     <AlertDescription>
                         {error || readError(task.error || recovery.error)}
@@ -804,6 +822,26 @@ export function DmKodOrderOperations({
                         <p className="font-mono text-xs break-all">
                             {intent.requestId}
                         </p>
+                    ) : null}
+                    {!intent.taskId && !run.isPending ? (
+                        <div className="space-y-1 text-sm">
+                            <p>
+                                {t(
+                                    recovery.isFetching
+                                        ? "dmkod.workflow.checkingReceipt"
+                                        : "dmkod.workflow.receiptPending",
+                                )}
+                            </p>
+                            {uncertainError ? (
+                                <p>{uncertainError}</p>
+                            ) : isDmKodWorkflowOutcomeUncertain(
+                                  recovery.error,
+                              ) &&
+                              isAxiosError(recovery.error) &&
+                              recovery.error.response ? (
+                                <p>{readError(recovery.error)}</p>
+                            ) : null}
+                        </div>
                     ) : null}
                     {synchronization === "poas" && task.data ? (
                         <p className="text-sm">

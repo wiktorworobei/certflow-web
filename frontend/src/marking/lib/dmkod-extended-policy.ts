@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseDmKodAggregationRangesJson } from "@marking/lib/dmkod-aggregation-json";
 
 import type {
     DmKodAction,
@@ -35,6 +36,7 @@ export const moduleReads: Record<DmKodModule, DmKodReadMethod[]> = {
 export const moduleActions: Record<DmKodModule, DmKodAction[]> = {
     marking: [
         "PushValidation",
+        "PushAggregationRanges",
         "PushAggregation",
         "InspectContainers",
         "GenerateAggregation",
@@ -101,6 +103,7 @@ export const extendedFields = [
     "companyRole",
     "validation",
     "aggregation",
+    "aggregationRanges",
     "containers",
     "search",
     "dateFrom",
@@ -158,6 +161,8 @@ export const actionFields = (action: DmKodAction): ExtendedField[] => {
             return ["validation"];
         case "PushAggregation":
             return ["aggregation"];
+        case "PushAggregationRanges":
+            return ["id", "aggregationRanges"];
         case "InspectContainers":
         case "GenerateAggregation":
             return ["containers"];
@@ -232,6 +237,22 @@ const company = z.strictObject({
 });
 const structured = { settings, validation, aggregation, company };
 export type ExtendedValues = Record<ExtendedField, string>;
+export type DmKodActionConfirmation = Readonly<{
+    action: DmKodAction;
+    values: ExtendedValues;
+}>;
+export function freezeDmKodActionConfirmation(
+    action: DmKodAction,
+    values: ExtendedValues,
+): DmKodActionConfirmation {
+    return Object.freeze({ action, values: Object.freeze({ ...values }) });
+}
+export function dmKodConfirmationStillAvailable(
+    confirmation: DmKodActionConfirmation,
+    choices: readonly DmKodAction[],
+) {
+    return choices.includes(confirmation.action);
+}
 export const extendedDefaults: ExtendedValues = Object.fromEntries(
     extendedFields.map((f) => [
         f,
@@ -252,7 +273,9 @@ export function extendedFormSchema(
             const value = values[field];
             if (optional.includes(field) && !value.trim()) continue;
             try {
-                if (field in structured)
+                if (field === "aggregationRanges")
+                    parseDmKodAggregationRangesJson(value, Number(values.id));
+                else if (field in structured)
                     structured[field as keyof typeof structured].parse(
                         JSON.parse(value),
                     );
@@ -360,7 +383,13 @@ export function buildExtendedAction(
             request[
                 f as "username" | "nickname" | "email" | "role" | "access"
             ] = values[f];
-        if (f === "id") request.id = Number(values.id);
+        if (f === "id" && action !== "PushAggregationRanges")
+            request.id = Number(values.id);
+        if (f === "aggregationRanges")
+            request.aggregationRanges = parseDmKodAggregationRangesJson(
+                values.aggregationRanges,
+                Number(values.id),
+            );
         if (f === "settings")
             request.settings = settings.parse(JSON.parse(values.settings));
         if (f === "validation")

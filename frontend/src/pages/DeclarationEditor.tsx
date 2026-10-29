@@ -15,11 +15,13 @@ import { DescriptionOutlined } from '@mui/icons-material';
 import { CheckCircleRounded } from '@mui/icons-material';
 import { RadioButtonUncheckedRounded } from '@mui/icons-material';
 import { KeyboardArrowDownRounded } from '@mui/icons-material';
-import { ArchiveOutlined } from '@mui/icons-material';
+import { ArchiveOutlined, UnarchiveOutlined } from '@mui/icons-material';
 import { ArchiveDeclarationDialog } from '../ArchiveDeclarationDialog';
+import { ArchiveSelectionDialog, type ArchiveSelection } from '../ArchiveSelectionDialog';
 import { api, download } from '../store';
 import { OrganizationLookup } from '../OrganizationLookup';
 import { DeclarationProductCatalog } from '../DeclarationProductCatalog';
+import { DeclarationTnVedField } from '../DeclarationTnVedField';
 import { ErrorState, Loading, Section, StatusChip, useNotify, useWorkspace } from '../common';
 import { dateTime, emptyDeclaration, errorMessage, statusLabels, type Declaration, type Party, type Product, type SaveDeclaration, type Status } from '../types';
 
@@ -87,6 +89,8 @@ export function DeclarationEditor() {
   useEffect(() => { const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty.current) event.preventDefault(); }; window.addEventListener('beforeunload', beforeUnload); return () => window.removeEventListener('beforeunload', beforeUnload); }, []);
   const [tab, setTab] = useState(0); const [serverError, setServerError] = useState('');
   const [statusMenu, setStatusMenu] = useState<HTMLElement | null>(null); const [statusTarget, setStatusTarget] = useState<Status | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<ArchiveSelection | null>(null);
+  useEffect(() => { setRestoreTarget(null); }, [firmId, id]);
   const [reason, setReason] = useState(''); const [registrationNumber, setRegistrationNumber] = useState(''); const [registryUrl, setRegistryUrl] = useState(''); const [statusError, setStatusError] = useState('');
   const readOnly = !canEdit || !!document && document.status !== 'Draft' && document.status !== 'InReview';
   const values = watch();
@@ -125,6 +129,7 @@ export function DeclarationEditor() {
       {document && <Button variant="outlined" disabled={isDirty} onClick={() => void exportDocument('pdf')}>PDF</Button>}
       {document && <Button variant="outlined" disabled={isDirty} onClick={() => void exportDocument('zip')}>Комплект ZIP</Button>}
       {document && canEdit && document.status !== 'Archived' && <Tooltip title={isDirty ? 'Сначала сохраните изменения' : 'Убрать из рабочего списка, сохранив документ'}><span><Button variant="outlined" startIcon={<ArchiveOutlined/>} disabled={isDirty || saving || changing} onClick={() => setStatusTarget('Archived')}>В архив</Button></span></Tooltip>}
+      {document && canEdit && document.status === 'Archived' && <Button variant="contained" startIcon={<UnarchiveOutlined/>} disabled={saving || changing} onClick={() => setRestoreTarget({ id: document.id, revision: document.revision, title: document.title })}>Восстановить из архива</Button>}
       {!readOnly && <Button variant="contained" startIcon={<SaveOutlined/>} disabled={saving} onClick={() => void handleSubmit(data => submit(data), () => { setTab(0); notify('Проверьте обязательные поля', 'error'); })()}>{saving ? 'Сохраняем…' : 'Сохранить'}</Button>}
     </div></div>
     {serverError && <Alert severity="error" onClose={() => setServerError('')} sx={{ mb: 2 }}>{serverError}</Alert>}
@@ -139,9 +144,9 @@ export function DeclarationEditor() {
       </Grid></Section>{document?.registrationNumber && <Section title="Регистрационные сведения"><Typography sx={{ fontWeight: 600 }}>{document.registrationNumber}</Typography>{document.registryUrl && <Button component="a" href={document.registryUrl} target="_blank" rel="noopener noreferrer" sx={{ mt: 1 }}>Открыть запись в реестре ↗</Button>}<Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>Сведения внесены вручную. Автоматическая проверка в ФГИС не выполнялась.</Typography></Section>}</>}
       {tab === 1 && <><PartyPanel side="applicant" label="Заявитель" readOnly={readOnly}/><PartyPanel side="manufacturer" label="Изготовитель" readOnly={readOnly}/></>}
       {tab === 2 && <Section title="Сведения о продукции" subtitle="Опишите продукцию и её идентификационные признаки."><Grid container spacing={2.5}>
-        <Grid item xs={12}><DeclarationProductCatalog readOnly={readOnly}/></Grid>
+        <Grid item xs={12}><DeclarationProductCatalog key={`${firmId}:${id ?? 'new'}`} readOnly={readOnly}/></Grid>
         <Grid item xs={12}><Field name="product.name" label="Наименование продукции" multiline disabled={readOnly}/></Grid><Grid item xs={12}><Field name="product.identification" label="Модель, марка, артикул и другие признаки" multiline disabled={readOnly}/></Grid>
-        <Grid item xs={12} sm={4}><Field name="product.tnVed" label="Код ТН ВЭД" helper="Проверяется формат: 4–10 цифр" disabled={readOnly}/></Grid><Grid item xs={12} sm={4}><Field name="product.okpd2" label="ОКПД2" disabled={readOnly}/></Grid><Grid item xs={12} sm={4}><Field name="product.gtin" label="GTIN" disabled={readOnly}/></Grid>
+        <Grid item xs={12} sm={4}><DeclarationTnVedField key={firmId} readOnly={readOnly}/></Grid><Grid item xs={12} sm={4}><Field name="product.okpd2" label="ОКПД2" disabled={readOnly}/></Grid><Grid item xs={12} sm={4}><Field name="product.gtin" label="GTIN" disabled={readOnly}/></Grid>
         <Grid item xs={12} sm={6}><Controller control={control} name="product.productionType" render={({ field }) => <TextField {...field} select label="Объект декларирования" disabled={readOnly}><MenuItem value="Serial">Серийный выпуск</MenuItem><MenuItem value="Batch">Партия</MenuItem><MenuItem value="Single">Единичное изделие</MenuItem></TextField>}/></Grid><Grid item xs={12} sm={6}><Field name="product.batchDetails" label="Сведения о партии / изделии" disabled={readOnly}/></Grid>
         <Grid item xs={12}><Field name="product.storageConditions" label="Условия хранения и эксплуатации" multiline disabled={readOnly}/></Grid>
       </Grid></Section>}
@@ -151,6 +156,7 @@ export function DeclarationEditor() {
     </Paper><div className="editor-hint"><DescriptionOutlined fontSize="small"/><p>Данные участников сохраняются в документе. Изменение справочника не переписывает ранее оформленные декларации.</p></div></aside></div></FormProvider>
     <Menu anchorEl={statusMenu} open={!!statusMenu} onClose={() => setStatusMenu(null)}>{document && transitions[document.status].map(status => <MenuItem key={status} onClick={() => { setStatusTarget(status); setStatusMenu(null); setReason(''); setRegistrationNumber(''); setRegistryUrl(''); setStatusError(''); }}>{status === 'Registered' && document.status === 'Ready' ? 'Учесть регистрацию' : status === 'Archived' ? 'В архив' : statusLabels[status]}</MenuItem>)}</Menu>
     {document && statusTarget === 'Archived' && <ArchiveDeclarationDialog declaration={document} onClose={() => setStatusTarget(null)} onArchived={result => reset(result)}/>}
+    {restoreTarget && <ArchiveSelectionDialog key={`${firmId}:${id}`} entity="declarations" items={[restoreTarget]} action="restore" onClose={() => setRestoreTarget(null)} onComplete={() => void refetch()}/>}
     <Dialog open={!!statusTarget && statusTarget !== 'Archived'} onClose={() => !changing && setStatusTarget(null)} maxWidth="sm" fullWidth><DialogTitle>{statusTarget === 'Registered' && document?.status === 'Ready' ? 'Учесть регистрацию документа' : statusTarget ? statusLabels[statusTarget] : ''}</DialogTitle><DialogContent><Typography color="text.secondary" sx={{ mb: 2 }}>Изменение будет записано в историю декларации.</Typography>
       {statusTarget === 'Registered' && document?.status === 'Ready' && <><Alert severity="info" sx={{ mb: 2 }}>Укажите сведения уже зарегистрированного документа. Это действие не отправляет декларацию в ФГИС и не подтверждает регистрацию автоматически.</Alert><TextField label="Регистрационный номер" value={registrationNumber} onChange={e => setRegistrationNumber(e.target.value)} sx={{ mb: 2 }} required/><TextField label="HTTPS-ссылка на запись в реестре" value={registryUrl} onChange={e => setRegistryUrl(e.target.value)} sx={{ mb: 2 }}/></>}
       <TextField multiline minRows={3} label={statusTarget === 'Revoked' || statusTarget === 'Suspended' ? 'Причина (обязательно)' : 'Комментарий'} value={reason} onChange={e => setReason(e.target.value)} inputProps={{ maxLength: 2000 }}/>{statusError && <Alert severity="error" sx={{ mt: 2 }}>{statusError}</Alert>}

@@ -21,7 +21,7 @@ type HonestSignAppProps = {
 export function HonestSignApp({ companyId, catalogOnly = false }: HonestSignAppProps) {
     return (
         <IntegrationSurface integration="honestSign">
-            <HonestSignWorkspace companyId={companyId} catalogOnly={catalogOnly}/>
+            <HonestSignWorkspace key={companyId} companyId={companyId} catalogOnly={catalogOnly}/>
         </IntegrationSurface>
     );
 }
@@ -120,7 +120,9 @@ function HonestSignWorkspace({ companyId, catalogOnly = false }: HonestSignAppPr
                 </Button>
             </div>
             {!catalogOnly && <div className="flex flex-wrap items-center gap-x-6 border-b px-4 md:px-6">
-                {(["orders", "documents", "catalog"] as const).map((tab) => (
+                {(
+                    ["orders", "documents", "catalog", "codes-check"] as const
+                ).map((tab) => (
                     <button
                         key={tab}
                         type="button"

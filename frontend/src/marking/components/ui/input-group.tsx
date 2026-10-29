@@ -1,18 +1,21 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
+import { inputStyles } from "@marking/components/appearance/component-styles";
 import { Button } from "@marking/components/ui/button";
 import { Input } from "@marking/components/ui/input";
 import { Textarea } from "@marking/components/ui/textarea";
 import { cn } from "@marking/lib/utils";
+import { useAppearanceStore } from "@marking/src/store/appearance";
 
 function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
+    const style = useAppearanceStore((state) => state.preferences.style);
     return (
         <div
             data-slot="input-group"
             role="group"
             className={cn(
-                "group/input-group relative flex w-full items-center rounded-md border border-input shadow-xs transition-[color,box-shadow] outline-none dark:bg-input/30",
-                "h-9 min-w-0 has-[>textarea]:h-auto",
+                inputStyles[style],
+                "group/input-group relative flex items-center px-0 py-0 has-disabled:opacity-50 has-[>textarea]:h-auto",
 
                 // Variants based on alignment.
                 "has-[>[data-align=inline-start]]:[&>input]:pl-2",
@@ -22,6 +25,8 @@ function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
 
                 // Focus state.
                 "has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-[3px] has-[[data-slot=input-group-control]:focus-visible]:ring-ring/50",
+                style === "lyra" &&
+                    "has-[[data-slot=input-group-control]:focus-visible]:ring-1",
 
                 // Error state.
                 "has-[[data-slot][aria-invalid=true]]:border-destructive has-[[data-slot][aria-invalid=true]]:ring-destructive/20 dark:has-[[data-slot][aria-invalid=true]]:ring-destructive/40",

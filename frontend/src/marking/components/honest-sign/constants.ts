@@ -9,7 +9,7 @@ export const PRODUCT_GROUP_LABELS: Record<string, string> = {
     alcohol: "Алкогольная продукция",
     autofluids: "Моторные масла",
     construction: "Строительные материалы",
-    beer: "Пиво",
+    beer: "Напитки",
     tobacco: "Табачная продукция",
     water: "Упакованная вода",
     "soft-drinks": "Безалкогольные напитки",

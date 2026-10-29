@@ -1,6 +1,7 @@
 import { emptyEvidence, type EvidenceWorkflow, type LaboratoryDetails, type ReportDetails } from './evidenceTypes';
 
 export type Status = 'Draft' | 'InReview' | 'Ready' | 'Registered' | 'Suspended' | 'Revoked' | 'Archived';
+export type ArchiveAction = 'archive' | 'purge' | 'restore';
 export type Role = 'Admin' | 'Manager' | 'Viewer';
 export interface Firm { id: string; name: string; inn: string; role: Role }
 export interface Profile { id: string; userName: string; displayName: string; email: string; firms: Firm[] }
@@ -19,7 +20,10 @@ export interface Activity { declarationId: string; reference: string; title: str
 export interface Dashboard { total: number; draft: number; inReview: number; ready: number; registered: number; expiring: number; suspended: number; organizations: number; recent: DeclarationRow[]; expiringDocuments: DeclarationRow[]; activity: Activity[] }
 export type OrganizationInput = Party & { kind: 'Applicant' | 'Manufacturer' | 'Both'; autoRefresh?: boolean; replaceFromDaData?: boolean; manuallyEditedFields?: (keyof Party)[]; existingOrganizationId?: string };
 export interface Organization extends Party { id: string; firmId: string; kind: OrganizationInput['kind']; revision: string; isArchived: boolean; archivedAt?: string | null; archivedBy?: string; archiveComment?: string; autoRefresh?: boolean; registryStatus?: string; dataInvalid?: boolean; registryCheckedAt?: string | null; registryAttemptedAt?: string | null; registryError?: string; manuallyEditedFields?: (keyof Party)[] }
-export interface Laboratory { id: string; firmId: string; name: string; accreditationNumber: string; address: string; details?: LaboratoryDetails }
+export type LaboratoryRecordKind = 'Laboratory' | 'CertificationBody' | 'InspectionBody' | 'Unspecified';
+export interface LaboratoryRegistryRecord { key: string; rowNumber: number; recordKind: LaboratoryRecordKind; country: string; nationalId: string; name: string; registryStatus: string; accreditationStatus: string; accreditationNumber: string; registeredAt: string | null; validUntil: string | null; legalAddress: string; activityAddress: string; headName: string; phone: string; scope: string; registryUrl: string }
+export interface Laboratory { id: string; firmId: string; name: string; accreditationNumber: string; address: string; details?: LaboratoryDetails; recordKind?: LaboratoryRecordKind; country?: string; accreditationStatus?: string; revision?: string; registrySource?: { fileName: string; sha256: string; importedAtUtc: string; original: LaboratoryRegistryRecord } | null; manuallyEditedFields?: string[]; manuallyEditedAt?: string | null; manuallyEditedBy?: string }
+export interface LaboratoryFilters { firmId: string; search?: string; country?: string; recordKind?: LaboratoryRecordKind | 'All'; status?: string; page?: number; pageSize?: number }
 export interface TeamUser { id: string; userName: string; displayName: string; email: string; role: Role }
 export interface Integration { id: string; name: string; status: 'NotConfigured' | 'Configured'; description: string }
 export interface OrganizationCandidate { name: string; inn: string; ogrn: string; kpp: string; address: string; type: string; branchType: string; status: string; managerName: string; managerPosition: string; dataInvalid: boolean; shortName: string; legalForm: string; registrationDate: string | null; registrationAuthority: string; standardizedAddress: string; phone?: string; email?: string }

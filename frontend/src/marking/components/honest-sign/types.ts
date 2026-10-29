@@ -1,7 +1,7 @@
 import type { OrdersFilters } from "@marking/lib/honest-sign/ordersFiltersStore";
 import type { OrdersView } from "@marking/lib/honest-sign/orderViews";
 
-export type TopTab = "orders" | "documents" | "catalog";
+export type TopTab = "orders" | "documents" | "catalog" | "codes-check";
 
 export type OrderTemplateOption = {
     id: number;

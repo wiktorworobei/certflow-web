@@ -46,6 +46,7 @@ export const dmKodActions = [
     "ApproveContract",
     "PushValidation",
     "PushAggregation",
+    "PushAggregationRanges",
     "InspectContainers",
     "GenerateAggregation",
     "GenerateOrderValidation",
@@ -122,6 +123,8 @@ export type DmKodProduct = {
     capacity: number | null;
 };
 export type DmKodExtendedResult = {
+    aggregationRanges?: DmKodAggregationRangeRow[];
+    aggregationReports?: DmKodAggregationReport[];
     profile: DmKodAccount | null;
     accounts: DmKodAccount[] | null;
     rows: DmKodMetadataRow[] | null;
@@ -138,6 +141,33 @@ export type DmKodExtendedResult = {
     poas: DmKodPoa[] | null;
     utilisationItems?: DmKodItemActivityRanges[] | null;
     validationItems?: DmKodItemActivityRanges[] | null;
+};
+export type DmKodAggregationRangeLink = {
+    key: string;
+    orderItemId: number | null;
+    start: number | null;
+    end: number | null;
+    readOnly: boolean;
+    label: string | null;
+};
+export type DmKodAggregationRangeRow = DmKodAggregationRangeLink & {
+    capacity: number | string | null;
+    parent: DmKodAggregationRangeLink | null;
+    updatedAt: string | null;
+    excluded: boolean;
+    unpacked: boolean;
+    mixItems: boolean;
+    state: string;
+};
+export type DmKodAggregationReport = {
+    id: number;
+    canSign: boolean;
+    state: string;
+    uuid: string | null;
+    createdAtUtc: string | null;
+    failureReason: string | null;
+    precedingAggregationReportIds: number[];
+    precedesAggregationReportId: number | null;
 };
 export type DmKodPositionRange = {
     start: number;
@@ -196,6 +226,31 @@ export type DmKodAggregationPush = {
     exclude?: string[];
     unpack?: string[];
 };
+export type DmKodJsonValue =
+    | string
+    | number
+    | boolean
+    | null
+    | DmKodJsonValue[]
+    | { [key: string]: DmKodJsonValue };
+export type DmKodAggregationRangeRef = {
+    orderItemId: number;
+    start: number;
+    end: number;
+};
+export type DmKodAggregationRangeContainer = DmKodAggregationRangeRef & {
+    capacity?: number | string | null;
+    parent?: DmKodAggregationRangeRef | null;
+    updatedAt?: string | null;
+    excluded?: boolean;
+    unpacked?: boolean;
+    mixItems?: boolean;
+};
+export type DmKodAggregationRangesPush = {
+    orderId: number;
+    containers: DmKodAggregationRangeContainer[];
+    attributes?: { [key: string]: DmKodJsonValue };
+};
 export type DmKodActionRequest = {
     clientRequestId: string;
     action: DmKodAction;
@@ -223,6 +278,7 @@ export type DmKodActionRequest = {
     ranges?: DmKodUtilisationRangesPush;
     validation?: DmKodValidationPush;
     aggregation?: DmKodAggregationPush;
+    aggregationRanges?: DmKodAggregationRangesPush;
     containers?: string[];
     signing?: DmKodSignReport;
     serviceProviderId?: number;

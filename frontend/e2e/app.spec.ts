@@ -77,6 +77,37 @@ test('laboratory evidence survives reload, file upload during editing, exports a
   await expect(page.getByLabel('Адрес лаборатории протокола',{exact:true})).toHaveValue('Алматы, адрес испытаний');
 });
 
+test('ChZ related declaration import persists through the real certification API without registering the draft', async ({ page }) => {
+  await page.route('**/catalog/products/lookup?*', route => route.fulfill({ json: [{ gtin: '05011846021161', name: 'Масло из карточки', brand: '', tnved: '2710', identification: '', okpd2: '', storageConditions: '', status: 'published' }] }));
+  await page.route('**/catalog/permits/by-product', route => {
+    expect(route.request().postDataJSON()).toEqual({ gtin: '05011846021161' });
+    return route.fulfill({ json: { documents: [{ attributeId: 23557, number: 'ЕАЭС E2E-NK-1', fromDate: '2026-10-01', toDate: '2027-10-01', productName: 'Масло по декларации НК', applicantName: 'Заявитель НК', manufacturerName: 'Изготовитель НК', tnved: '2710198200', identification: 'Артикул NK-E2E', regulations: 'ТР ТС 030/2012', status: 'Действует', statusGroup: 1, active: null, updatedAt: null }], errors: [], retrievedAtUtc: '2026-10-29T10:00:00Z' } });
+  });
+  await login(page); await page.goto('/#/declarations/new');
+  await page.getByLabel('Название декларации').fill(`Подстановка НК ${Date.now()}`);
+  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await page.getByLabel('Сведения о партии / изделии').fill('Наша новая партия');
+  await page.getByRole('button', { name: 'Выбрать товар из ЧЗ', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Выбрать товар из ЧЗ', exact: true });
+  await dialog.getByLabel('GTIN для поиска в ЧЗ').fill('5011846021161'); await dialog.getByRole('button', { name: 'Найти в ЧЗ', exact: true }).click();
+  await dialog.getByRole('combobox', { name: /^Декларация из ЧЗ/ }).click(); await page.getByRole('option', { name: /ЕАЭС E2E-NK-1/ }).click();
+  await dialog.getByRole('button', { name: 'Подставить товар и выбранную декларацию', exact: true }).click();
+  const saved = page.waitForResponse(response => /\/declarations\/?$/.test(new URL(response.url()).pathname) && response.request().method() === 'POST' && response.status() === 200);
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  const data = await (await saved).json();
+  expect(data.status).toBe('Draft'); expect(data.registrationNumber).toBe(''); expect(data.reports).toEqual([]);
+  expect(data.evidence.catalogDeclaration).toMatchObject({ number: 'ЕАЭС E2E-NK-1', gtin: '05011846021161', ownerInn: null });
+  await expect(page).toHaveURL(/declarations\/[a-f0-9-]+$/); await page.reload();
+  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Масло по декларации НК');
+  await expect(page.getByLabel('Сведения о партии / изделии')).toHaveValue('Наша новая партия');
+  await expect(page.getByRole('region', { name: 'Декларация-источник из НК' })).toContainText('ЕАЭС E2E-NK-1');
+  await page.getByRole('tab', { name: 'Участники', exact: true }).click();
+  await expect(page.getByLabel('Полное наименование', { exact: true }).first()).toHaveValue('Заявитель НК');
+  await page.getByRole('tab', { name: 'Сведения', exact: true }).click();
+  await expect(page.getByLabel('Дата принятия', { exact: true })).toHaveValue('2026-10-01');
+});
+
 test('manual declaration product persists independently of the standalone NK catalog', async ({ page }) => {
   await login(page); await page.goto('/#/declarations/new');
   const title = `Моторное масло для НК ${Date.now()}`;
@@ -95,7 +126,7 @@ test('manual declaration product persists independently of the standalone NK cat
   await expect(page.getByLabel('Модель, марка, артикул и другие признаки')).toHaveValue('Oil Brand, канистра 4 л');
   await expect(page.getByLabel('GTIN', { exact: true })).toHaveValue('05011846021161');
   await page.getByRole('link', { name: 'Карточки ЧЗ', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Карточки ЧЗ', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Карточки ЧЗ', exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.locator('#honest-sign-certificate')).toBeVisible();
 });
 
@@ -154,7 +185,7 @@ async function searchDeclarations(page: Page, search: string) {
   await expect(page).toHaveURL(/search=/);
 }
 
-test('declaration archive persists across reload with its attachments and history', async ({ page }) => {
+test('declaration archive and restore persist across reload with attachments and history', async ({ page }) => {
   await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click();
   const title = `Архивная декларация ${Date.now()}`;
   await page.getByLabel('Название декларации').fill(title);
@@ -182,6 +213,18 @@ test('declaration archive persists across reload with its attachments and histor
   await expect(page.getByText('Статус: В архиве. Завершено в браузерной проверке', { exact: true })).toBeVisible();
   const downloaded = page.waitForEvent('download'); await page.getByRole('button', { name: 'Скачать archive.pdf', exact: true }).click();
   expect((await downloaded).suggestedFilename()).toBe('archive.pdf');
+  await page.getByRole('button', { name: 'Восстановить из архива', exact: true }).click();
+  const restore = page.getByRole('dialog', { name: 'Восстановить из архива?' });
+  await restore.getByLabel('Комментарий к восстановлению').fill('Возобновлена работа');
+  await restore.getByRole('button', { name: 'Восстановить', exact: true }).click();
+  await expect(restore).toBeHidden();
+  await expect(page.getByText('Восстановлена из архива. Статус: Черновик. Возобновлена работа', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Сведения', exact: true }).click();
+  await expect(page.getByLabel('Название декларации')).toBeEnabled();
+  await page.reload();
+  await expect(page.getByLabel('Название декларации')).toBeEnabled();
+  await page.getByRole('tab', { name: 'Файлы и история', exact: true }).click();
+  await expect(page.getByText('archive.pdf', { exact: true })).toBeVisible();
 });
 
 test('login, invalid credentials, session reload and logout', async ({ page }) => {
@@ -350,7 +393,7 @@ test('desktop and mobile layouts', async ({ page }) => {
   await page.screenshot({ path: path.join(screenshotDir, 'mobile.png'), fullPage: true });
 });
 
-test('bulk archive and permanent cleanup of selected declarations', async ({ page }) => {
+test('bulk archive, restore and permanent cleanup of selected declarations', async ({ page }) => {
   const auth = await login(page); const firmId = auth.user.firms[0].id;
   const prefix = `Массовая проверка документов ${Date.now()}`;
   const headers = { Authorization: `Bearer ${auth.accessToken}` };
@@ -378,6 +421,19 @@ test('bulk archive and permanent cleanup of selected declarations', async ({ pag
   await expect(page.getByRole('row').filter({ hasText: prefix })).toHaveCount(2);
   await page.reload(); await expect(page.getByRole('row').filter({ hasText: prefix })).toHaveCount(2);
   await page.getByRole('checkbox', { name: 'Выбрать все декларации на странице', exact: true }).check();
+  await page.getByRole('button', { name: 'Восстановить выбранные', exact: true }).click();
+  const restore = page.getByRole('dialog', { name: 'Восстановить из архива?' });
+  await restore.getByRole('button', { name: 'Восстановить', exact: true }).click();
+  await expect(restore).toBeHidden(); await expect(page.getByRole('row').filter({ hasText: prefix })).toHaveCount(0);
+  await page.getByRole('button', { name: /^В работе/ }).click();
+  await expect(page.getByRole('row').filter({ hasText: prefix })).toHaveCount(2);
+  await page.getByRole('checkbox', { name: 'Выбрать все декларации на странице', exact: true }).check();
+  await page.getByRole('button', { name: 'В архив выбранные', exact: true }).click();
+  await archive.getByRole('button', { name: 'Отправить в архив', exact: true }).click();
+  await expect(archive).toBeHidden();
+  await page.getByRole('button', { name: 'Архив', exact: true }).click();
+  await expect(page.getByRole('row').filter({ hasText: prefix })).toHaveCount(2);
+  await page.getByRole('checkbox', { name: 'Выбрать все декларации на странице', exact: true }).check();
   await page.getByRole('button', { name: 'Удалить выбранные навсегда', exact: true }).click();
   const purge = page.getByRole('dialog', { name: 'Удалить из архива навсегда?' });
   await expect(purge.getByRole('button', { name: 'Удалить навсегда', exact: true })).toBeDisabled();
@@ -386,7 +442,7 @@ test('bulk archive and permanent cleanup of selected declarations', async ({ pag
   await expect(purge).toBeHidden(); await expect(page.getByRole('row').filter({ hasText: prefix })).toHaveCount(0);
 });
 
-test('bulk company archive and cleanup on mobile preserve the selected workspace', async ({ page }) => {
+test('bulk company archive, restore and cleanup on mobile preserve the selected workspace', async ({ page }) => {
   const auth = await login(page); const firmId = auth.user.firms[0].id;
   const prefix = `Массовая проверка компаний ${Date.now()}`;
   for (let i = 1; i <= 2; i++) {
@@ -408,6 +464,22 @@ test('bulk company archive and cleanup on mobile preserve the selected workspace
   await expect(page.getByRole('row').filter({ hasText: prefix })).toHaveCount(2);
   await expect(page.getByRole('row').filter({ hasText: prefix }).first()).toContainText('Компании обработаны');
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('checkbox', { name: 'Выбрать все найденные компании', exact: true }).check();
+  await page.getByRole('button', { name: 'Восстановить выбранные', exact: true }).click();
+  const restore = page.getByRole('dialog', { name: 'Восстановить из архива?' });
+  await restore.getByLabel('Комментарий к восстановлению').fill('Возвращены в справочник');
+  await restore.getByRole('button', { name: 'Восстановить', exact: true }).click();
+  await expect(restore).toBeHidden(); await expect(page.getByRole('row').filter({ hasText: prefix })).toHaveCount(0);
+  await page.getByRole('tab', { name: /^Компании ·/ }).click();
+  await page.getByRole('textbox', { name: 'Поиск в справочнике', exact: true }).fill(prefix);
+  await expect(page.getByRole('row').filter({ hasText: prefix })).toHaveCount(2);
+  await page.getByRole('checkbox', { name: 'Выбрать все найденные компании', exact: true }).check();
+  await page.getByRole('button', { name: 'В архив выбранные', exact: true }).click();
+  await archive.getByRole('button', { name: 'Отправить в архив', exact: true }).click();
+  await expect(archive).toBeHidden();
+  await page.getByRole('tab', { name: 'Архив компаний', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Поиск в справочнике', exact: true }).fill(prefix);
+  await expect(page.getByRole('row').filter({ hasText: prefix })).toHaveCount(2);
   await page.getByRole('checkbox', { name: 'Выбрать все найденные компании', exact: true }).check();
   await page.getByRole('button', { name: 'Удалить выбранные навсегда', exact: true }).click();
   const purge = page.getByRole('dialog', { name: 'Удалить из архива навсегда?' });

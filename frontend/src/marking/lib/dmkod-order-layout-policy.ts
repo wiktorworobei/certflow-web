@@ -20,7 +20,7 @@ export const orderMarkingActions: Record<
         "DeleteValidation",
     ],
     aggregation: [
-        "PushAggregation",
+        "PushAggregationRanges",
         "InspectContainers",
         "GenerateAggregation",
         "GenerateOrderAggregation",
@@ -35,6 +35,7 @@ export function usesDmKodOrderId(method: string) {
         "OrderAggregations",
         "GenerateOrderValidation",
         "GenerateOrderAggregation",
+        "PushAggregationRanges",
     ].includes(method);
 }
 export function withDmKodOrderTarget<T extends Record<string, string>>(

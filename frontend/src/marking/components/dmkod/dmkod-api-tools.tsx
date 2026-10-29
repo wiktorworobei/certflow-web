@@ -5,6 +5,7 @@ import { Download, LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { DmKodAggregationJsonInput } from "@marking/components/dmkod/dmkod-aggregation-json-input";
 import {
     useDmKodLocalOperation,
     useDmKodScope,
@@ -56,6 +57,8 @@ import {
 import { Textarea } from "@marking/components/ui/textarea";
 import { dmKodKeys } from "@marking/hooks/use-dmkod";
 import { dmKodExtendedApi } from "@marking/lib/api/dmkod-extended";
+import { parseDmKodAggregationRangesJson } from "@marking/lib/dmkod-aggregation-json";
+import { dmKodReportPreparationWasNotSent } from "@marking/lib/dmkod-aggregation-policy";
 import {
     actionFields,
     availableActions,
@@ -64,6 +67,8 @@ import {
     buildExtendedRead,
     extendedDefaults,
     extendedFormSchema,
+    freezeDmKodActionConfirmation,
+    dmKodConfirmationStillAvailable,
     extendedTaskSettled,
     readExtendedIntent,
     readFields,
@@ -76,6 +81,10 @@ import {
     type DmKodOrderMarkingCategory,
 } from "@marking/lib/dmkod-order-layout-policy";
 import { dmKodScopeKey } from "@marking/lib/dmkod-scope";
+import {
+    isDmKodWorkflowOutcomeUncertain,
+    isDmKodWorkflowReceiptPending,
+} from "@marking/lib/dmkod-workflow-recovery";
 import { cryptoProSignatureService } from "@marking/lib/honest-sign/cryptoProSignatureService";
 import { downloadInBrowser } from "@marking/lib/save-file";
 
@@ -84,6 +93,7 @@ import type {
     ExtendedField,
     ExtendedIntent,
     ExtendedValues,
+    DmKodActionConfirmation,
 } from "@marking/lib/dmkod-extended-policy";
 import type {
     DmKodAction,
@@ -399,6 +409,9 @@ export function DmKodActionPanel({
     onBusyChange,
     initialValues,
     onCompleted,
+    fixedReportId,
+    flowKey,
+    onOutcomeChange,
 }: {
     companyId: string;
     module: DmKodModule;
@@ -411,6 +424,11 @@ export function DmKodActionPanel({
     onBusyChange?: (busy: boolean) => void;
     initialValues?: Partial<ExtendedValues>;
     onCompleted?: () => void;
+    fixedReportId?: number;
+    flowKey?: string;
+    onOutcomeChange?: (
+        outcome: "idle" | "pending" | "succeeded" | "failed",
+    ) => void;
 }) {
     const { t } = useTranslation();
     const scope = useDmKodScope(companyId);
@@ -421,18 +439,40 @@ export function DmKodActionPanel({
         ? selectedAction
         : choices[0];
     const [reconcile, setReconcile] = useState(false);
-    const storageKey = `dmkod.extended.${dmKodScopeKey(scope)}.${provider ?? "self"}.${module}${orderId ? `.order.${orderId}.${category ?? "all"}` : ""}`;
+    const storageKey = `dmkod.extended.${dmKodScopeKey(scope)}.${provider ?? "self"}.${module}${orderId ? `.order.${orderId}.${category ?? "all"}` : ""}${flowKey ? `.flow.${flowKey}` : ""}`;
     const [intent, setIntent] = useState<ExtendedIntent | null>(() =>
         readExtendedIntent(sessionStorage.getItem(storageKey)),
     );
-    const [confirm, setConfirm] = useState<ExtendedValues | null>(null);
+    const [confirm, setConfirm] = useState<DmKodActionConfirmation | null>(
+        null,
+    );
+    const confirmedAction = confirm?.action ?? action;
     const [document, setDocument] = useState<"nda" | "contract" | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [uncertainError, setUncertainError] = useState<string | null>(null);
+    const operationError = (value: unknown, recovering = false) => {
+        if (
+            module === "marking" &&
+            (isDmKodWorkflowOutcomeUncertain(value) ||
+                (recovering && isDmKodWorkflowReceiptPending(value)))
+        ) {
+            setError(null);
+            setUncertainError(message(value, t("dmkod.workflow.unknown")));
+        } else setError(message(value, t("dmkod.extended.failed")));
+    };
     const [thumbprint, setThumbprint] = useState(
         session.certificateThumbprint ?? "",
     );
     const [certificates, setCertificates] = useState<CertificateSummary[]>([]);
     const [certBusy, setCertBusy] = useState(false);
+    const [jsonBusy, setJsonBusy] = useState(false);
+    const target = (method: string, values: ExtendedValues) =>
+        fixedReportId &&
+        ["SignAggregation", "PullAggregation", "DeleteAggregation"].includes(
+            method,
+        )
+            ? { ...values, id: String(fixedReportId) }
+            : withDmKodOrderTarget(method, values, orderId);
     const fields = actionFields(action);
     const form = useForm<ExtendedValues>({
         resolver: zodResolver(
@@ -445,7 +485,7 @@ export function DmKodActionPanel({
             ),
         ),
         defaultValues: {
-            ...withDmKodOrderTarget(action, extendedDefaults, orderId),
+            ...target(action, extendedDefaults),
             ...initialValues,
         },
     });
@@ -472,6 +512,24 @@ export function DmKodActionPanel({
     const settled =
         !!intent?.accepted && (!intent.backgroundTaskId || terminal);
     useEffect(() => {
+        onOutcomeChange?.(
+            !intent
+                ? "idle"
+                : !settled
+                  ? "pending"
+                  : task.data?.state === "FAILED" ||
+                      task.data?.resultState === "FAILED"
+                    ? "failed"
+                    : "succeeded",
+        );
+    }, [
+        intent,
+        settled,
+        task.data?.state,
+        task.data?.resultState,
+        onOutcomeChange,
+    ]);
+    useEffect(() => {
         if (terminal)
             void client.invalidateQueries({
                 queryKey: dmKodKeys.scoped(scope),
@@ -479,15 +537,20 @@ export function DmKodActionPanel({
     }, [terminal, client, scope]);
     const run = useMutation({
         retry: false,
+        meta: { dmKodScopeKey: dmKodScopeKey(scope) },
         mutationFn: async ({
             values,
             download,
+            selectedAction,
         }: {
             values?: ExtendedValues;
             download?: "nda" | "contract";
+            selectedAction: DmKodAction;
         }) => {
+            const action = selectedAction;
             const release = hold();
             setError(null);
+            setUncertainError(null);
             try {
                 const id = crypto.randomUUID();
                 if (download) {
@@ -529,6 +592,9 @@ export function DmKodActionPanel({
                                       : "aggregation",
                                   Number(values.id),
                                   provider,
+                                  action === "SignAggregation"
+                                      ? orderId
+                                      : undefined,
                               );
                     const signature =
                         await cryptoProSignatureService.signDetached({
@@ -562,15 +628,24 @@ export function DmKodActionPanel({
                     accepted: false,
                 };
                 remember(next);
-                const receipt = await dmKodExtendedApi.run(scope, payload);
+                let receipt: Awaited<ReturnType<typeof dmKodExtendedApi.run>>;
+                try {
+                    receipt = await dmKodExtendedApi.run(scope, payload);
+                } catch (error) {
+                    if (
+                        dmKodReportPreparationWasNotSent(error, action) &&
+                        readExtendedIntent(sessionStorage.getItem(storageKey))
+                            ?.clientRequestId === id
+                    )
+                        remember(null);
+                    throw error;
+                }
                 remember({
                     ...next,
                     backgroundTaskId: receipt.backgroundTaskId,
                     accepted: true,
                 });
-                form.reset(
-                    withDmKodOrderTarget(action, extendedDefaults, orderId),
-                );
+                form.reset(target(action, extendedDefaults));
                 await client.invalidateQueries({
                     queryKey: dmKodKeys.scoped(scope),
                 });
@@ -583,10 +658,11 @@ export function DmKodActionPanel({
                 form.setValue("password", "");
             }
         },
-        onError: (e) => setError(message(e, t("dmkod.extended.failed"))),
+        onError: (e) => operationError(e),
     });
     const recover = useMutation({
         retry: false,
+        meta: { dmKodScopeKey: dmKodScopeKey(scope) },
         mutationFn: async () => {
             if (!intent) return;
             const release = hold();
@@ -601,6 +677,7 @@ export function DmKodActionPanel({
                     backgroundTaskId: receipt.backgroundTaskId,
                 });
                 setError(null);
+                setUncertainError(null);
                 await client.invalidateQueries({
                     queryKey: dmKodKeys.scoped(scope),
                 });
@@ -608,9 +685,17 @@ export function DmKodActionPanel({
                 release();
             }
         },
-        onError: (e) => setError(message(e, t("dmkod.extended.failed"))),
+        onError: (e) => operationError(e, true),
     });
-    const busy = run.isPending || recover.isPending || certBusy;
+    const busy = run.isPending || recover.isPending || certBusy || jsonBusy;
+    useEffect(() => {
+        if (
+            confirm &&
+            !busy &&
+            !dmKodConfirmationStillAvailable(confirm, choices)
+        )
+            setConfirm(null);
+    }, [confirm, busy, choices]);
     const locked = !enabled || busy || (!!intent && !settled);
     useEffect(() => {
         onBusyChange?.(busy);
@@ -643,9 +728,16 @@ export function DmKodActionPanel({
                     </CardTitle>
                     <CardDescription>
                         {t(
-                            orderId
-                                ? "dmkod.orderLayout.markingHint"
-                                : "dmkod.extended.actionHint",
+                            fixedReportId
+                                ? "dmkod.aggregation.selectedReportHint"
+                                : flowKey === "ranges-generate"
+                                  ? "dmkod.aggregation.generateHint"
+                                  : action === "PushAggregationRanges"
+                                    ? "dmkod.aggregation.prepareHint"
+                                    : orderId
+                                      ? "dmkod.orderLayout.markingHint"
+                                      : "dmkod.extended.actionHint",
+                            { id: fixedReportId ?? orderId },
                         )}
                     </CardDescription>
                 </CardHeader>
@@ -655,18 +747,12 @@ export function DmKodActionPanel({
             >
                 {choices.length > 1 ? (
                     <MethodSelect
-                        id={`action-${module}-${category ?? "all"}`}
+                        id={`action-${module}-${category ?? "all"}-${flowKey ?? "general"}`}
                         value={action}
                         choices={choices}
                         onChange={(v) => {
                             setAction(v as DmKodAction);
-                            form.reset(
-                                withDmKodOrderTarget(
-                                    v,
-                                    extendedDefaults,
-                                    orderId,
-                                ),
-                            );
+                            form.reset(target(v, extendedDefaults));
                             setError(null);
                         }}
                         disabled={locked}
@@ -677,28 +763,33 @@ export function DmKodActionPanel({
                         className="space-y-4"
                         noValidate
                         onSubmit={form.handleSubmit((v) => {
-                            const values = withDmKodOrderTarget(
-                                action,
-                                v,
-                                orderId,
-                            );
+                            const values = target(action, v);
                             if (
                                 action === "UpdateProfile" ||
                                 action === "UpdateDefaults"
                             )
-                                run.mutate({ values });
-                            else setConfirm(values);
+                                run.mutate({ values, selectedAction: action });
+                            else
+                                setConfirm(
+                                    freezeDmKodActionConfirmation(
+                                        action,
+                                        values,
+                                    ),
+                                );
                         })}
                     >
                         <Fields
                             form={form}
                             fields={
-                                orderId && usesDmKodOrderId(action)
+                                fixedReportId ||
+                                (orderId && usesDmKodOrderId(action))
                                     ? fields.filter((field) => field !== "id")
                                     : fields
                             }
                             disabled={locked}
                             defaults={initialValues?.settings}
+                            companyId={companyId}
+                            onJsonBusyChange={setJsonBusy}
                         />
                         {needsCertificate ? (
                             <div className="space-y-2">
@@ -819,6 +910,11 @@ export function DmKodActionPanel({
                                   ? `${task.data?.state ?? "PENDING"} · ${task.data?.resultState ?? "—"}`
                                   : t("dmkod.extended.accepted")}
                         </Badge>
+                        {!intent.accepted && uncertainError ? (
+                            <p className="text-sm" role="status">
+                                {uncertainError}
+                            </p>
+                        ) : null}
                         {!intent.accepted ? (
                             <Button
                                 variant="outline"
@@ -918,18 +1014,65 @@ export function DmKodActionPanel({
                             <DialogDescription>
                                 {reconcile
                                     ? t("dmkod.extended.reconcileHint")
-                                    : t("dmkod.extended.confirmHint", {
-                                          operation: document
-                                              ? t(`dmkod.extended.${document}`)
-                                              : t(
-                                                    `dmkod.extended.methods.${action}`,
-                                                ),
-                                          environment: scope.environment,
-                                          target:
-                                              provider ??
-                                              session.externalCompanyName ??
-                                              "—",
-                                      })}
+                                    : confirmedAction ===
+                                            "PushAggregationRanges" && confirm
+                                      ? t(
+                                            "dmkod.aggregation.confirmPreparation",
+                                            {
+                                                id:
+                                                    orderId ??
+                                                    confirm.values.id,
+                                                environment: scope.environment,
+                                                provider:
+                                                    provider ??
+                                                    session.externalCompanyName ??
+                                                    "—",
+                                                count: parseDmKodAggregationRangesJson(
+                                                    confirm.values
+                                                        .aggregationRanges,
+                                                    Number(confirm.values.id),
+                                                ).containers.length,
+                                            },
+                                        )
+                                      : flowKey === "ranges-generate"
+                                        ? t(
+                                              "dmkod.aggregation.confirmGeneration",
+                                              {
+                                                  id: orderId,
+                                                  environment:
+                                                      scope.environment,
+                                              },
+                                          )
+                                        : flowKey &&
+                                            flowKey !== "additional" &&
+                                            category === "aggregation"
+                                          ? t(
+                                                "dmkod.aggregation.confirmOperation",
+                                                {
+                                                    id: orderId,
+                                                    report:
+                                                        fixedReportId ?? "—",
+                                                    environment:
+                                                        scope.environment,
+                                                    operation: t(
+                                                        `dmkod.extended.methods.${confirmedAction}`,
+                                                    ),
+                                                },
+                                            )
+                                          : t("dmkod.extended.confirmHint", {
+                                                operation: document
+                                                    ? t(
+                                                          `dmkod.extended.${document}`,
+                                                      )
+                                                    : t(
+                                                          `dmkod.extended.methods.${confirmedAction}`,
+                                                      ),
+                                                environment: scope.environment,
+                                                target:
+                                                    provider ??
+                                                    session.externalCompanyName ??
+                                                    "—",
+                                            })}
                             </DialogDescription>
                         </DialogHeader>
                         {confirm ? (
@@ -947,18 +1090,25 @@ export function DmKodActionPanel({
                                 )
                                     .filter(
                                         (f) =>
-                                            actionFields(action).includes(f) &&
-                                            confirm[f],
+                                            actionFields(
+                                                confirmedAction,
+                                            ).includes(f) && confirm.values[f],
                                     )
                                     .map((f) => (
                                         <div key={f}>
                                             <dt className="text-muted-foreground">
                                                 {t(
-                                                    `dmkod.extended.fields.${f}`,
+                                                    f === "id" &&
+                                                        flowKey &&
+                                                        flowKey !== "additional"
+                                                        ? fixedReportId
+                                                            ? "dmkod.aggregation.reportLabel"
+                                                            : "dmkod.aggregation.orderLabel"
+                                                        : `dmkod.extended.fields.${f}`,
                                                 )}
                                             </dt>
                                             <dd className="font-medium break-all">
-                                                {confirm[f]}
+                                                {confirm.values[f]}
                                             </dd>
                                         </div>
                                     ))}
@@ -985,11 +1135,26 @@ export function DmKodActionPanel({
                                         setReconcile(false);
                                         return;
                                     }
-                                    const values = confirm ?? undefined;
+                                    if (
+                                        confirm &&
+                                        !dmKodConfirmationStillAvailable(
+                                            confirm,
+                                            choices,
+                                        )
+                                    ) {
+                                        setConfirm(null);
+                                        return;
+                                    }
+                                    const values = confirm?.values;
+                                    const selectedAction = confirmedAction;
                                     const download = document ?? undefined;
                                     setConfirm(null);
                                     setDocument(null);
-                                    run.mutate({ values, download });
+                                    run.mutate({
+                                        values,
+                                        download,
+                                        selectedAction,
+                                    });
                                 }}
                             >
                                 {t("dmkod.extended.execute")}
@@ -1042,11 +1207,15 @@ function Fields({
     fields,
     disabled,
     defaults,
+    companyId,
+    onJsonBusyChange,
 }: {
     form: ReturnType<typeof useForm<ExtendedValues>>;
     fields: ExtendedField[];
     disabled: boolean;
     defaults?: string;
+    companyId?: string;
+    onJsonBusyChange?: (busy: boolean) => void;
 }) {
     const { t } = useTranslation();
     const selects: Partial<Record<ExtendedField, string[]>> = {
@@ -1077,7 +1246,25 @@ function Fields({
                                         : `dmkod.extended.fields.${name}`,
                                 )}
                             </FormLabel>
-                            {name === "settings" && defaults !== undefined ? (
+                            {name === "aggregationRanges" && companyId ? (
+                                <FormControl>
+                                    <DmKodAggregationJsonInput
+                                        {...field}
+                                        companyId={companyId}
+                                        orderId={Number(form.watch("id"))}
+                                        disabled={disabled}
+                                        onError={(message) =>
+                                            message
+                                                ? form.setError(name, {
+                                                      message,
+                                                  })
+                                                : form.clearErrors(name)
+                                        }
+                                        onBusyChange={onJsonBusyChange}
+                                    />
+                                </FormControl>
+                            ) : name === "settings" &&
+                              defaults !== undefined ? (
                                 <VisibilityFields
                                     value={field.value}
                                     baseline={defaults}

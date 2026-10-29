@@ -18,11 +18,13 @@ import {
 } from "@marking/components/honest-sign/ui/panel";
 import { Select } from "@marking/components/honest-sign/ui/select";
 import { WorkflowStepper } from "@marking/components/honest-sign/ui/workflow-stepper";
+import { UtilisationBatchWorkspace } from "@marking/components/honest-sign/UtilisationBatchWorkspace";
 import { UtilisationDocumentPicker } from "@marking/components/honest-sign/UtilisationDocumentPicker";
 import { formatProductGroupLabel } from "@marking/components/honest-sign/utils";
 import { Badge } from "@marking/components/ui/badge";
 import { Button } from "@marking/components/ui/button";
 import { Input } from "@marking/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@marking/components/ui/tabs";
 import { useUtilisationDocumentCodes } from "@marking/hooks/use-utilisation-documents";
 import {
     formatDataMatrixCodeForDisplay,
@@ -53,6 +55,7 @@ import {
     type UtilisationExpirationCondition,
     type UtilisationExpirationMode,
 } from "@marking/lib/honest-sign/utilisationReport";
+import { useAuthStore } from "@marking/src/store/auth";
 
 export type { SubmittedUtilisationReport } from "@marking/lib/honest-sign/utilisationReport";
 
@@ -62,6 +65,7 @@ type DocumentsWorkspaceProps = {
     selectedThumbprint: string;
     onCancel?: () => void;
     onSubmitted?: (report: SubmittedUtilisationReport) => void;
+    initialMode?: "single" | "batch";
 };
 
 type UploadedCsvDocument = {
@@ -114,13 +118,73 @@ function responseValue(
     return "";
 }
 
-export function DocumentsWorkspace({
+export function DocumentsWorkspace(props: DocumentsWorkspaceProps) {
+    const actorId = useAuthStore((state) => state.user?.id ?? "anonymous");
+    return (
+        <DocumentsWorkspaceModes
+            key={`${props.companyId}:${actorId}`}
+            {...props}
+        />
+    );
+}
+
+function DocumentsWorkspaceModes(props: DocumentsWorkspaceProps) {
+    const { t } = useTranslation();
+    const [mode, setMode] = useState(props.initialMode ?? "single");
+    const [batchBusy, setBatchBusy] = useState(false);
+    const [singleBusy, setSingleBusy] = useState(false);
+    return (
+        <Tabs
+            value={mode}
+            onValueChange={(value) => setMode(value as "single" | "batch")}
+            className="min-w-0 gap-4"
+        >
+            <TabsList
+                className="h-auto max-w-full flex-wrap"
+                aria-label={t("honestSign.documents.batch.modeLabel")}
+            >
+                <TabsTrigger
+                    className="min-h-9 whitespace-normal"
+                    value="single"
+                    disabled={batchBusy || singleBusy}
+                >
+                    {t("honestSign.documents.batch.single")}
+                </TabsTrigger>
+                <TabsTrigger
+                    className="min-h-9 whitespace-normal"
+                    value="batch"
+                    disabled={batchBusy || singleBusy}
+                >
+                    {t("honestSign.documents.batch.multiple")}
+                </TabsTrigger>
+            </TabsList>
+            <TabsContent value="single" forceMount hidden={mode !== "single"}>
+                <SingleDocumentsWorkspace
+                    {...props}
+                    onBusyChange={setSingleBusy}
+                />
+            </TabsContent>
+            <TabsContent value="batch" forceMount hidden={mode !== "batch"}>
+                <UtilisationBatchWorkspace
+                    key={props.companyId}
+                    companyId={props.companyId}
+                    productGroups={props.productGroups}
+                    selectedThumbprint={props.selectedThumbprint}
+                    onBusyChange={setBatchBusy}
+                />
+            </TabsContent>
+        </Tabs>
+    );
+}
+
+function SingleDocumentsWorkspace({
     companyId,
     productGroups,
     selectedThumbprint,
     onCancel,
     onSubmitted,
-}: DocumentsWorkspaceProps) {
+    onBusyChange,
+}: DocumentsWorkspaceProps & { onBusyChange: (busy: boolean) => void }) {
     const { t, i18n } = useTranslation();
     const sourceControlId = useId();
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -165,6 +229,9 @@ export function DocumentsWorkspace({
             ? documentCodesQuery.data.sntins
             : EMPTY_DOCUMENT_CODES;
     const sourceBusy = checkingCodes || submittingDocument || loadingFile;
+    useEffect(() => {
+        onBusyChange(sourceBusy);
+    }, [onBusyChange, sourceBusy]);
     const [codesCheckResult, setCodesCheckResult] =
         useState<CurrentCodesCheckResult | null>(null);
     const [errorMessage, setErrorMessage] = useState("");

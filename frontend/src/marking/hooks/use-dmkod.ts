@@ -117,29 +117,47 @@ export function dmKodRequiresSessionReentry(
     client: QueryClient,
     scope: DmKodScope,
 ) {
-    return client
-        .getQueryCache()
-        .findAll({ queryKey: dmKodKeys.scoped(scope) })
-        .some((query) => {
-            if (query.state.status !== "error") return false;
-            const resource = query.queryKey[4];
-            return (
-                resource === "session" ||
-                resource === "extended-profile" ||
-                resource === "cabinet-poas" ||
-                (isAxiosError(query.state.error) &&
-                    query.state.error.response?.status === 401)
-            );
-        });
+    const unauthorized = (error: unknown) =>
+        isAxiosError(error) && error.response?.status === 401;
+    return (
+        client
+            .getMutationCache()
+            .getAll()
+            .some(
+                (mutation) =>
+                    mutation.options.meta?.dmKodScopeKey ===
+                        dmKodScopeKey(scope) &&
+                    mutation.state.status === "error" &&
+                    unauthorized(mutation.state.error),
+            ) ||
+        client
+            .getQueryCache()
+            .findAll({ queryKey: dmKodKeys.scoped(scope) })
+            .some((query) => {
+                if (query.state.status !== "error") return false;
+                const resource = query.queryKey[4];
+                return (
+                    resource === "session" ||
+                    resource === "extended-profile" ||
+                    resource === "cabinet-poas" ||
+                    unauthorized(query.state.error)
+                );
+            })
+    );
 }
 
 export function useDmKodSessionReentry(scope: DmKodScope) {
     const client = useQueryClient();
     const subscribe = useCallback(
-        (onChange: () => void) =>
-            client
-                .getQueryCache()
-                .subscribe(notifyManager.batchCalls(onChange)),
+        (onChange: () => void) => {
+            const notify = notifyManager.batchCalls(onChange);
+            const queries = client.getQueryCache().subscribe(notify);
+            const mutations = client.getMutationCache().subscribe(notify);
+            return () => {
+                queries();
+                mutations();
+            };
+        },
         [client],
     );
     const snapshot = useCallback(
@@ -157,6 +175,13 @@ export async function completeDmKodSignIn(
     // Cancel old reads before reopening the workspace, including an in-flight
     // session read. Receipts and operation intents remain in their own storage.
     await client.cancelQueries({ queryKey: dmKodKeys.scoped(scope) });
+    for (const mutation of client.getMutationCache().getAll()) {
+        if (
+            mutation.options.meta?.dmKodScopeKey === dmKodScopeKey(scope) &&
+            mutation.state.status === "error"
+        )
+            client.getMutationCache().remove(mutation);
+    }
     client.removeQueries({
         queryKey: dmKodKeys.scoped(scope),
         predicate: (query) => query.queryKey[4] !== "session",

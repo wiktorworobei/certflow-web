@@ -16,6 +16,7 @@ import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { z } from "zod";
+import { DmKodActivityState } from "@marking/components/dmkod/dmkod-activity-state";
 import { DmKodActionPanel } from "@marking/components/dmkod/dmkod-api-tools";
 import {
     DmKodIconAction,
@@ -357,6 +358,7 @@ export function DmKodOrderActivity({
     });
     const recover = useMutation({
         retry: false,
+        meta: { dmKodScopeKey: dmKodScopeKey(scope) },
         mutationFn: async () => {
             if (!intent) return;
             const receipt = await dmKodExtendedApi.receipt(
@@ -612,18 +614,10 @@ export function DmKodOrderActivity({
                         </article>
                         <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-4 py-2 text-xs text-muted-foreground">
                             {states.map((state, index) => (
-                                <span
-                                    className="inline-flex items-center gap-2"
+                                <DmKodActivityState
                                     key={`${state.state}.${index}`}
-                                >
-                                    {t(
-                                        `dmkod.cabinet.activity.states.${state.state}`,
-                                        { defaultValue: state.state },
-                                    )}
-                                    <Badge variant="outline">
-                                        {state.total ?? "—"}
-                                    </Badge>
-                                </span>
+                                    state={state}
+                                />
                             ))}
                             {(unknown !== undefined && unknown > 0) ||
                             !states.length ? (
