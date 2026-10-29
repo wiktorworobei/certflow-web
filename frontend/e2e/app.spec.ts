@@ -329,7 +329,13 @@ test('company switching, filters, CSV and honest integration states', async ({ p
   const csvDownload = page.waitForEvent('download'); await page.getByRole('button', { name: 'Экспорт CSV' }).click(); expect((await csvDownload).suggestedFilename()).toBe('declarations.csv');
   await page.getByRole('combobox', { name: 'Компания', exact: true }).selectOption({ label: 'Моя компания' });
   await expect(page.getByRole('heading', { name: 'Добрый день, Виктор' })).toBeVisible();
-  await page.getByRole('link', { name: 'Настройки', exact: true }).click(); await expect(page.getByText('Не подключено', { exact: true })).toHaveCount(4);
+  await page.getByRole('link', { name: 'Настройки', exact: true }).click();
+  for (const name of ['ФГИС Росаккредитации', 'Реестр деклараций', 'Реестр лабораторий и обмен с ИЛ']) {
+    const card = page.locator('.connection-card').filter({ has: page.getByRole('heading', { name, exact: true }) });
+    await expect(card.getByText('Не подключено', { exact: true })).toBeVisible();
+  }
+  const tks = page.locator('.connection-card').filter({ has: page.getByRole('heading', { name: 'ТН ВЭД ЕАЭС — ТКС', exact: true }) });
+  await expect(tks.getByText('Нет сертификата ТКС', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Успешных подключений пока нет' })).toBeVisible();
 });
 
