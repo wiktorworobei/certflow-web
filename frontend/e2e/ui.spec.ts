@@ -207,111 +207,102 @@ async function login(page: Page, displayName = 'Виктор') {
   await expect(page.getByRole('heading', { name: `Добрый день, ${displayName}` })).toBeVisible();
 }
 
-const tnVedGroup = { id: 2000, code: '8479', text: 'Машины и оборудование специального назначения', validFrom: null, validTo: null, hasChildren: true, isActive: true };
-const tnVedLeaf = { id: 3000, code: '8479899707', text: 'Машины и механические устройства прочие', validFrom: '2022-01-01', validTo: null, hasChildren: false, isActive: true };
-async function tnVedFixtures(page: Page, configured = true) {
+const tnVedLeaf = { code: '0101210000', text: 'лошади: чистопородные племенные животные', tariff: '0%', detailsUrl: 'https://www.tws.by/tws/tnved' };
+const tnVedOther = { code: '0101291000', text: 'лошади: прочие: убойные', tariff: '5%', detailsUrl: '' };
+async function tnVedFixtures(page: Page, configured = true, total = 2) {
   await fixtures(page);
   await page.route('**/classifiers/tnved/**', route => {
     const url = new URL(route.request().url());
-    if (url.pathname.endsWith('/settings')) return route.fulfill({ json: { isConfigured: configured, provider: 'ТКС' } });
-    const items = url.pathname.endsWith('/search') ? [tnVedGroup, tnVedLeaf] : url.searchParams.get('parentId') === '2000'
-      ? [tnVedLeaf, { ...tnVedLeaf, id: 4000, code: '8479899708', text: 'Устаревший код оборудования', validTo: '2020-01-01', isActive: false }]
-      : [tnVedGroup];
-    return route.fulfill({ json: { items, retrievedAt: '2026-10-29T10:00:00Z', fromCache: false, truncated: false } });
+    if (url.pathname.endsWith('/settings')) return route.fulfill({ json: { isConfigured: configured, provider: 'Локальный справочник', codeCount: 13294, dataDate: '2026-10-30', sourceFile: 'TWS_TNVED_2026-10-30.xlsx', importedAt: '2026-10-30T12:00:00Z' } });
+    const query = url.searchParams.get('query') ?? ''; const current = Number(url.searchParams.get('page') ?? '1');
+    const codes = query ? [tnVedLeaf] : current === 1 ? [tnVedLeaf, tnVedOther] : [{ ...tnVedLeaf, code: '0201100001', text: 'Код на второй странице' }];
+    return route.fulfill({ json: { items: codes, total: query ? 1 : total, page: current, pageSize: 25 } });
   });
   await login(page); await page.goto('/#/declarations/new');
   await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
 }
 
-test('TN VED tree navigation previews a current leaf and fills only the product code', async ({ page }) => {
+test('TN VED local directory previews leading-zero codes and fills only the product code', async ({ page }) => {
   await tnVedFixtures(page);
-  await page.getByLabel('Наименование продукции', { exact: true }).fill('Моя упаковочная машина');
-  await page.getByLabel('ОКПД2', { exact: true }).fill('28.29.21');
+  await page.getByLabel('Наименование продукции', { exact: true }).fill('Моя продукция');
+  await page.getByLabel('ОКПД2', { exact: true }).fill('01.43.10');
   await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
-  await dialog.getByRole('button', { name: /Машины и оборудование специального назначения/ }).click();
-  await expect(dialog.getByRole('button', { name: /Устаревший код оборудования/ })).toBeDisabled();
+  await expect(dialog).toContainText('Данные на 30.10.2026');
+  await expect(dialog).not.toContainText('ТКС');
   await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeDisabled();
-  await dialog.getByRole('button', { name: /Машины и механические устройства прочие/ }).click();
-  await expect(dialog.getByRole('region', { name: 'Выбранный код ТН ВЭД' })).toContainText('8479 89 970 7');
-  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'tnved-picker-desktop.png'), fullPage: true });
+  await dialog.getByRole('button', { name: /чистопородные племенные животные/ }).click();
+  await expect(dialog.getByRole('region', { name: 'Выбранный код ТН ВЭД' })).toContainText('0101 21 000 0');
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'tnved-local-desktop.png') });
   await dialog.getByRole('button', { name: 'Подставить код', exact: true }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('8479899707');
-  await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Моя упаковочная машина');
-  await expect(page.getByLabel('ОКПД2', { exact: true })).toHaveValue('28.29.21');
-  await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
-  await expect(dialog.getByRole('textbox', { name: 'Код или название товара', exact: true })).toHaveValue('8479899707');
-  await dialog.getByRole('button', { name: 'Все разделы', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: /Машины и оборудование специального назначения/ })).toBeVisible();
+  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('0101210000');
+  await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Моя продукция');
+  await expect(page.getByLabel('ОКПД2', { exact: true })).toHaveValue('01.43.10');
 });
 
-test('TN VED search supports the product name and clears selection when the query changes', async ({ page }) => {
+test('TN VED local search uses the product name and resets selection on input changes', async ({ page }) => {
   await tnVedFixtures(page);
-  await page.getByLabel('Наименование продукции', { exact: true }).fill('Упаковочная машина');
+  await page.getByLabel('Наименование продукции', { exact: true }).fill('Лошади племенные');
   await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
-  const request = page.waitForRequest(request => request.url().includes('/tnved/search?query=') && new URL(request.url()).searchParams.get('query') === 'Упаковочная машина');
+  const request = page.waitForRequest(request => request.url().includes('/tnved/search?') && new URL(request.url()).searchParams.get('query') === 'Лошади племенные');
   await dialog.getByRole('button', { name: 'Искать по названию продукции', exact: true }).click(); await request;
-  await dialog.getByRole('button', { name: /Машины и механические устройства прочие/ }).click();
+  await dialog.getByRole('button', { name: /чистопородные племенные животные/ }).click();
   await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeEnabled();
-  await dialog.getByRole('textbox', { name: 'Код или название товара', exact: true }).fill('84');
+  await dialog.getByRole('textbox', { name: 'Код или название товара', exact: true }).fill('0101');
   await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeDisabled();
-  await dialog.getByRole('button', { name: /Машины и оборудование специального назначения/ }).click();
-  await dialog.getByRole('button', { name: 'На уровень выше в ТН ВЭД', exact: true }).click();
-  await expect(dialog.getByRole('textbox', { name: 'Код или название товара', exact: true })).toHaveValue('84');
   await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
   await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('');
 });
 
-test('TN VED distinguishes provider errors, empty results and a missing certificate', async ({ page }) => {
-  await tnVedFixtures(page);
-  let state = 'error';
-  await page.route('**/classifiers/tnved/search?**', route => state === 'error'
-    ? route.fulfill({ status: 502, json: { detail: 'ТКС временно недоступен.' } })
-    : route.fulfill({ json: { items: [], retrievedAt: '2026-10-29T10:00:00Z', fromCache: false, truncated: false } }));
+test('TN VED local results paginate and return to page one for a new query', async ({ page }) => {
+  await tnVedFixtures(page, true, 52);
   await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
-  await dialog.getByRole('textbox', { name: 'Код или название товара', exact: true }).fill('насос');
-  await expect(dialog).toContainText('ТКС временно недоступен.');
-  await expect(dialog).not.toContainText('Ничего не найдено');
-  state = 'empty'; await dialog.getByRole('button', { name: 'Повторить', exact: true }).click();
-  await expect(dialog).toContainText('Ничего не найдено');
-  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
-  await page.route('**/classifiers/tnved/settings', route => route.fulfill({ json: { isConfigured: false, provider: 'ТКС' } }));
+  await dialog.getByRole('button', { name: 'Go to page 2', exact: true }).click();
+  await expect(dialog).toContainText('Код на второй странице');
+  const request = page.waitForRequest(request => request.url().includes('/tnved/search?') && new URL(request.url()).searchParams.get('query') === '0101');
+  await dialog.getByRole('textbox', { name: 'Код или название товара', exact: true }).fill('0101');
+  expect(new URL((await request).url()).searchParams.get('page')).toBe('1');
+  await expect(dialog).not.toContainText('Код на второй странице');
+});
+
+test('TN VED local search distinguishes errors from empty results and keeps manual input available', async ({ page }) => {
+  await tnVedFixtures(page);
+  let fail = true;
+  await page.route('**/classifiers/tnved/search?**', route => fail ? route.fulfill({ status: 500, json: { detail: 'Не удалось выполнить поиск.' } }) : route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 25 } }));
   await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
-  await expect(dialog).toContainText('Справочник ТН ВЭД пока не подключён');
-  await expect(dialog.getByRole('textbox', { name: 'Код или название товара', exact: true })).toBeDisabled();
+  const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
+  await expect(dialog).toContainText('Не удалось выполнить поиск.');
+  await expect(dialog).not.toContainText('Ничего не найдено');
+  fail = false; await dialog.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await expect(dialog).toContainText('Ничего не найдено');
   await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
   await page.getByLabel('Код ТН ВЭД', { exact: true }).fill('8479');
   await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('8479');
 });
 
-test('TN VED picker fits a mobile screen in dark mode', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await tnVedFixtures(page);
+test('TN VED local picker fits a mobile screen in dark mode', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await tnVedFixtures(page);
   await page.getByRole('button', { name: 'Включить тёмную тему' }).click();
   await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
-  await dialog.getByRole('button', { name: /Машины и оборудование специального назначения/ }).click();
-  await dialog.getByRole('button', { name: /Машины и механические устройства прочие/ }).click();
+  await dialog.getByRole('button', { name: /чистопородные племенные животные/ }).click();
   await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeInViewport({ ratio: 1 });
   expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-  const bounds = (await dialog.boundingBox())!;
-  expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
-  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'tnved-picker-mobile-dark.png') });
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'tnved-local-mobile-dark.png') });
   await dialog.getByRole('button', { name: 'Подставить код', exact: true }).click();
-  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('8479899707');
+  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('0101210000');
 });
 
-test('TN VED ignores older search responses without applying a code', async ({ page }) => {
-  await tnVedFixtures(page);
-  let releaseOld!: () => void;
+test('TN VED local search ignores older responses without applying a code', async ({ page }) => {
+  await tnVedFixtures(page); let releaseOld!: () => void;
   const oldResponse = new Promise<void>(resolve => { releaseOld = resolve; });
   await page.route('**/classifiers/tnved/search?**', async route => {
     const old = new URL(route.request().url()).searchParams.get('query') === 'старый';
     if (old) await oldResponse;
-    await route.fulfill({ json: { items: [{ ...tnVedLeaf, text: old ? 'Старый результат' : 'Новый результат' }], retrievedAt: '2026-10-29T10:00:00Z', fromCache: false, truncated: false } });
+    await route.fulfill({ json: { items: [{ ...tnVedLeaf, text: old ? 'Старый результат' : 'Новый результат' }], total: 1, page: 1, pageSize: 25 } });
   });
   await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
@@ -325,7 +316,6 @@ test('TN VED ignores older search responses without applying a code', async ({ p
   await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
   await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('');
 });
-
 test('login distinguishes an unavailable server from incorrect credentials and can recover', async ({ page }) => {
   await fixtures(page);
   let unavailable = true;

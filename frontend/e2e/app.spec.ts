@@ -323,6 +323,27 @@ test('directories persist company and laboratory edits', async ({ page }) => {
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click(); await expect(page.getByText(lab, { exact: true })).toBeVisible();
 });
 
+test('local TN VED codes are loaded from Excel and persist in a product after saving', async ({ page }) => {
+  await login(page);
+  await page.getByRole('combobox', { name: 'Компания', exact: true }).selectOption({ label: 'Моя компания' });
+  await page.goto('/#/declarations/new');
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Локальный справочник ТН ВЭД');
+  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await page.getByLabel('Наименование продукции', { exact: true }).fill('Племенные лошади');
+  await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
+  await expect(dialog).toContainText(/13\s*294 кодов/);
+  await dialog.getByRole('textbox', { name: 'Код или название товара', exact: true }).fill('0101 21 0000');
+  await dialog.getByRole('button', { name: /чистопородные племенные животные/ }).click();
+  await dialog.getByRole('button', { name: 'Подставить код', exact: true }).click();
+  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('0101210000');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page).toHaveURL(/declarations\/[a-f0-9-]+$/);
+  await page.reload(); await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('0101210000');
+  await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Племенные лошади');
+});
+
 test('company switching, filters, CSV and honest integration states', async ({ page }) => {
   await login(page); await page.getByRole('link', { name: 'Декларации', exact: true }).click();
   await page.getByRole('button', { name: 'Черновики', exact: true }).click(); await expect(page.getByRole('table')).toBeVisible();
@@ -334,8 +355,8 @@ test('company switching, filters, CSV and honest integration states', async ({ p
     const card = page.locator('.connection-card').filter({ has: page.getByRole('heading', { name, exact: true }) });
     await expect(card.getByText('Не подключено', { exact: true })).toBeVisible();
   }
-  const tks = page.locator('.connection-card').filter({ has: page.getByRole('heading', { name: 'ТН ВЭД ЕАЭС — ТКС', exact: true }) });
-  await expect(tks.getByText('Нет сертификата ТКС', { exact: true })).toBeVisible();
+  const tnved = page.locator('.connection-card').filter({ has: page.getByRole('heading', { name: 'ТН ВЭД — локальный справочник', exact: true }) });
+  await expect(tnved.getByText('Загружен', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Успешных подключений пока нет' })).toBeVisible();
 });
 
