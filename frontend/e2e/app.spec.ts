@@ -259,7 +259,8 @@ test('create declaration, fill all sections, review, register, export and duplic
   const orgSelectors = page.getByRole('combobox', { name: 'Подставить из справочника' });
   await orgSelectors.first().click();
   await page.getByRole('option', { name: /ООО «Атлас Импорт»/ }).click();
-  await orgSelectors.nth(1).click();
+  await page.getByRole('tab', { name: 'Изготовитель', exact: true }).click();
+  await orgSelectors.first().click();
   await page.getByRole('option', { name: /Atlas Manufacturing Co., Ltd./ }).click();
   await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
   await page.getByLabel('Наименование продукции', { exact: true }).fill('Машина упаковочная тестовая');
