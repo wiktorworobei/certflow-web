@@ -1544,7 +1544,7 @@ test('development information is in the plan and old integration links lead to s
   await expect(page.getByRole('heading', { name: 'План разработки', exact: true })).toBeVisible();
   await expect(page.getByLabel('API-ключ DaData', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Развернуть все' }).click();
-  await expect(page.getByText('Зачем вам это нужно', { exact: true })).toHaveCount(8);
+  await expect(page.getByText('Зачем вам это нужно', { exact: true })).toHaveCount(9);
   await page.getByRole('button', { name: 'Свернуть все' }).click();
   await page.getByRole('group', { name: 'Направления разработки' }).getByRole('button', { name: 'ЧЗ и Наша марка', exact: true }).click();
   await expect(page.locator('.integration-guide')).toHaveCount(3);
