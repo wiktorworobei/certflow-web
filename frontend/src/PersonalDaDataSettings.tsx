@@ -25,7 +25,7 @@ export function PersonalDaDataSettings() {
     } catch (e) { setNotice(''); setError(errorMessage(e)); }
     finally { setBusy(false); }
   }
-  return <Section title="Мой аккаунт DaData" subtitle="Личный ключ используется для поиска и ночного обновления сохранённых вами компаний в справочнике. Для фонового обновления проверяются ваши действующие права на компанию.">
+  return <Section title="Мой аккаунт DaData" subtitle="Личный ключ используется для подбора ОКПД2, поиска и ночного обновления сохранённых вами компаний в справочнике. Для фонового обновления проверяются ваши действующие права на компанию.">
     {isLoading ? <Loading/> : loadError ? <ErrorState error={loadError} retry={refetch}/> : <>
       <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
         <Chip size="small" variant="outlined" color={data?.enabled && data?.verifiedAt ? 'success' : 'default'} label={!data?.enabled ? 'Поиск отключён сервером' : data?.verifiedAt ? 'Доступ подтверждён' : data?.hasPersonalKey ? 'Личный ключ сохранён' : data?.source === 'Server' ? 'Ключ сервера · требуется проверка' : 'Ключ не добавлен'}/>

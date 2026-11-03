@@ -320,6 +320,128 @@ async function login(page: Page, displayName = 'Виктор') {
   await expect(page.getByRole('heading', { name: `Добрый день, ${displayName}` })).toBeVisible();
 }
 
+const okpd2Leaf = { code: '01.11.11.110', name: 'Пшеница озимая твердая', section: 'A', index: 'A01.11.11.110', value: 'Пшеница озимая твердая' };
+async function okpd2Fixtures(page: Page, configured = true) {
+  const state = await fixtures(page);
+  await page.route('**/classifiers/okpd2/**', route => {
+    if (new URL(route.request().url()).pathname.endsWith('/settings')) return route.fulfill({ json: { enabled: true, isConfigured: configured, hasPersonalKey: false, source: configured ? 'Server' : 'None', updatedAt: null, verifiedAt: null } });
+    return route.fulfill({ json: { items: [okpd2Leaf], retrievedAt: '2026-11-03T09:00:00Z', fromCache: false } });
+  });
+  await login(page); await page.goto('/#/declarations/new');
+  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  return state;
+}
+
+test('OKPD2 previews and saves the selected code while preserving other product fields on desktop and mobile', async ({ page }) => {
+  const state = await okpd2Fixtures(page);
+  await page.getByLabel('Наименование продукции', { exact: true }).fill('Моя пшеница');
+  await page.getByLabel('Код ТН ВЭД', { exact: true }).fill('1001190000');
+  await page.getByRole('button', { name: 'Подобрать код ОКПД2', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Подбор кода ОКПД2', exact: true });
+  await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Искать по названию продукции', exact: true }).click();
+  await dialog.getByRole('button', { name: /01.11.11.110 Пшеница/ }).click();
+  await expect(dialog.getByRole('region', { name: 'Выбранный код ОКПД2' })).toContainText('01.11.11.110');
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'okpd2-desktop.png'), animations: 'disabled' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeInViewport();
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'okpd2-mobile.png'), animations: 'disabled' });
+  await dialog.getByRole('button', { name: 'Подставить код', exact: true }).click();
+  await expect(page.getByLabel('ОКПД2', { exact: true })).toHaveValue('01.11.11.110');
+  await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Моя пшеница');
+  await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('1001190000');
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.getByRole('tab', { name: 'Основные', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Проверка ОКПД2');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect.poll(() => state.getSaved()?.product).toMatchObject({ okpd2: '01.11.11.110', name: 'Моя пшеница', tnVed: '1001190000' });
+});
+
+test('OKPD2 supports section filters and exact lookup and clears selection when the query changes', async ({ page }) => {
+  await okpd2Fixtures(page);
+  await page.getByRole('button', { name: 'Подобрать код ОКПД2', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Подбор кода ОКПД2', exact: true });
+  const input = dialog.getByRole('textbox', { name: 'Код или название продукции', exact: true });
+  await input.fill('пшеница');
+  await dialog.getByRole('button', { name: /01.11.11.110 Пшеница/ }).click();
+  const filtered = page.waitForRequest(r => r.url().includes('/okpd2/search?') && new URL(r.url()).searchParams.get('section') === 'A');
+  await dialog.getByRole('combobox', { name: /^Раздел ОКПД2/ }).click();
+  await page.getByRole('option', { name: 'Раздел A', exact: true }).click(); await filtered;
+  await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeDisabled();
+  await input.fill('01.11.11.110');
+  await expect(dialog.getByRole('button', { name: /01.11.11.110 Пшеница/ })).toBeVisible();
+  const exact = page.waitForRequest(r => r.url().includes('/okpd2/find?') && new URL(r.url()).searchParams.get('code') === '01.11.11.110');
+  await dialog.getByRole('combobox', { name: /^Способ поиска/ }).click();
+  await page.getByRole('option', { name: 'Точный код', exact: true }).click();
+  expect(new URL((await exact).url()).searchParams.has('section')).toBe(false);
+  await expect(dialog.getByRole('combobox', { name: /^Раздел ОКПД2/ })).toHaveAttribute('aria-disabled', 'true');
+  await dialog.getByRole('button', { name: /01.11.11.110 Пшеница/ }).click();
+  await input.fill('01');
+  await expect(dialog.getByRole('button', { name: 'Подставить код', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(page.getByLabel('ОКПД2', { exact: true })).toHaveValue('');
+});
+
+test('OKPD2 distinguishes provider errors from empty results and keeps manual input available', async ({ page }) => {
+  await okpd2Fixtures(page); let fail = true;
+  await page.route('**/classifiers/okpd2/search?**', route => fail
+    ? route.fulfill({ status: 503, json: { detail: 'Достигнут лимит запросов DaData.' } })
+    : route.fulfill({ json: { items: [], retrievedAt: '2026-11-03T09:00:00Z', fromCache: false } }));
+  await page.getByRole('button', { name: 'Подобрать код ОКПД2', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Подбор кода ОКПД2', exact: true });
+  await dialog.getByRole('textbox', { name: 'Код или название продукции', exact: true }).fill('калоши');
+  await expect(dialog.getByRole('alert')).toContainText('Достигнут лимит');
+  await expect(dialog).not.toContainText('Ничего не найдено');
+  fail = false; await dialog.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Ничего не найдено');
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await page.getByLabel('ОКПД2', { exact: true }).fill('95.23.10.133');
+  await expect(page.getByLabel('ОКПД2', { exact: true })).toHaveValue('95.23.10.133');
+});
+
+test('OKPD2 missing key explains configuration and does not send searches', async ({ page }) => {
+  await okpd2Fixtures(page, false); const searches: string[] = [];
+  page.on('request', r => { if (r.url().includes('/okpd2/search?')) searches.push(r.url()); });
+  await page.getByLabel('ОКПД2', { exact: true }).fill('95.23.10.133');
+  await page.getByRole('button', { name: 'Подобрать код ОКПД2', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Подбор кода ОКПД2', exact: true });
+  await expect(dialog.getByRole('alert')).toContainText('Добавьте API-ключ');
+  await expect(dialog.getByRole('textbox', { name: 'Код или название продукции', exact: true })).toBeDisabled();
+  expect(searches).toHaveLength(0);
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(page.getByLabel('ОКПД2', { exact: true })).toHaveValue('95.23.10.133');
+});
+
+test('OKPD2 ignores a slow response for an earlier query', async ({ page }) => {
+  await okpd2Fixtures(page);
+  let releaseOld!: () => void; const gate = new Promise<void>(resolve => { releaseOld = resolve; });
+  let finishOld!: () => void; const oldCompleted = new Promise<void>(resolve => { finishOld = resolve; });
+  await page.route('**/classifiers/okpd2/search?**', async route => {
+    const old = new URL(route.request().url()).searchParams.get('query') === 'старый';
+    if (old) await gate;
+    await route.fulfill({ json: { items: [{ ...okpd2Leaf, name: old ? 'Старый результат' : 'Новый результат' }], retrievedAt: '2026-11-03T09:00:00Z', fromCache: false } });
+    if (old) finishOld();
+  });
+  await page.getByRole('button', { name: 'Подобрать код ОКПД2', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Подбор кода ОКПД2', exact: true });
+  const oldStarted = page.waitForRequest(r => r.url().includes('/okpd2/search?') && new URL(r.url()).searchParams.get('query') === 'старый');
+  await dialog.getByRole('textbox', { name: 'Код или название продукции', exact: true }).fill('старый'); await oldStarted;
+  await dialog.getByRole('textbox', { name: 'Код или название продукции', exact: true }).fill('новый');
+  await expect(dialog.getByRole('button', { name: /Новый результат/ })).toBeVisible();
+  releaseOld(); await oldCompleted;
+  await expect(dialog.getByRole('button', { name: /Новый результат/ })).toBeVisible();
+  await expect(dialog).not.toContainText('Старый результат');
+});
+
+test('OKPD2 lookup is unavailable in a read-only declaration', async ({ page }) => {
+  await fixtures(page, false, {}, 'Viewer'); await login(page);
+  await page.goto('/#/declarations/44444444-4444-4444-8444-000000000000');
+  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await expect(page.getByLabel('ОКПД2', { exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Подобрать код ОКПД2', exact: true })).toHaveCount(0);
+});
+
 const tnVedLeaf = { code: '0101210000', text: 'лошади: чистопородные племенные животные', tariff: '0%', detailsUrl: 'https://www.tws.by/tws/tnved' };
 const tnVedOther = { code: '0101291000', text: 'лошади: прочие: убойные', tariff: '5%', detailsUrl: '' };
 async function tnVedFixtures(page: Page, configured = true, total = 2) {

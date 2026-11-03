@@ -24,6 +24,7 @@ import { api, download } from '../store';
 import { OrganizationLookup } from '../OrganizationLookup';
 import { DeclarationProductCatalog } from '../DeclarationProductCatalog';
 import { DeclarationTnVedField } from '../DeclarationTnVedField';
+import { DeclarationOkpd2Field } from '../DeclarationOkpd2Field';
 import { NormativeDocumentsField } from '../NormativeDocumentsField';
 import { ErrorState, Loading, Section, StatusChip, useNotify, useWorkspace } from '../common';
 import { dateTime, emptyDeclaration, errorMessage, statusLabels, type Party, type Product, type SaveDeclaration, type Status } from '../types';
@@ -133,7 +134,7 @@ export function DeclarationEditor() {
       {tab === 'product' && <Section title="Сведения о продукции" subtitle="Опишите продукцию и её идентификационные признаки."><Grid container spacing={2.5}>
         <Grid item xs={12}><DeclarationProductCatalog key={`${firmId}:${id ?? 'new'}`} readOnly={readOnly}/></Grid>
         <Grid item xs={12}><Field name="product.name" label="Наименование продукции" multiline disabled={readOnly}/></Grid><Grid item xs={12}><Field name="product.identification" label="Модель, марка, артикул и другие признаки" multiline disabled={readOnly}/></Grid>
-        <Grid item xs={12} sm={4}><DeclarationTnVedField key={firmId} readOnly={readOnly}/></Grid><Grid item xs={12} sm={4}><Field name="product.okpd2" label="ОКПД2" disabled={readOnly}/></Grid><Grid item xs={12} sm={4}><Field name="product.gtin" label="GTIN" disabled={readOnly}/></Grid>
+        <Grid item xs={12} sm={4}><DeclarationTnVedField key={firmId} readOnly={readOnly}/></Grid><Grid item xs={12} sm={4}><DeclarationOkpd2Field key={firmId} readOnly={readOnly}/></Grid><Grid item xs={12} sm={4}><Field name="product.gtin" label="GTIN" disabled={readOnly}/></Grid>
         <Grid item xs={12} sm={6}><Controller control={control} name="product.productionType" render={({ field }) => <TextField {...field} select label="Объект декларирования" disabled={readOnly}><MenuItem value="Serial">Серийный выпуск</MenuItem><MenuItem value="Batch">Партия</MenuItem><MenuItem value="Single">Единичное изделие</MenuItem></TextField>}/></Grid><Grid item xs={12} sm={6}><Field name="product.batchDetails" label="Сведения о партии / изделии" disabled={readOnly}/></Grid>
         <Grid item xs={12}><Field name="product.storageConditions" label="Условия хранения и эксплуатации" multiline disabled={readOnly}/></Grid>
       </Grid></Section>}
