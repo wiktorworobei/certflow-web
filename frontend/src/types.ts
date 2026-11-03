@@ -1,4 +1,5 @@
 import { emptyEvidence, type EvidenceWorkflow, type LaboratoryDetails, type ReportDetails } from './evidenceTypes';
+import type { DeclarationWorkspace, FgisPreparation } from './workspaceTypes';
 
 export type Status = 'Draft' | 'InReview' | 'Ready' | 'Registered' | 'Suspended' | 'Revoked' | 'Archived';
 export type ArchiveAction = 'archive' | 'purge' | 'restore';
@@ -12,8 +13,8 @@ export interface Report { number: string; date: string | null; laboratoryName: s
 export interface Attachment { id: string; fileName: string; contentType: string; length: number; createdAt: string }
 export interface DocumentEvent { occurredAt: string; actor: string; description: string }
 export interface DeclarationRow { id: string; reference: string; title: string; kind: string; status: Status; applicant: string; manufacturer: string; product: string; tnVed: string; registrationNumber: string; validUntil: string | null; updatedAt: string; isSample: boolean; revision: number }
-export interface SaveDeclaration { title: string; kind: string; scheme: string; applicant: Party; manufacturer: Party; product: Product; regulations: string[]; additionalInfo: string; adoptedAt: string | null; validUntil: string | null; reports: Report[]; revision: number; evidence?: EvidenceWorkflow }
-export interface Declaration extends SaveDeclaration { id: string; reference: string; status: Status; registrationNumber: string; registryUrl: string; createdAt: string; updatedAt: string; isSample: boolean; attachments: Attachment[]; events: DocumentEvent[]; missingRequirements: string[] }
+export interface SaveDeclaration { title: string; kind: string; scheme: string; applicant: Party; manufacturer: Party; product: Product; regulations: string[]; additionalInfo: string; adoptedAt: string | null; validUntil: string | null; reports: Report[]; revision: number; evidence?: EvidenceWorkflow; workspace?: DeclarationWorkspace }
+export interface Declaration extends SaveDeclaration { id: string; reference: string; status: Status; registrationNumber: string; registryUrl: string; createdAt: string; updatedAt: string; isSample: boolean; attachments: Attachment[]; events: DocumentEvent[]; missingRequirements: string[]; fgisPreparation?: FgisPreparation | null }
 export interface Page<T> { items: T[]; total: number; page: number; pageSize: number }
 export interface Filters { search?: string; status?: Status; page?: number; pageSize?: number; expiring?: boolean }
 export interface Activity { declarationId: string; reference: string; title: string; occurredAt: string; actor: string; description: string }

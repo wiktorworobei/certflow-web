@@ -1,3 +1,7 @@
+import { FilesPanel, InventoryPanel, WorkspaceSectionPanel } from '../DeclarationWorkspacePanel';
+import { FgisPublicationPanel } from '../FgisPublicationPanel';
+import { declarationTabs, emptyWorkspace, type DeclarationTab, type DeclarationWorkspace } from '../workspaceTypes';
+import '../declarationWorkspace.css';
 import { EvidencePanel } from '../EvidencePanel';
 import type { EvidenceWorkflow } from '../evidenceTypes';
 import { useEffect, useRef, useState } from 'react';
@@ -5,12 +9,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Controller, FormProvider, useForm, useFormContext, useWatch, type Path } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { Alert, Autocomplete, createFilterOptions, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Grid, IconButton, LinearProgress, Menu, MenuItem, Paper, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Autocomplete, createFilterOptions, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Grid, LinearProgress, Menu, MenuItem, Paper, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
 import { ArrowBackRounded } from '@mui/icons-material';
 import { SaveOutlined } from '@mui/icons-material';
-import { DeleteOutlineRounded } from '@mui/icons-material';
 import { FileDownloadOutlined } from '@mui/icons-material';
-import { UploadFileOutlined } from '@mui/icons-material';
 import { DescriptionOutlined } from '@mui/icons-material';
 import { CheckCircleRounded } from '@mui/icons-material';
 import { RadioButtonUncheckedRounded } from '@mui/icons-material';
@@ -24,10 +26,11 @@ import { DeclarationProductCatalog } from '../DeclarationProductCatalog';
 import { DeclarationTnVedField } from '../DeclarationTnVedField';
 import { NormativeDocumentsField } from '../NormativeDocumentsField';
 import { ErrorState, Loading, Section, StatusChip, useNotify, useWorkspace } from '../common';
-import { dateTime, emptyDeclaration, errorMessage, statusLabels, type Declaration, type Party, type Product, type SaveDeclaration, type Status } from '../types';
+import { dateTime, emptyDeclaration, errorMessage, statusLabels, type Party, type Product, type SaveDeclaration, type Status } from '../types';
 
 const schema: yup.ObjectSchema<SaveDeclaration> = yup.object({
   evidence: yup.mixed<EvidenceWorkflow>().optional(),
+  workspace: yup.mixed<DeclarationWorkspace>().optional(),
   title: yup.string().trim().required('Укажите название документа').max(250), kind: yup.string().required(), scheme: yup.string().required(),
   applicant: yup.mixed<Party>().defined(), manufacturer: yup.mixed<Party>().defined(), product: yup.mixed<Product>().defined(),
   regulations: yup.array(yup.string().defined()).defined(), reports: yup.array(yup.mixed<import('../types').Report>().defined()).defined(),
@@ -59,35 +62,16 @@ function PartyPanel({ side, label, readOnly }: { side: 'applicant' | 'manufactur
 }
 
 
-function FilesPanel({ document }: { document?: Declaration }) {
-  const { getValues, setValue, formState: { isDirty } } = useFormContext<SaveDeclaration>();
-  const { firmId, canEdit } = useWorkspace(); const notify = useNotify();
-  const [upload, { isLoading: uploading }] = api.useUploadMutation(); const [remove, { isLoading: removing }] = api.useRemoveAttachmentMutation();
-  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
-  async function uploadFile(file?: File) {
-    if (!file || !document) return;
-    if (file.size > 20 * 1024 * 1024) { notify('Файл должен быть не больше 20 МБ', 'error'); return; }
-    try { const previousRevision = getValues('revision'); const result = await upload({ firmId, id: document.id, file }).unwrap(); if (previousRevision === document.revision && result.revision === previousRevision + 1) setValue('revision',result.revision,{shouldDirty:false}); notify('Файл добавлен'); } catch (e) { notify(errorMessage(e), 'error'); }
-  }
-  return <><Section title="Документы и сканы" subtitle="Протоколы, заявления и другие материалы к декларации.">
-    {!document ? <Alert severity="info">Сохраните декларацию, чтобы прикрепить файлы.</Alert> : <>{canEdit && <Button component="label" className="file-dropzone" disabled={uploading} startIcon={<UploadFileOutlined/>}>{uploading ? 'Загружаем файл…' : 'Добавить файл'}<span>PDF, DOCX, PNG, JPEG · до 20 МБ</span><input type="file" hidden accept=".pdf,.docx,.png,.jpg,.jpeg" onChange={e => { void uploadFile(e.target.files?.[0]); e.target.value = ''; }}/></Button>}
-      {document.attachments.map(file => <div className="attachment-row" key={file.id}><DescriptionOutlined sx={{ color: 'var(--accent-text)' }}/><div><strong>{file.fileName}</strong><span>{Math.max(1, Math.round(file.length / 1024))} КБ · {dateTime(file.createdAt)}</span></div><IconButton aria-label={`Скачать ${file.fileName}`} onClick={async () => { try { await download(`/firms/${firmId}/declarations/${document.id}/attachments/${file.id}`, file.fileName); } catch (e) { notify(errorMessage(e), 'error'); } }}><FileDownloadOutlined fontSize="small"/></IconButton>{canEdit && <IconButton aria-label={`Удалить ${file.fileName}`} disabled={removing || isDirty} onClick={() => setDeleting({ id: file.id, name: file.fileName })}><DeleteOutlineRounded fontSize="small"/></IconButton>}</div>)}
-      {!document.attachments.length && <Typography color="text.secondary" sx={{ mt: 2 }}>Файлы ещё не добавлены.</Typography>}</>}
-  </Section><Section title="История изменений">{document?.events.length ? <div className="document-history">{document.events.map((event, i) => <div key={`${event.occurredAt}-${i}`}><i/><div><strong>{event.description}</strong><span>{event.actor} · {dateTime(event.occurredAt)}</span></div></div>)}</div> : <Typography color="text.secondary">История появится после первого сохранения.</Typography>}</Section>
-    <Dialog open={!!deleting} onClose={() => setDeleting(null)} maxWidth="xs" fullWidth><DialogTitle>Удалить файл?</DialogTitle><DialogContent><Typography>{deleting?.name}</Typography></DialogContent><DialogActions><Button onClick={() => setDeleting(null)}>Отмена</Button><Button color="error" disabled={removing || isDirty} onClick={async () => { if (!document || !deleting) return; try { await remove({ firmId, id: document.id, attachmentId: deleting.id }).unwrap(); setDeleting(null); notify('Файл удалён'); } catch (e) { notify(errorMessage(e), 'error'); } }}>Удалить</Button></DialogActions></Dialog>
-  </>;
-}
-
 export function DeclarationEditor() {
   const { id } = useParams(); const navigate = useNavigate(); const notify = useNotify(); const { firmId, canEdit } = useWorkspace();
   const { data: document, isLoading, error, refetch } = api.useDeclarationQuery({ firmId, id: id ?? '' }, { skip: !id });
   const [save, { isLoading: saving }] = api.useSaveDeclarationMutation(); const [changeStatus, { isLoading: changing }] = api.useChangeStatusMutation();
-  const form = useForm<SaveDeclaration>({ defaultValues: emptyDeclaration(), resolver: yupResolver(schema) });
+  const form = useForm<SaveDeclaration>({ defaultValues: { ...emptyDeclaration(), workspace: emptyWorkspace() }, resolver: yupResolver(schema) });
   const { reset, handleSubmit, control, watch, formState: { isDirty } } = form;
   const dirty = useRef(isDirty); dirty.current = isDirty; const loadedId = useRef<string | undefined>(undefined);
-  useEffect(() => { if (document && (!dirty.current || loadedId.current !== document.id)) { reset(document); loadedId.current = document.id; } }, [document, reset]);
+  useEffect(() => { if (document && (!dirty.current || loadedId.current !== document.id)) { reset({ ...document, workspace: document.workspace ?? emptyWorkspace() }); loadedId.current = document.id; } }, [document, reset]);
   useEffect(() => { const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty.current) event.preventDefault(); }; window.addEventListener('beforeunload', beforeUnload); return () => window.removeEventListener('beforeunload', beforeUnload); }, []);
-  const [tab, setTab] = useState(0); const [serverError, setServerError] = useState('');
+  const [tab, setTab] = useState<DeclarationTab>('main'); const [serverError, setServerError] = useState('');
   const [statusMenu, setStatusMenu] = useState<HTMLElement | null>(null); const [statusTarget, setStatusTarget] = useState<Status | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<ArchiveSelection | null>(null);
   useEffect(() => { setRestoreTarget(null); }, [firmId, id]);
@@ -130,27 +114,42 @@ export function DeclarationEditor() {
       {document && <Button variant="outlined" disabled={isDirty} onClick={() => void exportDocument('zip')}>Комплект ZIP</Button>}
       {document && canEdit && document.status !== 'Archived' && <Tooltip title={isDirty ? 'Сначала сохраните изменения' : 'Убрать из рабочего списка, сохранив документ'}><span><Button variant="outlined" startIcon={<ArchiveOutlined/>} disabled={isDirty || saving || changing} onClick={() => setStatusTarget('Archived')}>В архив</Button></span></Tooltip>}
       {document && canEdit && document.status === 'Archived' && <Button variant="contained" startIcon={<UnarchiveOutlined/>} disabled={saving || changing} onClick={() => setRestoreTarget({ id: document.id, revision: document.revision, title: document.title })}>Восстановить из архива</Button>}
-      {!readOnly && <Button variant="contained" startIcon={<SaveOutlined/>} disabled={saving} onClick={() => void handleSubmit(data => submit(data), () => { setTab(0); notify('Проверьте обязательные поля', 'error'); })()}>{saving ? 'Сохраняем…' : 'Сохранить'}</Button>}
+      {!readOnly && <Button variant="contained" startIcon={<SaveOutlined/>} disabled={saving} onClick={() => void handleSubmit(data => submit(data), () => { setTab('main'); notify('Проверьте обязательные поля', 'error'); })()}>{saving ? 'Сохраняем…' : 'Сохранить'}</Button>}
     </div></div>
     {serverError && <Alert severity="error" onClose={() => setServerError('')} sx={{ mb: 2 }}>{serverError}</Alert>}
     {readOnly && canEdit && <Alert severity="info" sx={{ mb: 2 }}>Данные этого документа защищены от изменения. Для готовой декларации можно вернуться в черновик; зарегистрированный документ можно использовать как основу для копии.</Alert>}
-    <FormProvider {...form}><div className="editor-grid"><div className="editor-main"><Paper className="editor-tabs"><Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" scrollButtons="auto" aria-label="Разделы декларации">{['Сведения', 'Участники', 'Продукция', 'Испытания', 'Файлы и история'].map(label => <Tab label={label} key={label}/>)}</Tabs></Paper>
-      {tab === 0 && <><Section title="Основные сведения" subtitle="Внутреннее название помогает найти документ в реестре."><Grid container spacing={2.5}>
+    <FormProvider {...form}><div className="editor-grid"><div className="editor-main"><Paper className="editor-tabs workspace-tabs"><Tabs value={tab} onChange={(_, v: DeclarationTab) => setTab(v)} aria-label="Разделы декларации">{declarationTabs.map(([key, label]) => <Tab value={key} id={`declaration-tab-${key}`} aria-controls={`declaration-panel-${key}`} label={label} key={key}/>)}</Tabs></Paper>
+      <div role="tabpanel" id={`declaration-panel-${tab}`} aria-labelledby={`declaration-tab-${tab}`}>
+
+      {tab === 'main' && <><Section title="Основные сведения" subtitle="Внутреннее название помогает найти документ в реестре."><Grid container spacing={2.5}>
         <Grid item xs={12}><Field name="title" label="Название декларации" required disabled={readOnly}/></Grid>
         <Grid item xs={12} sm={8}><Controller control={control} name="kind" render={({ field }) => <TextField {...field} label="Вид документа" select disabled={readOnly}>{['Декларация ТР ЕАЭС', 'Декларация ГОСТ Р', 'Декларация ТР РФ'].map(v => <MenuItem value={v} key={v}>{v}</MenuItem>)}</TextField>}/></Grid><Grid item xs={12} sm={4}><Field name="scheme" label="Схема декларирования" required disabled={readOnly}/></Grid>
         <Grid item xs={12}><Controller control={control} name="regulations" render={({ field }) => <NormativeDocumentsField key={firmId} firmId={firmId} value={field.value} disabled={readOnly} onChange={field.onChange}/>}/></Grid>
         <Grid item xs={12} sm={6}><Field name="adoptedAt" label="Дата принятия" type="date" disabled={readOnly}/></Grid><Grid item xs={12} sm={6}><Field name="validUntil" label="Действует до" type="date" disabled={readOnly}/></Grid>
         <Grid item xs={12}><Field name="additionalInfo" label="Дополнительные сведения" multiline disabled={readOnly}/></Grid>
       </Grid></Section>{document?.registrationNumber && <Section title="Регистрационные сведения"><Typography sx={{ fontWeight: 600 }}>{document.registrationNumber}</Typography>{document.registryUrl && <Button component="a" href={document.registryUrl} target="_blank" rel="noopener noreferrer" sx={{ mt: 1 }}>Открыть запись в реестре ↗</Button>}<Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>Сведения внесены вручную. Автоматическая проверка в ФГИС не выполнялась.</Typography></Section>}</>}
-      {tab === 1 && <><PartyPanel side="applicant" label="Заявитель" readOnly={readOnly}/><PartyPanel side="manufacturer" label="Изготовитель" readOnly={readOnly}/></>}
-      {tab === 2 && <Section title="Сведения о продукции" subtitle="Опишите продукцию и её идентификационные признаки."><Grid container spacing={2.5}>
+      {tab === 'applicant' && <PartyPanel side="applicant" label="Заявитель" readOnly={readOnly}/>}
+      {tab === 'manufacturer' && <PartyPanel side="manufacturer" label="Изготовитель" readOnly={readOnly}/>}
+      {tab === 'product' && <Section title="Сведения о продукции" subtitle="Опишите продукцию и её идентификационные признаки."><Grid container spacing={2.5}>
         <Grid item xs={12}><DeclarationProductCatalog key={`${firmId}:${id ?? 'new'}`} readOnly={readOnly}/></Grid>
         <Grid item xs={12}><Field name="product.name" label="Наименование продукции" multiline disabled={readOnly}/></Grid><Grid item xs={12}><Field name="product.identification" label="Модель, марка, артикул и другие признаки" multiline disabled={readOnly}/></Grid>
         <Grid item xs={12} sm={4}><DeclarationTnVedField key={firmId} readOnly={readOnly}/></Grid><Grid item xs={12} sm={4}><Field name="product.okpd2" label="ОКПД2" disabled={readOnly}/></Grid><Grid item xs={12} sm={4}><Field name="product.gtin" label="GTIN" disabled={readOnly}/></Grid>
         <Grid item xs={12} sm={6}><Controller control={control} name="product.productionType" render={({ field }) => <TextField {...field} select label="Объект декларирования" disabled={readOnly}><MenuItem value="Serial">Серийный выпуск</MenuItem><MenuItem value="Batch">Партия</MenuItem><MenuItem value="Single">Единичное изделие</MenuItem></TextField>}/></Grid><Grid item xs={12} sm={6}><Field name="product.batchDetails" label="Сведения о партии / изделии" disabled={readOnly}/></Grid>
         <Grid item xs={12}><Field name="product.storageConditions" label="Условия хранения и эксплуатации" multiline disabled={readOnly}/></Grid>
       </Grid></Section>}
-      {tab === 3 && <EvidencePanel readOnly={readOnly} document={document} onFiles={() => setTab(4)}/>}{tab === 4 && <FilesPanel document={document}/>}
+      {tab === 'testing' && <><EvidencePanel readOnly={readOnly} document={document} onFiles={() => setTab('scans')}/><WorkspaceSectionPanel section="testing" title="Анализ состояния производства" contentLabel="Результаты анализа, акт, сведения о производстве" readOnly={readOnly}/></>}
+      {tab === 'regulations' && <Section title="ГОСТы и технические регламенты"><Controller control={control} name="regulations" render={({ field }) => <NormativeDocumentsField key={firmId} firmId={firmId} value={field.value} disabled={readOnly} onChange={field.onChange}/>}/></Section>}
+      {tab === 'application' && <><WorkspaceSectionPanel section="application" title="Заявка и документы" contentLabel="Сведения о заявке, договоре и прилагаемых документах" numbered readOnly={readOnly}/><InventoryPanel document={document} onFiles={() => setTab('scans')}/></>}
+      {tab === 'declaration' && <><Section title="Макет декларации" subtitle="Сводка сведений. Макеты Word и PDF доступны после сохранения."><dl className="workspace-summary"><dt>Заявитель</dt><dd>{values.applicant.name || '—'}</dd><dt>Изготовитель</dt><dd>{values.manufacturer.name || '—'}</dd><dt>Продукция</dt><dd>{values.product.name || '—'}</dd><dt>ТН ВЭД</dt><dd>{values.product.tnVed || '—'}</dd><dt>Регламенты</dt><dd>{values.regulations.join('\n') || '—'}</dd><dt>Регистрация</dt><dd>{document?.registrationNumber || 'Нет сведений о регистрации'}</dd></dl><Alert severity="info">Макет не является зарегистрированным документом. Внешняя проверка регистрации не выполнялась.</Alert></Section><WorkspaceSectionPanel section="declaration" title="Сведения для макета" contentLabel="Дополнительный текст к декларации" readOnly={readOnly}/></>}
+      {tab === 'appendix-products' && <WorkspaceSectionPanel section="appendix-products" title="Приложение: продукция" contentLabel="Перечень продукции, моделей, марок и артикулов" readOnly={readOnly}/>}
+      {tab === 'appendix-addresses' && <WorkspaceSectionPanel section="appendix-addresses" title="Приложение: адреса" contentLabel="Адреса площадок, филиалов и производств" readOnly={readOnly}/>}
+      {tab === 'appendix-standards' && <WorkspaceSectionPanel section="appendix-standards" title="Приложение: ГОСТы" contentLabel="Перечень стандартов и применимых пунктов" readOnly={readOnly}/>}
+      {tab === 'appendix-free' && <WorkspaceSectionPanel section="appendix-free" title="Свободное приложение / Префиксы" contentLabel="Текст приложения, префиксы и формулировки" readOnly={readOnly}/>}
+      {tab === 'closure' && <><InventoryPanel document={document} onFiles={() => setTab('scans')}/><WorkspaceSectionPanel section="closure" title="Закрытие дела" contentLabel="Результаты проверки комплекта и сведения о закрытии" readOnly={readOnly}/></>}
+      {tab === 'scans' && <FilesPanel document={document} readOnly={readOnly}/>}
+      {tab === 'fgis' && <FgisPublicationPanel document={document} onFiles={() => setTab('scans')}/>}
+      {tab === 'foreign' && <WorkspaceSectionPanel section="foreign" title="Foreign" readOnly={readOnly}/>}
+      </div>
     </div><aside className="editor-aside"><Paper className="checklist-card"><Typography variant="h6">Готовность документа</Typography><div className="checklist-progress"><strong>{complete}<span> / {checks.length}</span></strong><Typography variant="body2" color="text.secondary">разделов заполнено</Typography></div><LinearProgress variant="determinate" value={complete / checks.length * 100} sx={{ height: 6, borderRadius: 4, bgcolor: 'var(--accent-soft)', mb: 3 }}/>{checks.map(([label, ok]) => <div className="checklist-item" key={label}>{ok ? <CheckCircleRounded sx={{ color: 'var(--success)', fontSize: 18 }}/> : <RadioButtonUncheckedRounded sx={{ color: 'var(--faint)', fontSize: 18 }}/>}<span>{label}</span></div>)}<Divider sx={{ my: 2.5 }}/>{document && !isDirty && document.missingRequirements.length > 0 && <Alert severity="warning" sx={{mb:2}}><Typography variant="body2">Нужно дополнить:</Typography><ul>{document.missingRequirements.map(item => <li key={item}>{item}</li>)}</ul></Alert>}<Typography color="text.secondary" variant="body2">Базовые проверки помогают подготовить документ. Содержание и применимость требований проверяет специалист.</Typography>
       {document && canEdit && transitions[document.status].length > 0 && <Button variant="outlined" fullWidth endIcon={<KeyboardArrowDownRounded/>} sx={{ mt: 2.5 }} disabled={isDirty} onClick={e => setStatusMenu(e.currentTarget)}>Изменить статус</Button>}
     </Paper><div className="editor-hint"><DescriptionOutlined fontSize="small"/><p>Данные участников сохраняются в документе. Изменение справочника не переписывает ранее оформленные декларации.</p></div></aside></div></FormProvider>

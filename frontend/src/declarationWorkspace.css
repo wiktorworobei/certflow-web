@@ -1,0 +1,19 @@
+.editor-tabs.workspace-tabs { padding: 8px; margin-bottom: 24px; }
+.workspace-tabs .MuiTabs-scroller { overflow: visible !important; }
+.workspace-tabs .MuiTabs-flexContainer { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.workspace-tabs .MuiTab-root { min-width: 0; min-height: 52px; max-width: none; padding: 10px 12px; font-size: 12px; line-height: 1.4; text-align: left; align-items: flex-start; border-radius: 9px; text-transform: none; overflow-wrap: anywhere; }
+.workspace-tabs .MuiTab-root.Mui-selected { background: var(--accent-soft); color: var(--accent-text); font-weight: 700; }
+.workspace-tabs .MuiTabs-indicator { display: none; }
+.workspace-file { border-bottom: 1px solid var(--border); padding: 6px 0 12px; }
+.workspace-file:last-child { border-bottom: 0; }
+.workspace-inventory-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.workspace-inventory-row > span:first-child { flex: 1; min-width: 150px; }
+.workspace-summary { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 12px 20px; overflow-wrap: anywhere; }
+.workspace-summary dt { color: var(--muted); }
+.workspace-summary dd { margin: 0; white-space: pre-wrap; }
+@media (max-width: 600px) {
+  .workspace-tabs .MuiTabs-flexContainer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-tabs .MuiTab-root { min-height: 56px; font-size: 11px; padding: 8px; }
+  .workspace-summary { grid-template-columns: 1fr; gap: 5px; }
+  .workspace-summary dd { margin-bottom: 12px; }
+}

@@ -474,7 +474,7 @@ test('declaration archive requires confirmation and keeps documents accessible i
   await page.getByRole('menuitem', { name: 'Открыть документ', exact: true }).click();
   await expect(page.getByRole('button', { name: 'В архив', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Название декларации')).toBeDisabled();
-  await page.getByRole('tab', { name: 'Файлы и история', exact: true }).click();
+  await page.getByRole('tab', { name: 'Сканы', exact: true }).click();
   await expect(page.getByText('Статус: В архиве. Работа завершена', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Открыть архив', exact: true }).click();
   await expect(page).toHaveURL(/status=Archived/);
@@ -616,11 +616,12 @@ test('declaration selects a related NK declaration without INN and explicitly im
   await login(page); await page.goto('/#/declarations/new');
   await page.getByLabel('Название декларации').fill('Подстановка декларации НК');
   await page.getByRole('button', { name: 'Включить тёмную тему' }).click();
-  await page.getByRole('tab', { name: 'Участники', exact: true }).click();
+  await page.getByRole('tab', { name: 'Заявитель', exact: true }).click();
   await page.getByLabel('Полное наименование', { exact: true }).first().fill('Старый заявитель');
   await page.getByLabel('ИНН', { exact: true }).first().fill('7707083893');
   await page.getByLabel('Телефон', { exact: true }).first().fill('Старый телефон');
-  await page.getByLabel('Полное наименование', { exact: true }).last().fill('Завод НК');
+  await page.getByRole('tab', { name: 'Изготовитель', exact: true }).click();
+  await page.getByLabel('Полное наименование', { exact: true }).fill('Завод НК');
   await page.getByLabel('Адрес', { exact: true }).last().fill('Сохранённый адрес завода');
   await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
   await page.getByRole('button', { name: 'Выбрать товар из ЧЗ', exact: true }).click();
@@ -639,12 +640,13 @@ test('declaration selects a related NK declaration without INN and explicitly im
   await expect(dialog).toBeHidden();
   await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue(permit.productName);
   await expect(page.getByRole('region', { name: 'Декларация-источник из НК' })).toContainText('ЕАЭС TEST-2');
-  await page.getByRole('tab', { name: 'Участники', exact: true }).click();
+  await page.getByRole('tab', { name: 'Заявитель', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Полное наименование', exact: true }).first()).toHaveValue('Новый заявитель НК');
   await expect(page.getByRole('textbox', { name: 'ИНН', exact: true }).first()).toHaveValue('');
   await expect(page.getByRole('textbox', { name: 'Телефон', exact: true }).first()).toHaveValue('');
-  await expect(page.getByRole('textbox', { name: 'Адрес', exact: true }).last()).toHaveValue('Сохранённый адрес завода');
-  await page.getByRole('tab', { name: 'Сведения', exact: true }).click();
+  await page.getByRole('tab', { name: 'Изготовитель', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Адрес', exact: true })).toHaveValue('Сохранённый адрес завода');
+  await page.getByRole('tab', { name: 'Основные', exact: true }).click();
   await expect(page.getByLabel('Дата принятия', { exact: true })).toHaveValue('2026-10-01');
   await expect(page.getByLabel('Действует до', { exact: true })).toHaveValue('2027-10-01');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
@@ -1009,7 +1011,7 @@ const lookupCandidate = { name: 'ООО «Тестовый заявитель»'
 
 async function identityLookup(page: Page, candidate = lookupCandidate, side = 0) {
   await page.route('**/organizations/lookup', route => route.fulfill({ json: { items: [candidate], retrievedAt: '2026-10-27T10:00:00Z', fromCache: false } }));
-  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Участники' }).click();
+  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Заявитель' }).click();
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).nth(side).click();
   const dialog = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData' });
   await dialog.getByLabel('ИНН или ОГРН / ОГРНИП').fill(candidate.inn || candidate.ogrn);
@@ -1175,7 +1177,7 @@ test('ordinary manual edits save without a warning and only a forced refresh ask
 test('lookup replacement waits for overwrite confirmation and cancellation preserves manual form values', async ({ page }) => {
   await fixtures(page, true, {}, 'Admin', true);
   await page.route('**/organizations/lookup', route => route.fulfill({ json: { items: [{ ...lookupCandidate, registrationAuthority: '' }], retrievedAt: '2026-10-21T10:00:00Z', fromCache: false } }));
-  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Участники' }).click();
+  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Заявитель' }).click();
   const authority = page.getByLabel('Регистрирующий орган', { exact: true }).first(); const phone = page.getByLabel('Телефон', { exact: true }).first();
   await authority.fill('Ручной орган'); await phone.fill('+7 999 111-22-33');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
@@ -1194,7 +1196,7 @@ test('lookup replacement waits for overwrite confirmation and cancellation prese
 test('manual phone and registration authority can be entered but are replaced by another empty lookup', async ({ page }) => {
   const fixture = await fixtures(page, true); let requests = 0;
   await page.route('**/organizations/lookup', route => { requests++; return route.fulfill({ json: { items: [{ ...lookupCandidate, registrationAuthority: '' }], retrievedAt: '2026-10-20T10:00:00Z', fromCache: false } }); });
-  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Участники' }).click();
+  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Заявитель' }).click();
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData' });
   await dialog.getByLabel('ИНН или ОГРН / ОГРНИП').fill(lookupCandidate.inn);
@@ -1251,7 +1253,7 @@ test('company details can be manually edited in the directory and reused after r
   await expect(dialog.getByLabel('Регистрирующий орган', { exact: true })).toHaveValue('Регистрирующий орган от пользователя');
   await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
   await page.getByRole('link', { name: 'Обзор', exact: true }).click(); await page.getByRole('link', { name: 'Новая декларация' }).click();
-  await page.getByRole('tab', { name: 'Участники' }).click();
+  await page.getByRole('tab', { name: 'Заявитель' }).click();
   await page.getByRole('combobox', { name: 'Подставить из справочника' }).first().fill('Уточнённое название');
   await page.getByRole('option', { name: /Уточнённое название/ }).click();
   await expect(page.getByLabel('Телефон', { exact: true }).first()).toHaveValue('+7 999 888-77-66');
@@ -1279,7 +1281,7 @@ test('directory company deletion requires confirmation and updates saved lists',
   await page.reload();
   await expect(page.getByRole('row').filter({ hasText: lookupCandidate.name })).toHaveCount(0);
   await page.getByRole('button', { name: 'Создать декларацию', exact: true }).click();
-  await page.getByRole('tab', { name: 'Участники' }).click();
+  await page.getByRole('tab', { name: 'Заявитель' }).click();
   await page.getByRole('combobox', { name: 'Подставить из справочника' }).first().fill(lookupCandidate.name);
   await expect(page.getByRole('option', { name: /Тестовый заявитель/ })).toHaveCount(0);
 });
@@ -1336,7 +1338,7 @@ test('DaData result can be saved directly to the directory and reused by name IN
   const fixture = await fixtures(page, true); let requests = 0;
   await page.route('**/organizations/lookup', route => { requests++; return route.fulfill({ json: { items: [lookupCandidate], retrievedAt: '2026-10-20T10:00:00Z', fromCache: false } }); });
   await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click();
-  await page.getByRole('tab', { name: 'Участники' }).click();
+  await page.getByRole('tab', { name: 'Заявитель' }).click();
   await page.getByLabel('Телефон', { exact: true }).first().fill('+7 999 1234567');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData' });
@@ -1348,7 +1350,7 @@ test('DaData result can be saved directly to the directory and reused by name IN
   await expect(dialog).toBeHidden();
   expect(fixture.getOrganizations()).toHaveLength(1);
   expect(fixture.getOrganizations()[0]).toMatchObject({ inn: lookupCandidate.inn, kpp: lookupCandidate.kpp, autoRefresh: true, signatory: lookupCandidate.managerName, phone: '+7 999 1234567' });
-  await page.reload(); await page.getByRole('tab', { name: 'Участники' }).click();
+  await page.reload(); await page.getByRole('tab', { name: 'Заявитель' }).click();
   const selector = page.getByRole('combobox', { name: 'Подставить из справочника' }).first();
   for (const search of ['Тестовый заявитель', lookupCandidate.inn, lookupCandidate.kpp]) {
     await selector.fill(search);
@@ -1358,7 +1360,7 @@ test('DaData result can be saved directly to the directory and reused by name IN
   await expect(page.getByLabel('Телефон', { exact: true }).first()).toHaveValue('+7 999 1234567');
   expect(requests).toBe(1);
   await page.getByRole('combobox', { name: 'Компания', exact: true }).selectOption('22222222-2222-4222-8222-222222222222');
-  await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Участники' }).click();
+  await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Заявитель' }).click();
   await page.getByRole('combobox', { name: 'Подставить из справочника' }).first().fill(lookupCandidate.inn);
   await expect(page.getByRole('option', { name: /Тестовый заявитель/ })).toHaveCount(0);
 });
@@ -1441,7 +1443,7 @@ test('DaData declaration lookup handles empty and failed responses and requires 
     : route.fulfill({ json: { items: mode === 'empty' ? [] : [lookupCandidate], retrievedAt: '2026-10-20T10:00:00Z', fromCache: false } }));
   await page.getByRole('link', { name: 'Новая декларация' }).click();
   await page.getByLabel('Название декларации').fill('Автозаполнение заявителя');
-  await page.getByRole('tab', { name: 'Участники' }).click();
+  await page.getByRole('tab', { name: 'Заявитель' }).click();
   await page.getByLabel('ИНН', { exact: true }).first().fill('7707083893');
   await page.getByLabel('ФИО подписанта', { exact: true }).fill('Старый подписант');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
@@ -1481,7 +1483,7 @@ test('personal DaData key can be configured in account and used to fill OGRN req
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'dadata-personal-account.png'), animations: 'disabled' });
   await page.getByRole('link', { name: 'Перейти к новой декларации', exact: true }).click();
   await page.getByLabel('Название декларации').fill('Подстановка по ОГРН');
-  await page.getByRole('tab', { name: 'Участники' }).click();
+  await page.getByRole('tab', { name: 'Заявитель' }).click();
   await page.getByLabel('ОГРН / ОГРНИП', { exact: true }).first().fill('1027700132195');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData', exact: true });
