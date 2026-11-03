@@ -3,6 +3,119 @@ import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import type { NormativeDocument } from '../src/normativeApi';
+
+test('normative field keeps selected and manually entered values', async ({ page }) => {
+  const fixture = await fixtures(page);
+  await page.route('**/normative-documents**', route => route.fulfill({ json: { items: [{ designation: 'ГОСТ ТЕСТ-1', name: 'Тест', status: 'Не проверен' }], total: 1, page: 1, pageSize: 50 } }));
+  await login(page); await page.goto('/#/declarations/new');
+  const field = page.getByRole('combobox', { name: 'Технические регламенты / стандарты', exact: true });
+  const group = page.getByRole('group', { name: 'Регламенты и стандарты декларации' });
+  await field.fill('ТЕСТ'); await page.getByRole('option', { name: /ГОСТ ТЕСТ-1/ }).click();
+  await expect(group.locator('.MuiAutocomplete-tag')).toHaveCount(1);
+  await field.fill('ТР вручную');
+  await expect(group.locator('.MuiAutocomplete-tag')).toHaveCount(1);
+  await field.press('Enter');
+  await expect(group.locator('.MuiAutocomplete-tag')).toHaveCount(2);
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Проверка нормативных документов');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect.poll(() => fixture.getSaved()?.regulations).toEqual(['ГОСТ ТЕСТ-1 «Тест»', 'ТР вручную']);
+});
+
+test('normative directory imports a selected source result, preserves edits on refresh and supplies a declaration', async ({ page }) => {
+  test.setTimeout(60000);
+  await fixtures(page);
+  const source = { sourceKey: 'gost:11111111-1111-4111-8111-111111111111', kind: 'Standard' as const, designation: 'ГОСТ ТЕСТ-2026', name: 'Масла моторные. Тестовая запись', status: 'Действует', sourceUrl: 'https://protect.gost.ru/gost/details/11111111-1111-4111-8111-111111111111' };
+  let rows: NormativeDocument[] = []; let sourceFailure = false; const imports: Record<string, unknown>[] = [];
+  await page.route('**/normative-documents**', async route => {
+    const request = route.request(); const url = new URL(request.url()); const operation = url.pathname.split('/normative-documents')[1].replace(/^\//, '');
+    const json = (value: unknown, status = 200) => route.fulfill({ json: value, status });
+    if (operation === 'source') return sourceFailure ? json({ detail: 'Каталог Росстандарта недоступен. Повторите позже.' }, 503) : json({ items: [source], total: 1, page: 1, pageSize: 20, checkedAt: '2026-11-03T09:00:00Z', provider: 'Росстандарт · публичный каталог' });
+    if (operation === 'import') {
+      imports.push(request.postDataJSON()); const existing = rows.some(x => x.sourceKey === source.sourceKey);
+      if (!existing) rows.push({ ...source, id: 'normative-1', firmId: '11111111-1111-4111-8111-111111111111', notes: '', sourceProvider: 'Росстандарт · публичный каталог', sourceDesignation: source.designation, sourceName: source.name, sourceStatus: source.status, sourceCheckedAt: '2026-11-03T09:00:00Z', isManuallyEdited: false, updatedAt: '2026-11-03T09:00:00Z', updatedBy: 'SuperViktor', revision: 'revision-1' });
+      return json({ added: existing ? 0 : 1, existing: existing ? 1 : 0 });
+    }
+    if (operation === 'normative-1/refresh') { rows[0] = { ...rows[0], sourceStatus: 'Заменен', sourceCheckedAt: '2026-11-03T10:00:00Z', revision: 'revision-3' }; return json(rows[0]); }
+    if (operation === 'normative-1' && request.method() === 'PUT') { rows[0] = { ...rows[0], ...request.postDataJSON(), isManuallyEdited: true, revision: 'revision-2' }; return json(rows[0]); }
+    if (operation === 'normative-1' && request.method() === 'DELETE') { rows = []; return route.fulfill({ status: 204 }); }
+    const term = (url.searchParams.get('query') ?? '').toLocaleLowerCase('ru');
+    const items = rows.filter(x => `${x.designation} ${x.name}`.toLocaleLowerCase('ru').includes(term));
+    return json({ items, total: items.length, page: 1, pageSize: 25 });
+  });
+  await login(page); await page.goto('/#/directories');
+  await page.getByRole('tab', { name: 'ГОСТы и техрегламенты', exact: true }).click();
+  await expect(page).toHaveURL(/tab=standards/);
+  await expect(page.getByRole('button', { name: 'Добавить лабораторию' })).toBeHidden();
+  await page.getByRole('button', { name: 'Загрузить из Росстандарта', exact: true }).click();
+  let dialog = page.getByRole('dialog', { name: 'Загрузка из каталога Росстандарта', exact: true });
+  await dialog.getByLabel('Обозначение или название').fill('ТЕСТ-2026');
+  await dialog.getByRole('button', { name: 'Найти в Росстандарте', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Сохранить в справочник', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Добавлено: 1');
+  expect(imports[0]).toEqual({ kind: 'Standard', query: 'ТЕСТ-2026', page: 1, sourceKeys: [source.sourceKey] });
+  await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await expect(page.getByText(source.designation, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Изменить', exact: true }).click();
+  dialog = page.getByRole('dialog', { name: 'Редактирование нормативного документа', exact: true });
+  await dialog.getByLabel('Наименование нормативного документа').fill('Моё описание моторных масел');
+  await dialog.getByLabel('Примечание').fill('Проверить применимость перед выпуском');
+  await dialog.getByRole('button', { name: 'Сохранить документ', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await page.getByRole('button', { name: 'Обновить сведения', exact: true }).click();
+  await expect(page.getByText(/Статус в источнике: Заменен/)).toBeVisible();
+  await expect(page.getByText('Моё описание моторных масел', { exact: true })).toBeVisible();
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'normative-directory-desktop.png'), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'normative-directory-mobile.png'), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.goto('/#/declarations/new');
+  const field = page.getByRole('combobox', { name: 'Технические регламенты / стандарты', exact: true });
+  await field.fill('моторных');
+  await page.getByRole('option', { name: /ГОСТ ТЕСТ-2026/ }).click();
+  await expect(page.getByRole('group', { name: 'Регламенты и стандарты декларации' }).locator('.MuiAutocomplete-tag')).toHaveCount(1);
+  await expect(page.getByText('ГОСТ ТЕСТ-2026 «Моё описание моторных масел»', { exact: true })).toBeVisible();
+  await field.fill('ТР вручную'); await field.press('Enter');
+  await expect(page.getByText('ТР вручную', { exact: true })).toBeVisible();
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Проверка справочника ГОСТов');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page).toHaveURL(/declarations\/44444444/);
+  await page.goto('/#/directories?tab=standards');
+  sourceFailure = true;
+  await page.getByRole('button', { name: 'Загрузить из Росстандарта', exact: true }).click();
+  dialog = page.getByRole('dialog', { name: 'Загрузка из каталога Росстандарта', exact: true });
+  await dialog.getByLabel('Обозначение или название').fill('недоступный');
+  await dialog.getByRole('button', { name: 'Найти в Росстандарте', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('недоступен');
+  await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await expect(page.getByText('Моё описание моторных масел', { exact: true })).toBeVisible();
+});
+
+test('normative directory lets a user create and remove a manual technical regulation', async ({ page }) => {
+  await fixtures(page); let row: Record<string, unknown> | null = null;
+  await page.route('**/normative-documents**', route => {
+    const request = route.request();
+    if (request.method() === 'POST') { row = { ...request.postDataJSON(), id: 'manual-normative', firmId: '11111111-1111-4111-8111-111111111111', sourceKey: null, isManuallyEdited: true, revision: 'revision-1' }; return route.fulfill({ json: row }); }
+    if (request.method() === 'DELETE') { row = null; return route.fulfill({ status: 204 }); }
+    return route.fulfill({ json: { items: row ? [row] : [], total: row ? 1 : 0, page: 1, pageSize: 25 } });
+  });
+  await login(page); await page.goto('/#/directories?tab=standards');
+  await page.getByRole('button', { name: 'Добавить вручную', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Новый нормативный документ', exact: true });
+  await editor.getByLabel('Тип документа').click(); await page.getByRole('option', { name: 'Технический регламент', exact: true }).click();
+  await editor.getByRole('textbox', { name: /^Обозначение/ }).fill('ТР ТЕСТ 01');
+  await editor.getByLabel('Наименование нормативного документа').fill('Ручной регламент');
+  await editor.getByRole('button', { name: 'Сохранить документ', exact: true }).click();
+  await expect(editor).toBeHidden(); await expect(page.getByText('Ручной регламент', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Удалить', exact: true }).click();
+  const removal = page.getByRole('dialog', { name: 'Удалить документ из справочника?', exact: true });
+  await expect(removal).toContainText('ранее сохранённых декларациях сохранятся');
+  await removal.getByRole('button', { name: 'Удалить', exact: true }).click();
+  await expect(page.getByText('Ручной регламент', { exact: true })).toBeHidden();
+});
+
+
 
 test('laboratory registry keeps the CSV source and confirms manual changes before saving', async ({ page }) => {
   await fixtures(page);

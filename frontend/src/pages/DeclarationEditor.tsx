@@ -22,6 +22,7 @@ import { api, download } from '../store';
 import { OrganizationLookup } from '../OrganizationLookup';
 import { DeclarationProductCatalog } from '../DeclarationProductCatalog';
 import { DeclarationTnVedField } from '../DeclarationTnVedField';
+import { NormativeDocumentsField } from '../NormativeDocumentsField';
 import { ErrorState, Loading, Section, StatusChip, useNotify, useWorkspace } from '../common';
 import { dateTime, emptyDeclaration, errorMessage, statusLabels, type Declaration, type Party, type Product, type SaveDeclaration, type Status } from '../types';
 
@@ -32,7 +33,6 @@ const schema: yup.ObjectSchema<SaveDeclaration> = yup.object({
   regulations: yup.array(yup.string().defined()).defined(), reports: yup.array(yup.mixed<import('../types').Report>().defined()).defined(),
   additionalInfo: yup.string().defined(), adoptedAt: yup.string().nullable().defined(), validUntil: yup.string().nullable().defined(), revision: yup.number().defined(),
 });
-const regulations = ['ТР ТС 004/2011 «О безопасности низковольтного оборудования»', 'ТР ТС 010/2011 «О безопасности машин и оборудования»', 'ТР ТС 017/2011 «О безопасности продукции лёгкой промышленности»', 'ТР ТС 020/2011 «Электромагнитная совместимость технических средств»', 'ТР ТС 025/2012 «О безопасности мебельной продукции»'];
 const transitions: Record<Status, Status[]> = { Draft: ['InReview', 'Archived'], InReview: ['Ready', 'Draft', 'Archived'], Ready: ['Registered', 'Draft', 'Archived'], Registered: ['Suspended', 'Revoked', 'Archived'], Suspended: ['Registered', 'Revoked', 'Archived'], Revoked: ['Archived'], Archived: [] };
 
 function Field({ name, label, multiline = false, type, required = false, helper, disabled = false, rows = 3 }: { name: Path<SaveDeclaration>; label: string; multiline?: boolean; type?: string; required?: boolean; helper?: string; disabled?: boolean; rows?: number }) {
@@ -138,7 +138,7 @@ export function DeclarationEditor() {
       {tab === 0 && <><Section title="Основные сведения" subtitle="Внутреннее название помогает найти документ в реестре."><Grid container spacing={2.5}>
         <Grid item xs={12}><Field name="title" label="Название декларации" required disabled={readOnly}/></Grid>
         <Grid item xs={12} sm={8}><Controller control={control} name="kind" render={({ field }) => <TextField {...field} label="Вид документа" select disabled={readOnly}>{['Декларация ТР ЕАЭС', 'Декларация ГОСТ Р', 'Декларация ТР РФ'].map(v => <MenuItem value={v} key={v}>{v}</MenuItem>)}</TextField>}/></Grid><Grid item xs={12} sm={4}><Field name="scheme" label="Схема декларирования" required disabled={readOnly}/></Grid>
-        <Grid item xs={12}><Controller control={control} name="regulations" render={({ field }) => <Autocomplete multiple freeSolo options={regulations} value={field.value} disabled={readOnly} onChange={(_, value) => field.onChange(value)} renderInput={p => <TextField {...p} label="Технические регламенты / стандарты" helperText="Выберите из подборки или введите значение и нажмите Enter. Применимость проверяет специалист."/>}/>}/></Grid>
+        <Grid item xs={12}><Controller control={control} name="regulations" render={({ field }) => <NormativeDocumentsField key={firmId} firmId={firmId} value={field.value} disabled={readOnly} onChange={field.onChange}/>}/></Grid>
         <Grid item xs={12} sm={6}><Field name="adoptedAt" label="Дата принятия" type="date" disabled={readOnly}/></Grid><Grid item xs={12} sm={6}><Field name="validUntil" label="Действует до" type="date" disabled={readOnly}/></Grid>
         <Grid item xs={12}><Field name="additionalInfo" label="Дополнительные сведения" multiline disabled={readOnly}/></Grid>
       </Grid></Section>{document?.registrationNumber && <Section title="Регистрационные сведения"><Typography sx={{ fontWeight: 600 }}>{document.registrationNumber}</Typography>{document.registryUrl && <Button component="a" href={document.registryUrl} target="_blank" rel="noopener noreferrer" sx={{ mt: 1 }}>Открыть запись в реестре ↗</Button>}<Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>Сведения внесены вручную. Автоматическая проверка в ФГИС не выполнялась.</Typography></Section>}</>}
