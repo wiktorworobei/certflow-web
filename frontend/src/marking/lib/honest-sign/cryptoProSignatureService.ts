@@ -276,6 +276,22 @@ async function createHash(
 }
 
 export const cryptoProSignatureService = {
+    // Authentication signs the server's full challenge with the selected certificate's algorithm.
+    // Do not use the marking-specific hard-coded GOST-256 hash for this operation.
+    async signAuthenticationChallenge(thumbprint: string, message: string): Promise<string> {
+        const plugin = await getPlugin();
+        try {
+            const certificate = await getCertificate(plugin, thumbprint);
+            const signer = await createSigner(plugin, certificate);
+            const signedData = await plugin.CreateObjectAsync("CAdESCOM.CadesSignedData");
+            await signedData.propset_ContentEncoding(plugin.CADESCOM_BASE64_TO_BINARY);
+            await signedData.propset_Content(toBase64Utf8(message));
+            return normalizeDetachedSignature(await signedData.SignCades(signer, plugin.CADESCOM_CADES_BES ?? 1));
+        } catch (error) {
+            throw pluginError(error);
+        }
+    },
+
     async getUserCertificates(): Promise<CertificateSummary[]> {
         const plugin = await getPlugin();
         try {

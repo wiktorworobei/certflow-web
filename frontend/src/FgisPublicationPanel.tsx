@@ -19,7 +19,7 @@ export function FgisPublicationPanel({ document, onFiles }: { document?: Declara
   return <Section title="Публикация ФГИС" subtitle="Подготовка комплекта для передачи черновика в кабинет заявителя. Подписание и регистрация — отдельные действия.">
     <Stepper activeStep={current ? 1 : 0} alternativeLabel sx={{ mb: 3 }}><Step completed={!!current}><StepLabel>Подготовить комплект</StepLabel></Step><Step><StepLabel>Передать черновик</StepLabel></Step><Step><StepLabel>Подписать в кабинете</StepLabel></Step></Stepper>
     <Alert severity="info" sx={{ mb: 2 }}>{data?.connectorMessage}</Alert>
-    <Chip label={data?.connectorConfigured ? 'Коннектор настроен' : 'Коннектор не подключён'} size="small" variant="outlined" sx={{ mb: 2 }}/>
+    <Chip label="Отправка во ФГИС · заглушка" size="small" variant="outlined" sx={{ mb: 2 }}/>
     {isDirty && <Alert severity="warning" sx={{ mb: 2 }}>Сохраните изменения перед проверкой и подготовкой комплекта.</Alert>}
     {!!data?.missingRequirements.length && <Alert severity="warning" sx={{ mb: 2 }}>Нужно дополнить:<ul>{data.missingRequirements.map(item => <li key={item}>{item}</li>)}</ul></Alert>}
     {!data?.missingRequirements.length && !isDirty && <Alert severity="success" sx={{ mb: 2 }}>Базовые проверки пройдены. Выбрано файлов: {data?.selectedFiles}. Проверьте применимость схемы, аккредитацию и содержание документов.</Alert>}

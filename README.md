@@ -1,9 +1,9 @@
-# CertFlow Web
+# ZNAQ Web
 
-Responsive CertFlow frontend with six visual themes and light/dark modes.
+ZNAQ — платформа для деклараций, документов сертификации и маркировки. Точность имеет знак.
 
-Production: https://wiktorworobei.github.io/certflow-web/
+Рабочий сайт: https://wiktorworobei.github.io/certflow-web/
 
-The GitHub Pages workflow builds `frontend/` with the repository variable `VITE_API_BASE_URL` (HTTPS API URL ending in `/api`). No server secrets belong in this repository.
+Фирменная палитра ZNAQ, светлый и тёмный режимы, адаптивный интерфейс, отметки выполнения разделов и предпросмотр деклараций с выгрузкой Word/PDF. Отправка во ФГИС пока отключена.
 
-Local development: `cd frontend`, `npm ci`, `npm run dev`. For a production build run `npm run build`. Authentication and application data are provided by the separately deployed CertFlow API.
+Локально: `cd frontend`, `npm ci`, `npm run dev`. Сборка: `npm run build`. API публикуется отдельно. Логотипы и правила использования: `frontend/public/branding/`.

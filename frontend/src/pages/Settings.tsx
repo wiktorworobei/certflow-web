@@ -10,6 +10,7 @@ import { EmptyState, ErrorState, Loading, PageTitle, Section, useNotify, useWork
 import { errorMessage, roleLabels, type Role } from '../types';
 import { AppearanceSettings } from '../AppearanceSettings';
 import { IntegrationConnections } from '../IntegrationConnections';
+import { CertificateSettings } from '../CertificateSettings';
 
 export function Team() {
   const { firmId, isAdmin } = useWorkspace(); const notify = useNotify();
@@ -50,6 +51,7 @@ export function Settings() {
     {tab === 'appearance' && <AppearanceSettings/>}
     {tab === 'profile' && <div className="settings-grid"><Section title="Профиль"><div className="settings-profile"><Avatar className="profile-avatar" sx={{ width: 56, height: 56, fontSize: 23 }}>{user?.displayName.slice(0, 1).toUpperCase()}</Avatar><div><Typography variant="h6">{user?.displayName}</Typography><Typography color="text.secondary">{user?.userName}</Typography></div></div><dl className="profile-details"><dt>Электронная почта</dt><dd>{user?.email || 'Не указана'}</dd><dt>Компания</dt><dd>{firm?.name}</dd><dt>Права доступа</dt><dd>{firm ? roleLabels[firm.role] : '—'}</dd></dl><div className="settings-firm"><CorporateFareOutlined/><div><strong>Данные вашей компании</strong><p>Документы и справочники доступны её участникам.</p></div></div></Section>
       <Section title="Изменить пароль" subtitle="После изменения потребуется повторный вход на всех устройствах."><form onSubmit={change}><TextField type="password" label="Текущий пароль" autoComplete="current-password" required value={currentPassword} onChange={e => setCurrent(e.target.value)} sx={{ mb: 2.5 }}/><TextField type="password" label="Новый пароль" autoComplete="new-password" required value={newPassword} inputProps={{ minLength: 10, maxLength: 200 }} helperText="От 10 символов, буква, цифра и специальный символ" onChange={e => setNew(e.target.value)} sx={{ mb: 2.5 }}/><TextField type="password" label="Повторите новый пароль" autoComplete="new-password" required value={confirm} onChange={e => setConfirm(e.target.value)} sx={{ mb: 2.5 }}/>{error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}<Button variant="contained" type="submit" disabled={busy}>{busy ? 'Сохраняем…' : 'Изменить пароль'}</Button></form></Section>
+      <CertificateSettings/>
     </div>}
     </div>
   </>;

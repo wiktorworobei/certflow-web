@@ -1,5 +1,7 @@
 import { FilesPanel, InventoryPanel, WorkspaceSectionPanel } from '../DeclarationWorkspacePanel';
 import { FgisPublicationPanel } from '../FgisPublicationPanel';
+import { DeclarationSectionNavigation } from '../DeclarationSectionNavigation';
+import { DeclarationGeneration } from '../DeclarationGeneration';
 import { declarationTabs, emptyWorkspace, type DeclarationTab, type DeclarationWorkspace } from '../workspaceTypes';
 import '../declarationWorkspace.css';
 import { EvidencePanel } from '../EvidencePanel';
@@ -9,7 +11,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Controller, FormProvider, useForm, useFormContext, useWatch, type Path } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { Alert, Autocomplete, createFilterOptions, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Grid, LinearProgress, Menu, MenuItem, Paper, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Autocomplete, createFilterOptions, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Grid, LinearProgress, Menu, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material';
 import { ArrowBackRounded } from '@mui/icons-material';
 import { SaveOutlined } from '@mui/icons-material';
 import { FileDownloadOutlined } from '@mui/icons-material';
@@ -64,8 +66,9 @@ function PartyPanel({ side, label, readOnly }: { side: 'applicant' | 'manufactur
 
 
 export function DeclarationEditor() {
-  const { id } = useParams(); const navigate = useNavigate(); const notify = useNotify(); const { firmId, canEdit } = useWorkspace();
-  const { data: document, isLoading, error, refetch } = api.useDeclarationQuery({ firmId, id: id ?? '' }, { skip: !id });
+  const { id: routeId } = useParams(); const id = routeId === 'new' ? undefined : routeId;
+  const navigate = useNavigate(); const notify = useNotify(); const { firmId, canEdit } = useWorkspace();
+  const { currentData: document, isLoading, error, refetch } = api.useDeclarationQuery({ firmId, id: id ?? '' }, { skip: !id });
   const [save, { isLoading: saving }] = api.useSaveDeclarationMutation(); const [changeStatus, { isLoading: changing }] = api.useChangeStatusMutation();
   const form = useForm<SaveDeclaration>({ defaultValues: { ...emptyDeclaration(), workspace: emptyWorkspace() }, resolver: yupResolver(schema) });
   const { reset, handleSubmit, control, watch, formState: { isDirty } } = form;
@@ -73,6 +76,7 @@ export function DeclarationEditor() {
   useEffect(() => { if (document && (!dirty.current || loadedId.current !== document.id)) { reset({ ...document, workspace: document.workspace ?? emptyWorkspace() }); loadedId.current = document.id; } }, [document, reset]);
   useEffect(() => { const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty.current) event.preventDefault(); }; window.addEventListener('beforeunload', beforeUnload); return () => window.removeEventListener('beforeunload', beforeUnload); }, []);
   const [tab, setTab] = useState<DeclarationTab>('main'); const [serverError, setServerError] = useState('');
+  useEffect(() => { if (!id) { reset({ ...emptyDeclaration(), workspace: emptyWorkspace() }); loadedId.current = undefined; setTab('main'); } }, [id, firmId, reset]);
   const [statusMenu, setStatusMenu] = useState<HTMLElement | null>(null); const [statusTarget, setStatusTarget] = useState<Status | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<ArchiveSelection | null>(null);
   useEffect(() => { setRestoreTarget(null); }, [firmId, id]);
@@ -86,7 +90,7 @@ export function DeclarationEditor() {
     ['Технические регламенты', !!values.regulations?.length],
     ['Основания декларации', document && !isDirty ? !document.missingRequirements.some(v => /протокол|аккредитац|образц|направлен|доказатель|сертификат на тип|скан|файл/i.test(v)) : !!values.reports?.length && values.reports.every(r => r.number && r.date && r.laboratoryName)],
   ] as const;
-  const complete = checks.filter(c => c[1]).length;
+  const complete = declarationTabs.filter(([key]) => values.workspace?.sections[key]?.completed).length;
   const close = () => { if (!isDirty || window.confirm('Изменения не сохранены. Покинуть карточку?')) navigate('/declarations'); };
   async function submit(data: SaveDeclaration) {
     setServerError('');
@@ -102,15 +106,16 @@ export function DeclarationEditor() {
     try { const result = await changeStatus({ firmId, id: document.id, status: statusTarget, revision: document.revision, reason, registrationNumber, registryUrl }).unwrap(); reset(result); setStatusTarget(null); notify('Статус обновлён'); }
     catch (e) { setStatusError(errorMessage(e)); }
   }
-  if (isLoading) return <Loading/>;
+  if (isLoading && loadedId.current !== id) return <Loading/>;
   if (error) return <ErrorState error={error} retry={refetch}/>;
   if (!id && !canEdit) return <Alert severity="warning">У вас нет прав на создание документов.</Alert>;
-  return <>
+  return <FormProvider {...form}>
     <button className="back-link" onClick={close}><ArrowBackRounded sx={{ fontSize: 17 }}/>К реестру деклараций</button>
     {document?.status === 'Archived' && <Alert severity="info" sx={{ mb: 2 }} action={<Button color="inherit" onClick={() => navigate('/declarations?status=Archived')}>Открыть архив</Button>}>Декларация находится в архиве. Данные, файлы и история сохранены.</Alert>}
     {document && <Button variant="text" sx={{ mb: 2 }} disabled={isDirty} onClick={() => navigate(`/marking?declarationId=${document.id}`)}>Товары в ЧЗ и Нашей марке</Button>}
     <div className="editor-title"><div><div className="eyebrow">{document?.reference ?? 'НОВЫЙ ДОКУМЕНТ'}{document?.isSample && <span className="sample-label">Учебный пример</span>}</div><Typography variant="h4" component="h1">{document?.title ?? 'Новая декларация'}</Typography><div className="editor-title-meta"><StatusChip status={document?.status ?? 'Draft'}/><span>{document ? `Обновлено ${dateTime(document.updatedAt)}` : 'Заполните основные сведения и сохраните документ'}</span>{isDirty && <span className="unsaved-label">Есть изменения</span>}</div></div><div className="page-actions">
-      {document && <Tooltip title={isDirty ? 'Сначала сохраните изменения' : 'Скачать информационный макет'}><span><Button variant="outlined" startIcon={<FileDownloadOutlined/>} disabled={isDirty} onClick={() => void exportDocument('docx')}>Word</Button></span></Tooltip>}
+      <DeclarationGeneration document={document} onSaved={result => { reset(result); loadedId.current = result.id; if (!id) navigate(`/declarations/${result.id}`, { replace: true }); }}/>
+      {document && <Tooltip title={isDirty ? 'Сначала сохраните изменения' : 'Скачать макет декларации'}><span><Button variant="outlined" startIcon={<FileDownloadOutlined/>} disabled={isDirty} onClick={() => void exportDocument('docx')}>Word</Button></span></Tooltip>}
       {document && <Button variant="outlined" disabled={isDirty} onClick={() => void exportDocument('pdf')}>PDF</Button>}
       {document && <Button variant="outlined" disabled={isDirty} onClick={() => void exportDocument('zip')}>Комплект ZIP</Button>}
       {document && canEdit && document.status !== 'Archived' && <Tooltip title={isDirty ? 'Сначала сохраните изменения' : 'Убрать из рабочего списка, сохранив документ'}><span><Button variant="outlined" startIcon={<ArchiveOutlined/>} disabled={isDirty || saving || changing} onClick={() => setStatusTarget('Archived')}>В архив</Button></span></Tooltip>}
@@ -119,7 +124,7 @@ export function DeclarationEditor() {
     </div></div>
     {serverError && <Alert severity="error" onClose={() => setServerError('')} sx={{ mb: 2 }}>{serverError}</Alert>}
     {readOnly && canEdit && <Alert severity="info" sx={{ mb: 2 }}>Данные этого документа защищены от изменения. Для готовой декларации можно вернуться в черновик; зарегистрированный документ можно использовать как основу для копии.</Alert>}
-    <FormProvider {...form}><div className="editor-grid"><div className="editor-main"><Paper className="editor-tabs workspace-tabs"><Tabs value={tab} onChange={(_, v: DeclarationTab) => setTab(v)} aria-label="Разделы декларации">{declarationTabs.map(([key, label]) => <Tab value={key} id={`declaration-tab-${key}`} aria-controls={`declaration-panel-${key}`} label={label} key={key}/>)}</Tabs></Paper>
+    <div className="editor-grid"><div className="editor-main"><DeclarationSectionNavigation tab={tab} onChange={setTab} readOnly={readOnly}/>
       <div role="tabpanel" id={`declaration-panel-${tab}`} aria-labelledby={`declaration-tab-${tab}`}>
 
       {tab === 'main' && <><Section title="Основные сведения" subtitle="Внутреннее название помогает найти документ в реестре."><Grid container spacing={2.5}>
@@ -151,9 +156,9 @@ export function DeclarationEditor() {
       {tab === 'fgis' && <FgisPublicationPanel document={document} onFiles={() => setTab('scans')}/>}
       {tab === 'foreign' && <WorkspaceSectionPanel section="foreign" title="Foreign" readOnly={readOnly}/>}
       </div>
-    </div><aside className="editor-aside"><Paper className="checklist-card"><Typography variant="h6">Готовность документа</Typography><div className="checklist-progress"><strong>{complete}<span> / {checks.length}</span></strong><Typography variant="body2" color="text.secondary">разделов заполнено</Typography></div><LinearProgress variant="determinate" value={complete / checks.length * 100} sx={{ height: 6, borderRadius: 4, bgcolor: 'var(--accent-soft)', mb: 3 }}/>{checks.map(([label, ok]) => <div className="checklist-item" key={label}>{ok ? <CheckCircleRounded sx={{ color: 'var(--success)', fontSize: 18 }}/> : <RadioButtonUncheckedRounded sx={{ color: 'var(--faint)', fontSize: 18 }}/>}<span>{label}</span></div>)}<Divider sx={{ my: 2.5 }}/>{document && !isDirty && document.missingRequirements.length > 0 && <Alert severity="warning" sx={{mb:2}}><Typography variant="body2">Нужно дополнить:</Typography><ul>{document.missingRequirements.map(item => <li key={item}>{item}</li>)}</ul></Alert>}<Typography color="text.secondary" variant="body2">Базовые проверки помогают подготовить документ. Содержание и применимость требований проверяет специалист.</Typography>
+    </div><aside className="editor-aside"><Paper className="checklist-card"><Typography variant="h6">Подготовка декларации</Typography><div className="checklist-progress"><strong>{complete}<span> / {declarationTabs.length}</span></strong><Typography variant="body2" color="text.secondary">отмечено выполненными</Typography></div><LinearProgress variant="determinate" value={complete / declarationTabs.length * 100} sx={{ height: 6, borderRadius: 4, bgcolor: 'var(--accent-soft)', mb: 3 }}/><Typography className="workspace-checks-title">Проверка заполнения</Typography>{checks.map(([label, ok]) => <div className="checklist-item" key={label}>{ok ? <CheckCircleRounded sx={{ color: 'var(--success)', fontSize: 18 }}/> : <RadioButtonUncheckedRounded sx={{ color: 'var(--faint)', fontSize: 18 }}/>}<span>{label}</span></div>)}<Divider sx={{ my: 2.5 }}/>{document && !isDirty && document.missingRequirements.length > 0 && <Alert severity="warning" sx={{mb:2}}><Typography variant="body2">Нужно дополнить:</Typography><ul>{document.missingRequirements.map(item => <li key={item}>{item}</li>)}</ul></Alert>}<Typography color="text.secondary" variant="body2">Базовые проверки помогают подготовить документ. Содержание и применимость требований проверяет специалист.</Typography>
       {document && canEdit && transitions[document.status].length > 0 && <Button variant="outlined" fullWidth endIcon={<KeyboardArrowDownRounded/>} sx={{ mt: 2.5 }} disabled={isDirty} onClick={e => setStatusMenu(e.currentTarget)}>Изменить статус</Button>}
-    </Paper><div className="editor-hint"><DescriptionOutlined fontSize="small"/><p>Данные участников сохраняются в документе. Изменение справочника не переписывает ранее оформленные декларации.</p></div></aside></div></FormProvider>
+    </Paper><div className="editor-hint"><DescriptionOutlined fontSize="small"/><p>Данные участников сохраняются в документе. Изменение справочника не переписывает ранее оформленные декларации.</p></div></aside></div>
     <Menu anchorEl={statusMenu} open={!!statusMenu} onClose={() => setStatusMenu(null)}>{document && transitions[document.status].map(status => <MenuItem key={status} onClick={() => { setStatusTarget(status); setStatusMenu(null); setReason(''); setRegistrationNumber(''); setRegistryUrl(''); setStatusError(''); }}>{status === 'Registered' && document.status === 'Ready' ? 'Учесть регистрацию' : status === 'Archived' ? 'В архив' : statusLabels[status]}</MenuItem>)}</Menu>
     {document && statusTarget === 'Archived' && <ArchiveDeclarationDialog declaration={document} onClose={() => setStatusTarget(null)} onArchived={result => reset(result)}/>}
     {restoreTarget && <ArchiveSelectionDialog key={`${firmId}:${id}`} entity="declarations" items={[restoreTarget]} action="restore" onClose={() => setRestoreTarget(null)} onComplete={() => void refetch()}/>}
@@ -161,5 +166,5 @@ export function DeclarationEditor() {
       {statusTarget === 'Registered' && document?.status === 'Ready' && <><Alert severity="info" sx={{ mb: 2 }}>Укажите сведения уже зарегистрированного документа. Это действие не отправляет декларацию в ФГИС и не подтверждает регистрацию автоматически.</Alert><TextField label="Регистрационный номер" value={registrationNumber} onChange={e => setRegistrationNumber(e.target.value)} sx={{ mb: 2 }} required/><TextField label="HTTPS-ссылка на запись в реестре" value={registryUrl} onChange={e => setRegistryUrl(e.target.value)} sx={{ mb: 2 }}/></>}
       <TextField multiline minRows={3} label={statusTarget === 'Revoked' || statusTarget === 'Suspended' ? 'Причина (обязательно)' : 'Комментарий'} value={reason} onChange={e => setReason(e.target.value)} inputProps={{ maxLength: 2000 }}/>{statusError && <Alert severity="error" sx={{ mt: 2 }}>{statusError}</Alert>}
     </DialogContent><DialogActions sx={{ p: 2.5 }}><Button onClick={() => setStatusTarget(null)} disabled={changing}>Отмена</Button><Button variant="contained" disabled={changing} onClick={() => void confirmStatus()}>{changing ? 'Сохраняем…' : 'Подтвердить'}</Button></DialogActions></Dialog>
-  </>;
+  </FormProvider>;
 }

@@ -22,7 +22,7 @@ export default function App() {
     <Route path="/login" element={session.user ? <Navigate to="/" replace/> : <Login/>}/>
     <Route element={session.user ? <Layout/> : <Navigate to="/login" replace/>}>
       <Route index element={<Overview/>}/><Route path="declarations" element={<Registry/>}/>
-      <Route path="declarations/new" element={<DeclarationEditor/>}/><Route path="declarations/:id" element={<DeclarationEditor/>}/>
+      <Route path="declarations/:id" element={<DeclarationEditor/>}/>
       <Route path="directories" element={<Suspense fallback={<Loading/>}><Directories/></Suspense>}/><Route path="development-plan" element={<Suspense fallback={<Loading/>}><DevelopmentPlan/></Suspense>}/>
       <Route path="integrations" element={<Navigate to="/settings" replace/>}/>
       <Route path="marking" element={<Suspense fallback={<Loading/>}><Marking/></Suspense>}/>

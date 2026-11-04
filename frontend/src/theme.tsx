@@ -11,10 +11,10 @@ function readPreference(): ThemePreference {
 }
 function readColorTheme(): ColorTheme {
   try { const value = localStorage.getItem(colorKey); if (isColorTheme(value)) return value; } catch { /* Storage is optional. */ }
-  return 'sapphire';
+  return 'znaq';
 }
 const AppearanceContext = createContext({
-  preference: 'system' as ThemePreference, mode: 'light' as 'light' | 'dark', colorTheme: 'sapphire' as ColorTheme,
+  preference: 'system' as ThemePreference, mode: 'light' as 'light' | 'dark', colorTheme: 'znaq' as ColorTheme,
   storageError: false, setPreference: (_value: ThemePreference) => {}, setColorTheme: (_value: ColorTheme) => {},
 });
 export const useAppearance = () => useContext(AppearanceContext);
@@ -61,16 +61,16 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       },
       typography: {
         fontFamily: 'Inter, Arial, sans-serif',
-        h4: { fontWeight: 700, fontSize: 'clamp(1.65rem, 2.4vw, 2rem)', letterSpacing: '-.045em', lineHeight: 1.25 },
+        h4: { fontWeight: 700, fontSize: 'clamp(1.65rem, 2.4vw, 2.1rem)', letterSpacing: '-.05em', lineHeight: 1.2 },
         h5: { fontWeight: 600, fontSize: 22, letterSpacing: '-.035em', lineHeight: 1.4 },
         h6: { fontWeight: 600, fontSize: 16, letterSpacing: '-.025em', lineHeight: 1.5 },
         body1: { fontSize: 14, lineHeight: 1.7 }, body2: { fontSize: 13, lineHeight: 1.65 },
         button: { textTransform: 'none', fontWeight: 600, fontSize: 13 },
       },
-      shape: { borderRadius: 14 },
+      shape: { borderRadius: 16 },
       components: {
         MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: {
-          root: { borderRadius: 9, padding: '10px 17px', minHeight: 44, transition: 'background-color .16s, box-shadow .16s', '&.Mui-focusVisible': { outline: `3px solid ${primary}`, outlineOffset: 3 } },
+          root: { borderRadius: 10, padding: '11px 18px', minHeight: 44, letterSpacing: '-.015em', transition: 'background-color .16s, box-shadow .16s, border-color .16s', '&.Mui-focusVisible': { outline: `3px solid ${primary}`, outlineOffset: 3 } },
           contained: { '&:hover': { boxShadow: `0 3px 10px ${alpha(primary, .2)}` } },
           outlined: { borderColor: t.border, color: t.text, backgroundColor: t.surface, '&:hover': { borderColor: primary, backgroundColor: alpha(primary, .06) } },
           sizeSmall: { minHeight: 36, padding: '6px 12px', fontSize: 12, '@media (hover: none) and (pointer: coarse)': { minHeight: 44 } },
@@ -79,7 +79,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
         MuiCheckbox: { styleOverrides: { root: { '@media (hover: none) and (pointer: coarse)': { minWidth: 44, minHeight: 44 } } } },
         MuiTextField: { defaultProps: { size: 'small', fullWidth: true } },
         MuiOutlinedInput: { styleOverrides: {
-          root: { backgroundColor: t.surface, fontSize: 14, minHeight: 46, borderRadius: 9, transition: 'box-shadow .16s', '&.Mui-focused': { boxShadow: `0 0 0 3px ${alpha(primary, .12)}` } },
+          root: { backgroundColor: t.surface, fontSize: 14, minHeight: 46, borderRadius: 10, transition: 'box-shadow .16s', '&.Mui-focused': { boxShadow: `0 0 0 3px ${alpha(primary, .12)}` } },
           notchedOutline: { borderColor: t.border }, input: { paddingBlock: 12, '@media (max-width: 620px), (hover: none) and (pointer: coarse)': { fontSize: 16 } },
         } },
         MuiInputLabel: { styleOverrides: { root: { fontSize: 14 } } },
@@ -87,7 +87,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
         MuiPaper: { defaultProps: { elevation: 0 }, styleOverrides: { root: { backgroundImage: 'none' } } },
         MuiTableCell: { styleOverrides: {
           root: { borderColor: t.border, padding: '18px 20px', fontSize: 13, fontVariantNumeric: 'tabular-nums' },
-          head: { color: t.muted, fontWeight: 600, fontSize: 11, letterSpacing: '.035em', backgroundColor: t.surfaceSoft },
+          head: { color: t.muted, fontWeight: 600, fontSize: 10, letterSpacing: '.065em', textTransform: 'uppercase', backgroundColor: t.surfaceSoft },
         } },
         MuiTableRow: { styleOverrides: { root: { '&:last-child td': { borderBottom: 0 }, '&.document-row:hover': { backgroundColor: alpha(primary, .045) } } } },
         MuiDialog: { styleOverrides: { paper: { borderRadius: 18, border: `1px solid ${t.border}`, boxShadow: '0 24px 100px #00000030', '@media (max-width: 600px)': { margin: 16, width: 'calc(100% - 32px)', maxHeight: 'calc(100% - 32px)' } } } },
@@ -101,7 +101,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
           standardWarning: { backgroundColor: t.warningSoft, color: t.warning },
           standardError: { backgroundColor: t.dangerSoft, color: t.danger },
         } },
-        MuiChip: { styleOverrides: { root: { borderRadius: 6, fontWeight: 500 }, sizeSmall: { fontSize: 12 } } },
+        MuiChip: { styleOverrides: { root: { borderRadius: 7, fontWeight: 500 }, sizeSmall: { fontSize: 11 } } },
         MuiMenu: { styleOverrides: { paper: { border: `1px solid ${t.border}`, borderRadius: 12, marginTop: 6, boxShadow: '0 12px 35px #00000018' } } },
         MuiMenuItem: { styleOverrides: { root: { fontSize: 13, minHeight: 44, borderRadius: 6, margin: '3px 6px' } } },
         MuiTooltip: { defaultProps: { arrow: true }, styleOverrides: { tooltip: { fontSize: 12, padding: '8px 12px' } } },

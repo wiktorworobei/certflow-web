@@ -8,7 +8,7 @@ import './integrations.css';
 
 const currentCapabilities = [
   ['Все 16 вкладок из видео', 'Основные, заявитель, изготовитель, продукция, ГОСТы/Тех.регламент, заявка/документы, отбор/испытания/анализ производства, ДЕКЛАРАЦИЯ, четыре приложения, опись/закрытие, публикация ФГИС, сканы и Foreign. В нераскрытых разделах сохраняются текст и заметки; точный состав полей и печатные формы предстоит согласовать.'],
-  ['Комплект для ФГИС', 'Выбор файлов по назначению, базовые проверки, фиксация версии и SHA-256, выгрузка комплекта. При изменениях подготовка устаревает. ZIP имеет внутренний формат CertFlow, не заявлен форматом импорта ФГИС. Передача, квитанции, подпись, проверка ПИ и статусов требуют подтверждённой спецификации, полномочий и доступа; автоматическая отправка отключена.'],
+  ['Комплект для ФГИС', 'Выбор файлов по назначению, базовые проверки, фиксация версии и SHA-256, выгрузка комплекта. При изменениях подготовка устаревает. ZIP имеет внутренний формат ZNAQ, не заявлен форматом импорта ФГИС. Передача, квитанции, подпись, проверка ПИ и статусов требуют подтверждённой спецификации, полномочий и доступа; автоматическая отправка отключена.'],
   ['Собственный реестр', 'Создавайте карточки, сохраняйте компании, лаборатории, протоколы и приложения в рабочем пространстве.'],
   ['ГОСТы и техрегламенты', 'Рабочий справочник, ручные записи, поиск и загрузка метаданных из публичного каталога Росстандарта, выбор в декларации. API ЦБС требует документации и доступа поставщика.'],
   ['Реестр лабораторий из CSV', 'Выгрузка ЕАЭС, поиск и фильтры, исходная запись и ручные правки с подтверждением. Подстановка реквизитов в направления и протоколы. Живая проверка ФГИС ещё не подключена.'],
@@ -35,7 +35,7 @@ export function DevelopmentPlan() {
   }, [moduleId]);
 
   return <>
-    <PageTitle eyebrow="РАЗВИТИЕ CERTFLOW" title="План разработки" subtitle="Что уже работает, зачем нужны следующие модули и как мы придём к полному процессу."><Button component={RouterLink} to="/settings" variant="outlined" startIcon={<SettingsOutlined/>}>Настроить подключения</Button></PageTitle>
+    <PageTitle eyebrow="РАЗВИТИЕ ZNAQ" title="План разработки" subtitle="Что уже работает, зачем нужны следующие модули и как мы придём к полному процессу."><Button component={RouterLink} to="/settings" variant="outlined" startIcon={<SettingsOutlined/>}>Настроить подключения</Button></PageTitle>
     <div className="plan-hero"><div><span className="hero-kicker"><RouteOutlined/> СЕРТИФИКАЦИЯ И ВНЕШНИЕ СЕРВИСЫ</span><Typography component="h2">Каждый модуль —<br/>следующий шаг в процессе.</Typography><p>Текущий продукт: подготовка деклараций, лабораторные документы, интеграции с Росаккредитацией, ЧЗ и Нашей маркой. Здесь видно, что реализовано и какие внешние доступы ещё нужны.</p></div><div className="plan-hero-aside"><span className="plan-status-pill"><CheckCircleOutlineRounded/> Базовый реестр работает</span><strong>{integrationGuides.length}</strong><span>направлений интеграции</span><small>Готовность модуля и доступ к сервису проверяются отдельно.</small></div></div>
 
     <Section title="Уже в приложении" subtitle="Основа ежедневной работы с документами.">
@@ -79,7 +79,7 @@ export function DevelopmentPlan() {
           <div><Typography component="h4">Что потребуется для подключения</Typography><ul>{guide.preparation.map(text => <li key={text}>{text}</li>)}</ul></div>
         </div>
         <div className="integration-example"><Typography component="h4">Пример в работе</Typography><Typography>{guide.example}</Typography></div>
-        <div className="integration-current"><Typography component="h4">Что есть в CertFlow сейчас</Typography><Typography>{guide.current}</Typography></div>
+        <div className="integration-current"><Typography component="h4">Что есть в ZNAQ сейчас</Typography><Typography>{guide.current}</Typography></div>
         {guide.note && <Typography className="integration-guide-note">{guide.note}</Typography>}
         <div className="integration-guide-footer"><Typography variant="body2">По видео · {guide.video} Таймкоды приблизительные.</Typography>
           {guide.resources && <div className="integration-resources">{guide.resources.map(resource => <Link key={resource.url} href={resource.url} target="_blank" rel="noopener noreferrer">{resource.title}<OpenInNewRounded aria-hidden="true"/></Link>)}</div>}
@@ -89,7 +89,7 @@ export function DevelopmentPlan() {
 
     <Paper className="integration-scope-note">
       <Typography component="h2" sx={{ fontWeight: 600, mb: 1 }}>Какие подключения можно отложить</Typography>
-      <Typography color="text.secondary">Для первого рабочего процесса подпись декларации выполняется в кабинете заявителя. Направления и комплекты можно передавать лабораториям вручную. Автоматический обмен подключается после согласования форматов и доступов. Word и PDF формируются самим CertFlow.</Typography>
+      <Typography color="text.secondary">Для первого рабочего процесса подпись декларации выполняется в кабинете заявителя. Направления и комплекты можно передавать лабораториям вручную. Автоматический обмен подключается после согласования форматов и доступов. Word и PDF формируются самим ZNAQ.</Typography>
     </Paper>
   </>;
 }

@@ -12,7 +12,7 @@ apiClient.interceptors.request.use(config => {
   const session = store.getState().session;
   if (config.certflowScope) assertMarkingScope(config.certflowScope); else config.certflowScope = captureMarkingScope();
   if (config.authVersion !== undefined && config.authVersion !== config.certflowScope.epoch) throw new Error('Компания или пользователь изменились. Операция остановлена.');
-  if (!session.user || !session.token || !session.firmId) throw new Error('Войдите в CertFlow и выберите компанию.');
+  if (!session.user || !session.token || !session.firmId) throw new Error('Войдите в ZNAQ и выберите компанию.');
   const expectedFirm = config.headers.get('X-Company-Id') || config.certflowFirm || session.firmId;
   if (expectedFirm !== session.firmId || config.certflowActor && config.certflowActor !== session.user.id || config.dmKodActorId && config.dmKodActorId !== dmKodActorKey(useAuthStore.getState().user)) throw new Error('Компания или пользователь изменились. Повторите действие в текущем пространстве.');
   config.certflowActor = session.user.id; config.certflowFirm = session.firmId;

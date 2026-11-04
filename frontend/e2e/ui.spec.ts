@@ -3,6 +3,7 @@ import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { installCertificatePluginFixture } from './certificate-plugin-fixture';
 import type { NormativeDocument } from '../src/normativeApi';
 
 test('normative field keeps selected and manually entered values', async ({ page }) => {
@@ -115,7 +116,83 @@ test('normative directory lets a user create and remove a manual technical regul
   await expect(page.getByText('Ручной регламент', { exact: true })).toBeHidden();
 });
 
+test('certificate authentication signs the server challenge, shows verification errors and retries', async ({ page }) => {
+  const fixture = await fixtures(page); await installCertificatePluginFixture(page);
+  const content = 'CertFlow certificate authentication\nPurpose: login\nNonce: synthetic-unique-server-value';
+  let fail = true; const proofs: Record<string, unknown>[] = [];
+  await page.route('**/api/auth/certificate/challenge', route => route.fulfill({ json: { id: 'certificate-challenge', content, expiresAt: '2099-01-01T00:00:00Z' } }));
+  await page.route('**/api/auth/certificate/login', route => {
+    proofs.push(route.request().postDataJSON());
+    return fail ? route.fulfill({ status: 503, json: { detail: 'Установите серверный КриптоПро CAdESCOM.' } }) : route.fulfill({ json: fixture.authenticate() });
+  });
+  await page.goto('/'); await page.getByRole('tab', { name: 'По ЭЦП', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Войти по ЭЦП', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Найти сертификаты', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: /^Сертификат ЭЦП/ })).toContainText('Тестовый пользователь');
+  await page.getByRole('button', { name: 'Войти по ЭЦП', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Установите серверный КриптоПро CAdESCOM.');
+  expect(proofs[0]).toEqual({ challengeId: 'certificate-challenge', signature: 'synthetic-certificate-proof' });
+  expect(await page.evaluate(() => (window as unknown as Record<string, string[]>).certificateSignedMessages)).toEqual([content]);
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'certificate-login-desktop.png'), fullPage: true, animations: 'disabled' });
+  fail = false; await page.getByRole('button', { name: 'Войти по ЭЦП', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Добрый день, Виктор' })).toBeVisible();
+  expect(proofs).toHaveLength(2);
+});
 
+test('certificate authentication profile links with password and allows removing a credential', async ({ page }) => {
+  await fixtures(page); await installCertificatePluginFixture(page);
+  const content = 'CertFlow certificate authentication\nPurpose: link';
+  const credential = { id: 'credential-1', thumbprint: 'A'.repeat(40), subject: 'CN=Тестовый пользователь', issuer: 'CN=Тестовый УЦ', validFrom: '2026-01-01T00:00:00Z', validUntil: '2099-01-01T00:00:00Z', createdAt: '2026-11-02T00:00:00Z' };
+  let linked = false; let removed = false; const requests: Record<string, unknown>[] = [];
+  await page.route('**/api/auth/certificates/', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: linked ? [credential] : [] });
+    const body = route.request().postDataJSON(); requests.push(body);
+    if (body.currentPassword !== 'test12345-') return route.fulfill({ status: 400, json: { detail: 'Текущий пароль неверен.' } });
+    linked = true; return route.fulfill({ json: credential });
+  });
+  await page.route('**/api/auth/certificates/challenge', route => route.fulfill({ json: { id: 'link-challenge', content, expiresAt: '2099-01-01T00:00:00Z' } }));
+  await page.route('**/api/auth/certificates/credential-1/remove', route => { removed = true; return route.fulfill({ status: 204 }); });
+  await login(page); await page.goto('/#/settings?tab=profile');
+  await page.getByRole('button', { name: 'Привязать сертификат', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Привязать сертификат ЭЦП', exact: true });
+  await dialog.getByRole('button', { name: 'Найти сертификаты', exact: true }).click();
+  await dialog.getByLabel('Текущий пароль').fill('wrong');
+  await dialog.getByRole('button', { name: 'Привязать', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Текущий пароль неверен.');
+  await dialog.getByLabel('Текущий пароль').fill('test12345-');
+  await dialog.getByRole('button', { name: 'Привязать', exact: true }).click();
+  await expect(dialog).toBeHidden(); await expect(page.getByText('Привязан', { exact: true })).toBeVisible();
+  expect(requests[1]).toEqual({ challengeId: 'link-challenge', signature: 'synthetic-certificate-proof', currentPassword: 'test12345-' });
+  expect(await page.evaluate(() => JSON.stringify(localStorage) + JSON.stringify(sessionStorage))).not.toContain('test12345-');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'certificate-profile-mobile.png'), fullPage: true, animations: 'disabled' });
+  await page.getByRole('button', { name: 'Отвязать', exact: true }).click();
+  const removal = page.getByRole('dialog', { name: 'Отвязать сертификат ЭЦП', exact: true });
+  await expect(removal).toContainText('Все ваши сеансы будут завершены');
+  await removal.getByLabel('Текущий пароль').fill('test12345-');
+  await removal.getByRole('button', { name: 'Отвязать и выйти', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Войти в ZNAQ', exact: true })).toBeVisible();
+  expect(removed).toBe(true);
+});
+
+test('certificate authentication fits phones and keeps password login available when plugin is missing', async ({ page }) => {
+  await fixtures(page); await installCertificatePluginFixture(page, true);
+  await page.goto('/'); await page.getByRole('tab', { name: 'По ЭЦП', exact: true }).click();
+  await page.getByRole('button', { name: 'Найти сертификаты', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('КриптоПро недоступен');
+  for (const width of [320, 390, 844]) {
+    await page.setViewportSize({ width, height: width === 844 ? 390 : 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'certificate-login-mobile.png'), fullPage: true, animations: 'disabled' });
+  await page.getByRole('tab', { name: 'По паролю', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Логин', exact: true }).fill('SuperViktor');
+  await page.getByLabel('Пароль', { exact: true }).fill('test12345-');
+  await page.getByRole('button', { name: 'Войти в ZNAQ', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Добрый день, Виктор' })).toBeVisible();
+});
 
 test('laboratory registry keeps the CSV source and confirms manual changes before saving', async ({ page }) => {
   await fixtures(page);
@@ -163,6 +240,123 @@ test('laboratory registry keeps the CSV source and confirms manual changes befor
   await page.screenshot({path:path.resolve('..','artifacts','screenshots','laboratory-registry-mobile.png'),fullPage:true,animations:'disabled'});
 });
 
+test('declaration sections persist completion and highlight every completed item on desktop and mobile', async ({ page }) => {
+  const fixture = await fixtures(page);
+  await login(page); await page.goto('/#/declarations/new');
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Проверка выполнения разделов');
+  const checkboxes = page.getByRole('checkbox', { name: /^Выполнено:/ });
+  await expect(checkboxes).toHaveCount(16);
+  for (const checkbox of await checkboxes.all()) await checkbox.check();
+  await expect(page.locator('.workspace-step.is-complete')).toHaveCount(16);
+  await expect(page.locator('.workspace-counter')).toHaveText('16 из 16');
+  await page.getByRole('checkbox', { name: 'Выполнено: Foreign', exact: true }).uncheck();
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect.poll(() => (fixture.getSaved()?.workspace as { sections: Record<string, { completed: boolean }> })?.sections.foreign.completed).toBe(false);
+  await expect(page).toHaveURL(/declarations\/44444444/); await page.reload();
+  await expect(page.locator('.workspace-step.is-complete')).toHaveCount(15);
+  await page.getByRole('tab', { name: /Приложение Адреса/ }).click();
+  await expect(page.getByRole('tabpanel')).toContainText('Приложение: адреса');
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'declaration-completion-desktop.png'), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'declaration-completion-mobile.png'), fullPage: true, animations: 'disabled' });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(checkboxes.first()).toBeChecked();
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'declaration-completion-dark.png'), fullPage: true, animations: 'disabled' });
+});
+
+test('declaration generation saves current form before preview and downloads without calling FGIS', async ({ page }) => {
+  const fixture = await fixtures(page); const exports: string[] = []; let submissions = 0;
+  await page.route('**/export/*', route => { exports.push(route.request().url()); return route.fulfill({ contentType: route.request().url().includes('/pdf') ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: '%PDF-1.4\n% UI fixture' }); });
+  await page.route('**/fgis/send', route => { submissions++; return route.fulfill({ status: 503 }); });
+  await login(page); await page.goto('/#/declarations/new');
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Генерация из актуальной формы');
+  await page.getByRole('checkbox', { name: 'Выполнено: Основные', exact: true }).check();
+  await page.getByRole('button', { name: 'Сформировать декларацию', exact: true }).click();
+  const preview = page.getByRole('dialog', { name: /Декларация о соответствии/ });
+  await expect(preview).toBeVisible();
+  await expect(preview.getByTitle('Предпросмотр декларации')).toHaveAttribute('src', /^blob:/);
+  expect(fixture.getSaved()?.title).toBe('Генерация из актуальной формы');
+  expect(exports[0]).toContain('/export/pdf?revision=2');
+  const wordDownload = page.waitForEvent('download'); await preview.getByRole('button', { name: 'Скачать Word', exact: true }).click();
+  expect((await wordDownload).suggestedFilename()).toBe('CF-26-NEW.docx');
+  expect(exports.at(-1)).toContain('/export/docx?revision=2');
+  expect(submissions).toBe(0);
+  await preview.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  // A failed export must leave the saved form intact and allow a retry.
+  await page.route('**/export/pdf?*', route => route.fulfill({ status: 503, json: { detail: 'Генератор временно недоступен' } }));
+  await page.getByRole('button', { name: 'Сформировать декларацию', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Генератор временно недоступен' })).toBeVisible();
+  await expect(preview).toBeHidden();
+});
+
+test('declaration completion is read only for a viewer and does not block draft generation', async ({ page }) => {
+  await fixtures(page, false, { workspace: { sections: { main: { completed: true, number: '', date: null, content: '', notes: '' } }, files: [] } }, 'Viewer');
+  await login(page); await page.goto('/#/declarations/44444444-4444-4444-8444-000000000000');
+  await expect(page.getByRole('checkbox', { name: 'Выполнено: Основные', exact: true })).toBeChecked();
+  for (const checkbox of await page.getByRole('checkbox', { name: /^Выполнено:/ }).all()) await expect(checkbox).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Сформировать декларацию', exact: true })).toBeEnabled();
+});
+
+test('ZNAQ identity and layouts cover the whole workspace on desktop and small phones', async ({ page }) => {
+  test.setTimeout(180000);
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await fixtures(page); await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('/#/login');
+  await expect(page.getByRole('button', { name: 'Войти в ZNAQ', exact: true })).toBeVisible();
+  await expect(page).toHaveTitle('Вход — ZNAQ');
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'znaq-login-desktop.png'), fullPage: true, animations: 'disabled' });
+  await login(page);
+  await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'znaq');
+  const screens = [
+    ['overview', '/#/'], ['registry', '/#/declarations'], ['editor', '/#/declarations/new'],
+    ['directories', '/#/directories'], ['appearance', '/#/settings?tab=appearance'], ['settings', '/#/settings'],
+    ['team', '/#/team'], ['catalog', '/#/catalog'], ['marking', '/#/marking'],
+    ['chz', '/#/marking?tab=chz'], ['dmkod', '/#/marking?tab=dmkod'], ['plan', '/#/development-plan'],
+  ];
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: width === 1440 ? 1050 : 844 });
+    for (const [name, url] of screens) {
+      await page.goto(url);
+      await expect(page.locator('#main-content').getByRole('heading', { level: 1 }).first()).toBeVisible();
+      await expect(page.getByRole('status', { name: 'Загрузка', exact: true })).toBeHidden();
+      if (name === 'chz') await expect(page.locator('.integration-theme').first()).toBeVisible();
+      if (name === 'dmkod') await expect(page.locator('[data-integration="dmkod"]').first()).toBeVisible();
+      await expect(page).toHaveTitle(/ZNAQ/);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${name} / ${width}: horizontal overflow`).toBe(true);
+      await expect(page.locator('#main-content')).not.toContainText('CertFlow');
+      if (width !== 320) await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', `znaq-${name}-${width}.png`), fullPage: true, animations: 'disabled' });
+      if (width === 1440 && name === 'overview') await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'znaq-product-preview.png'), animations: 'disabled' });
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.goto('/#/directories'); await page.getByRole('button', { name: 'Добавить компанию', exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'znaq-dialog.png'), animations: 'disabled' });
+  expect(errors).toEqual([]);
+  await page.goto('/branding/znaq-brand-sheet.svg');
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'znaq-brand-identity.png'), animations: 'disabled' });
+});
+
+test('ZNAQ dark mode keeps brand controls and document generation usable', async ({ page }) => {
+  test.setTimeout(60000);
+  await fixtures(page); await page.emulateMedia({ colorScheme: 'dark' }); await login(page);
+  await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'znaq');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'znaq-overview-dark.png'), fullPage: true, animations: 'disabled' });
+  await page.goto('/#/declarations/new');
+  await page.getByRole('checkbox', { name: 'Выполнено: Основные', exact: true }).check();
+  await expect(page.locator('.workspace-step.is-complete')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Сформировать декларацию', exact: true })).toBeEnabled();
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'znaq-editor-dark.png'), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.getByRole('button', { name: 'Открыть меню', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'ZNAQ — на главную', exact: true }).last()).toBeVisible();
+  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'znaq-mobile-navigation.png'), animations: 'disabled' });
+});
+
 async function fixtures(page: Page, lookupConfigured = false, declarationOverrides: Record<string, unknown> = {}, role = 'Admin', showOverwriteWarning = false, profile: { displayName?: string; firmName?: string } = {}) {
   const firm = { id: '11111111-1111-4111-8111-111111111111', name: profile.firmName ?? 'Моя компания', inn: '', role };
   const user = { id: '33333333-3333-4333-8333-333333333333', userName: 'SuperViktor', displayName: profile.displayName ?? 'Виктор', email: '', firms: [firm, { ...firm, id: '22222222-2222-4222-8222-222222222222', name: 'Вектор Импорт' }] };
@@ -202,6 +396,7 @@ async function fixtures(page: Page, lookupConfigured = false, declarationOverrid
       signedIn = true; return json(auth);
     }
     if (p === '/api/auth/logout') { signedIn = false; return route.fulfill({ status: 204 }); }
+    if (p === '/api/auth/certificates' && request.method() === 'GET') return json([]);
     if (!signedIn) return json({}, 401);
     if (p.endsWith('/marking/settings')) {
       if (request.method() === 'PUT') markingSettings = { ...markingSettings, ...request.postDataJSON(), updatedAtUtc: '2026-10-20T10:00:00Z' };
@@ -312,11 +507,11 @@ async function fixtures(page: Page, lookupConfigured = false, declarationOverrid
     return json({ detail: 'UI fixture has no handler' }, 404);
   });
   page.on('pageerror', error => console.error('Browser runtime:', error.message));
-  return { getDeclarations: () => rows, getStatusRequests: () => statusRequests, failStatusChanges: (value: boolean) => { statusFailure = value; }, getSaved: () => savedBody, getOrganizations: () => organizations, getDirectoryRefreshes: () => directoryRefreshes, getDirectoryDeletions: () => directoryDeletions, failDirectoryDeletion: (value: boolean) => { directoryDeletionFailure = value; }, failDirectory: (value: boolean) => { directoryFailure = value; }, seedOrganization: (data: Record<string, unknown>) => organizations.push({ ...party, autoRefresh: true, kind: 'Both', id: '77777777-7777-4777-8777-000000000000', firmId: firm.id, ...data }), failCheck: (value: boolean) => { failCheck = value; }, loseBatchResponseOnce: () => { loseBatchResponse = true; }, batchSubmissions };
+  return { authenticate: () => { signedIn = true; return { accessToken: 'ui-test-token', expiresAt: '2099-01-01T00:00:00Z', user }; }, getDeclarations: () => rows, getStatusRequests: () => statusRequests, failStatusChanges: (value: boolean) => { statusFailure = value; }, getSaved: () => savedBody, getOrganizations: () => organizations, getDirectoryRefreshes: () => directoryRefreshes, getDirectoryDeletions: () => directoryDeletions, failDirectoryDeletion: (value: boolean) => { directoryDeletionFailure = value; }, failDirectory: (value: boolean) => { directoryFailure = value; }, seedOrganization: (data: Record<string, unknown>) => organizations.push({ ...party, autoRefresh: true, kind: 'Both', id: '77777777-7777-4777-8777-000000000000', firmId: firm.id, ...data }), failCheck: (value: boolean) => { failCheck = value; }, loseBatchResponseOnce: () => { loseBatchResponse = true; }, batchSubmissions };
 }
 async function login(page: Page, displayName = 'Виктор') {
   await page.goto('/'); await page.getByRole('textbox', { name: 'Логин', exact: true }).fill('SuperViktor');
-  await page.getByLabel('Пароль', { exact: true }).fill('test12345-'); await page.getByRole('button', { name: 'Войти в CertFlow' }).click();
+  await page.getByLabel('Пароль', { exact: true }).fill('test12345-'); await page.getByRole('button', { name: 'Войти в ZNAQ' }).click();
   await expect(page.getByRole('heading', { name: `Добрый день, ${displayName}` })).toBeVisible();
 }
 
@@ -558,15 +753,15 @@ test('login distinguishes an unavailable server from incorrect credentials and c
   await page.goto('/');
   await page.getByRole('textbox', { name: 'Логин', exact: true }).fill('SuperViktor');
   await page.getByLabel('Пароль', { exact: true }).fill('test12345-');
-  await page.getByRole('button', { name: 'Войти в CertFlow' }).click();
+  await page.getByRole('button', { name: 'Войти в ZNAQ' }).click();
   await expect(page.getByRole('alert')).toContainText('Сервис входа сейчас недоступен');
   await expect(page.getByRole('alert')).not.toContainText('Неверный логин или пароль');
   unavailable = false;
   await page.getByLabel('Пароль', { exact: true }).fill('incorrect-password');
-  await page.getByRole('button', { name: 'Войти в CertFlow' }).click();
+  await page.getByRole('button', { name: 'Войти в ZNAQ' }).click();
   await expect(page.getByRole('alert')).toContainText('Неверный логин или пароль');
   await page.getByLabel('Пароль', { exact: true }).fill('test12345-');
-  await page.getByRole('button', { name: 'Войти в CertFlow' }).click();
+  await page.getByRole('button', { name: 'Войти в ZNAQ' }).click();
   await expect(page.getByRole('heading', { name: 'Добрый день, Виктор' })).toBeVisible();
 });
 
@@ -833,10 +1028,10 @@ test('standalone NK card creation needs no declaration and does not save or link
   await page.getByRole('button', { name: 'Подобрать категории' }).click();
   await page.getByRole('combobox', { name: 'Категория НК *', exact: true }).selectOption('100');
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'standalone-catalog.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Сохранить в CertFlow', exact: true }).click();
+  await page.getByRole('button', { name: 'Сохранить в ZNAQ', exact: true }).click();
   await expect.poll(() => externalCard).toMatchObject({ name: 'Новое масло Premium', gtin: '05011846021161', categoryId: 100, brand: 'Oil Brand', sendToModeration: false });
   await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.getByRole('dialog')).toContainText('Сохранён в CertFlow');
+  await expect(page.getByRole('dialog')).toContainText('Сохранён в ZNAQ');
   expect(state.getSaved()).toBeNull(); expect(linkWrites).toBe(0); expect(orderRequests).toBe(0); expect(externalWrites).toBe(0);
   await expect(page).toHaveURL(/#\/catalog$/);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1708,7 +1903,7 @@ test('connection is successful only after verification and loses success after a
 test('all color themes support both modes with readable tokens and persistent selection', async ({ page }) => {
   await fixtures(page); await login(page);
   await page.goto('/#/settings?tab=appearance');
-  const palettes = [['sapphire', 'Сапфир'], ['ocean', 'Океан'], ['sage', 'Шалфей'], ['sandstone', 'Песчаник'], ['graphite', 'Графит'], ['dragonfly', 'Стрекозы']] as const;
+  const palettes = [['znaq', 'ZNAQ'], ['sapphire', 'Сапфир'], ['ocean', 'Океан'], ['sage', 'Шалфей'], ['sandstone', 'Песчаник'], ['graphite', 'Графит'], ['dragonfly', 'Стрекозы']] as const;
   for (const mode of ['light', 'dark'] as const) {
     await page.getByRole('group', { name: 'Режим интерфейса' }).getByRole('button', { name: mode === 'light' ? /^Светлая/ : /^Тёмная/ }).click();
     for (const [id, title] of palettes) {
@@ -1775,7 +1970,7 @@ test('theme defaults recover from corrupt storage and remain usable when saving 
   await page.addInitScript(() => { localStorage.setItem('certflow.color-theme', 'invalid-palette'); localStorage.setItem('certflow.theme', 'invalid-mode'); });
   await page.emulateMedia({ colorScheme: 'dark' }); await login(page);
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'sapphire');
+  await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'znaq');
   await page.goto('/#/settings?tab=appearance');
   await page.evaluate(() => { Storage.prototype.setItem = () => { throw new DOMException('Storage disabled', 'SecurityError'); }; });
   await page.getByRole('button', { name: 'Тема Песчаник', exact: true }).click();
@@ -1863,7 +2058,7 @@ test.describe('touch phones and the dragonfly theme', () => {
       await page.setViewportSize(viewport);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await expect(page.locator('.login-story')).toBeHidden();
-      await expect(page.getByRole('button', { name: 'Войти в CertFlow' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Войти в ZNAQ' })).toBeVisible();
     }
   });
 });

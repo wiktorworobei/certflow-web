@@ -6,7 +6,7 @@ export const declarationTabs = [
   ['fgis', 'Публикация ФГИС'], ['scans', 'Сканы'], ['foreign', 'Foreign'],
 ] as const;
 export type DeclarationTab = typeof declarationTabs[number][0];
-export interface WorkspaceSection { number: string; date: string | null; content: string; notes: string }
+export interface WorkspaceSection { number: string; date: string | null; content: string; notes: string; completed?: boolean }
 export interface WorkspaceAttachment { attachmentId: string; kind: string; section: DeclarationTab; description: string; includeInFgis: boolean }
 export interface DeclarationWorkspace { sections: Partial<Record<DeclarationTab, WorkspaceSection>>; files: WorkspaceAttachment[] }
 export interface PreparedFgisFile { attachmentId: string; fileName: string; kind: string; section: string; description: string; length: number; sha256: string }

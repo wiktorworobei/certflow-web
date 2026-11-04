@@ -4,6 +4,7 @@ import type { AuthResponse, Profile, Dashboard, Declaration, DeclarationRow, Sav
 import type { MarkingSettings, MarkingConnections, MarkingLink, SaveMarkingLink, MarkingBatch } from './types';
 import type { ArchiveAction } from './types';
 import { API_BASE_URL, apiUrl } from './apiUrl';
+import type { LinkedCertificate } from './certificateAuthentication';
 
 interface Session { token: string | null; user: Profile | null; firmId: string; ready: boolean }
 const sessionSlice = createSlice({
@@ -33,7 +34,7 @@ const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> =
   const originalToken = (api.getState() as { session: Session }).session.token;
   let result = await rawBaseQuery(args, api, extra);
   const url = typeof args === 'string' ? args : args.url;
-  if (result.error?.status === 401 && !url.startsWith('/auth/')) {
+  if (result.error?.status === 401 && (!url.startsWith('/auth/') || url.startsWith('/auth/certificates'))) {
     const currentToken = (api.getState() as { session: Session }).session.token;
     if (currentToken && currentToken !== originalToken) return rawBaseQuery(args, api, extra);
     if (!refreshPromise) refreshPromise = (async () => {
@@ -49,6 +50,7 @@ const firmUrl = (firmId: string, path: string) => `/firms/${firmId}${path}`;
 export const api = createApi({
   reducerPath: 'api', baseQuery, tagTypes: ['Declarations', 'Directories', 'Team', 'Integrations', 'PersonalIntegrations', 'Marking'],
   endpoints: b => ({
+    certificates: b.query<LinkedCertificate[], void>({ query: () => '/auth/certificates/', keepUnusedDataFor: 0 }),
     dashboard: b.query<Dashboard, string>({ query: id => firmUrl(id, '/dashboard'), providesTags: ['Declarations', 'Directories'] }),
     declarations: b.query<Page<DeclarationRow>, { firmId: string; filters: Filters }>({ query: ({ firmId, filters }) => ({ url: firmUrl(firmId, '/declarations/'), params: filters }), providesTags: ['Declarations'] }),
     declaration: b.query<Declaration, { firmId: string; id: string }>({ query: ({ firmId, id }) => firmUrl(firmId, `/declarations/${id}`), providesTags: ['Declarations'] }),
@@ -115,10 +117,10 @@ export async function savePersonalDaDataKey(apiKey: string): Promise<DaDataSetti
   return settings;
 }
 
-export async function authRequest(path: string, body?: unknown): Promise<AuthResponse> {
+export async function authRequest<T = AuthResponse>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(apiUrl(`/auth/${path}`), { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'CertFlow', ...(store.getState().session.token ? { Authorization: `Bearer ${store.getState().session.token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
   if (!response.ok) throw { status: response.status, data: await response.json().catch(() => ({})) };
-  return response.status === 204 ? undefined as unknown as AuthResponse : response.json();
+  return response.status === 204 ? undefined as T : response.json();
 }
 export async function bootstrapSession() {
   try { store.dispatch(authenticated(await authRequest('refresh'))); } catch { store.dispatch(signedOut()); }
@@ -130,12 +132,15 @@ export async function refreshIntegrationSession(): Promise<boolean> {
   })().finally(() => { refreshPromise = null; });
   return !!await refreshPromise;
 }
-export async function download(path: string, filename: string) {
+export async function documentBlob(path: string): Promise<Blob> {
   let response = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${store.getState().session.token}` }, credentials: 'include' });
   if (response.status === 401) {
     try { store.dispatch(authenticated(await authRequest('refresh'))); } catch { store.dispatch(signedOut()); throw { status: 401 }; }
     response = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${store.getState().session.token}` }, credentials: 'include' });
   }
   if (!response.ok) throw { status: response.status, data: await response.json().catch(() => ({})) };
-  const blob = await response.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  return response.blob();
+}
+export async function download(path: string, filename: string) {
+  const blob = await documentBlob(path); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
