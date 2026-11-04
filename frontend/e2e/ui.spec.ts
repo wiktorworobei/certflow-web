@@ -1852,7 +1852,7 @@ test('theme selection persists, follows the system and applies to forms on mobil
   await page.getByRole('button', { name: 'Включить тёмную тему' }).click();
   await expect(page.getByLabel('API-ключ DaData', { exact: true })).toBeVisible();
   const background = await page.getByLabel('API-ключ DaData', { exact: true }).evaluate(element => getComputedStyle(element.parentElement!).backgroundColor);
-  expect(background).toBe('rgb(32, 35, 45)');
+  expect(background).toBe('rgb(23, 34, 27)');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'redesign-settings-mobile-dark.png'), fullPage: true, animations: 'disabled' });
 });
