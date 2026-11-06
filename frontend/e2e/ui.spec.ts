@@ -275,6 +275,7 @@ test('declaration generation saves current form before preview and downloads wit
   await page.getByRole('button', { name: 'Сформировать декларацию', exact: true }).click();
   const preview = page.getByRole('dialog', { name: /Декларация о соответствии/ });
   await expect(preview).toBeVisible();
+  await preview.getByRole('tab', { name: 'Предпросмотр PDF', exact: true }).click();
   await expect(preview.getByTitle('Предпросмотр декларации')).toHaveAttribute('src', /^blob:/);
   expect(fixture.getSaved()?.title).toBe('Генерация из актуальной формы');
   expect(exports[0]).toContain('/export/pdf?revision=2');
@@ -309,7 +310,7 @@ test('ZNAQ identity and layouts cover the whole workspace on desktop and small p
   await login(page);
   await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'znaq');
   const screens = [
-    ['overview', '/#/'], ['registry', '/#/declarations'], ['editor', '/#/declarations/new'],
+    ['overview', '/#/'], ['registry', '/#/declarations'], ['editor', '/#/declarations/new'], ['instruction', '/#/instruction'],
     ['directories', '/#/directories'], ['appearance', '/#/settings?tab=appearance'], ['settings', '/#/settings'],
     ['team', '/#/team'], ['catalog', '/#/catalog'], ['marking', '/#/marking'],
     ['chz', '/#/marking?tab=chz'], ['dmkod', '/#/marking?tab=dmkod'], ['plan', '/#/development-plan'],
@@ -318,6 +319,7 @@ test('ZNAQ identity and layouts cover the whole workspace on desktop and small p
     await page.setViewportSize({ width, height: width === 1440 ? 1050 : 844 });
     for (const [name, url] of screens) {
       await page.goto(url);
+      await expect(page.getByRole('status', { name: 'Загрузка', exact: true })).toBeHidden({ timeout: 15000 });
       await expect(page.locator('#main-content').getByRole('heading', { level: 1 }).first()).toBeVisible();
       await expect(page.getByRole('status', { name: 'Загрузка', exact: true })).toBeHidden();
       if (name === 'chz') await expect(page.locator('.integration-theme').first()).toBeVisible();
@@ -398,6 +400,8 @@ async function fixtures(page: Page, lookupConfigured = false, declarationOverrid
     if (p === '/api/auth/logout') { signedIn = false; return route.fulfill({ status: 204 }); }
     if (p === '/api/auth/certificates' && request.method() === 'GET') return json([]);
     if (!signedIn) return json({}, 401);
+    if (p.endsWith('/print-fields')) return json([{ key: 'Заявитель', label: 'Заявитель', text: 'Тестовый заявитель' }]);
+    if (p.endsWith('/instruction')) return json({ content: '', revision: '00000000-0000-0000-0000-000000000000' });
     if (p.endsWith('/marking/settings')) {
       if (request.method() === 'PUT') markingSettings = { ...markingSettings, ...request.postDataJSON(), updatedAtUtc: '2026-10-20T10:00:00Z' };
       return json(markingSettings);

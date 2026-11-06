@@ -8,7 +8,7 @@ export const declarationTabs = [
 export type DeclarationTab = typeof declarationTabs[number][0];
 export interface WorkspaceSection { number: string; date: string | null; content: string; notes: string; completed?: boolean }
 export interface WorkspaceAttachment { attachmentId: string; kind: string; section: DeclarationTab; description: string; includeInFgis: boolean }
-export interface DeclarationWorkspace { sections: Partial<Record<DeclarationTab, WorkspaceSection>>; files: WorkspaceAttachment[] }
+export interface DeclarationWorkspace { sections: Partial<Record<DeclarationTab, WorkspaceSection>>; files: WorkspaceAttachment[]; printOverrides?: Record<string, string> }
 export interface PreparedFgisFile { attachmentId: string; fileName: string; kind: string; section: string; description: string; length: number; sha256: string }
 export interface FgisPreparation { id: string; revision: number; preparedAtUtc: string; preparedBy: string; files: PreparedFgisFile[] }
 export interface FgisReview { revision: number; connectorConfigured: boolean; connectorMessage: string; missingRequirements: string[]; selectedFiles: number; preparation: FgisPreparation | null; preparationIsCurrent: boolean }

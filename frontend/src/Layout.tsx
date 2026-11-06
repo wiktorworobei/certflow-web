@@ -19,6 +19,7 @@ export function ThemeSwitch() {
 const navigation = [
   { to: '/', label: 'Обзор', icon: <SpaceDashboardOutlined/> },
   { to: '/declarations', label: 'Декларации', icon: <DescriptionOutlined/> },
+  { to: '/instruction', label: 'Инструкция', icon: <DescriptionOutlined/> },
   { to: '/directories', label: 'Справочники', icon: <CorporateFareOutlined/> },
   { to: '/catalog', label: 'Карточки ЧЗ', icon: <Inventory2Outlined/> },
   { to: '/marking', label: 'ЧЗ и Наша марка', icon: <QrCode2Rounded/> },

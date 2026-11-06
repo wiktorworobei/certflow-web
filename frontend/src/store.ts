@@ -50,6 +50,9 @@ const firmUrl = (firmId: string, path: string) => `/firms/${firmId}${path}`;
 export const api = createApi({
   reducerPath: 'api', baseQuery, tagTypes: ['Declarations', 'Directories', 'Team', 'Integrations', 'PersonalIntegrations', 'Marking'],
   endpoints: b => ({
+    instruction: b.query<{ content: string; revision: string }, string>({ query: id => firmUrl(id, '/instruction'), keepUnusedDataFor: 0 }),
+    saveInstruction: b.mutation<{ content: string; revision: string }, { firmId: string; content: string; revision: string }>({ query: ({ firmId, ...body }) => ({ url: firmUrl(firmId, '/instruction'), method: 'PUT', body }) }),
+    printFields: b.query<{ key: string; label: string; text: string }[], { firmId: string; id: string; revision: number }>({ query: ({ firmId, id, revision }) => ({ url: firmUrl(firmId, `/declarations/${id}/print-fields`), params: { revision } }), keepUnusedDataFor: 0 }),
     certificates: b.query<LinkedCertificate[], void>({ query: () => '/auth/certificates/', keepUnusedDataFor: 0 }),
     dashboard: b.query<Dashboard, string>({ query: id => firmUrl(id, '/dashboard'), providesTags: ['Declarations', 'Directories'] }),
     declarations: b.query<Page<DeclarationRow>, { firmId: string; filters: Filters }>({ query: ({ firmId, filters }) => ({ url: firmUrl(firmId, '/declarations/'), params: filters }), providesTags: ['Declarations'] }),

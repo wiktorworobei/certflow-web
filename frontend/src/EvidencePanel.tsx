@@ -9,7 +9,7 @@ import { LaboratoryFields } from './LaboratoryFields';
 import { LaboratoryPicker } from './LaboratoryPicker';
 
 function FileField({ value, files, disabled, label, onChange }: { value?: string | null; files: Attachment[]; disabled: boolean; label: string; onChange: (value: string | null) => void }) {
-  return <TextField select label={label} value={value ?? ''} disabled={disabled} onChange={e => onChange(e.target.value || null)} helperText="Выберите файл из вкладки «Файлы и история»."><MenuItem value="">Не выбран</MenuItem>{files.map(f => <MenuItem key={f.id} value={f.id}>{f.fileName}</MenuItem>)}</TextField>;
+  return <TextField select label={label} value={value ?? ''} disabled={disabled} onChange={e => onChange(e.target.value || null)} helperText="Выберите файл из вкладки «Сканы»."><MenuItem value="">Не выбран</MenuItem>{files.map(f => <MenuItem key={f.id} value={f.id}>{f.fileName}</MenuItem>)}</TextField>;
 }
 
 function Documents({ values, onChange, files, readOnly, customs = false }: { values: EvidenceDocument[]; onChange: (value: EvidenceDocument[]) => void; files: Attachment[]; readOnly: boolean; customs?: boolean }) {
