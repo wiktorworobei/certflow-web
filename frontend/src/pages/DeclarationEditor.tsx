@@ -1,5 +1,5 @@
 import { DeclarationBuilder } from '../DeclarationBuilder';
-import { emptyWorkspace, type DeclarationWorkspace } from '../workspaceTypes';
+import { declarationTabs, emptyWorkspace, type DeclarationWorkspace } from '../workspaceTypes';
 import '../declarationWorkspace.css';
 import type { EvidenceWorkflow } from '../evidenceTypes';
 import { useEffect, useRef, useState } from 'react';
@@ -25,18 +25,24 @@ const schema: yup.ObjectSchema<SaveDeclaration> = yup.object({
 });
 const transitions: Record<Status, Status[]> = { Draft: ['InReview', 'Archived'], InReview: ['Ready', 'Draft', 'Archived'], Ready: ['Registered', 'Draft', 'Archived'], Registered: ['Suspended', 'Revoked', 'Archived'], Suspended: ['Registered', 'Revoked', 'Archived'], Revoked: ['Archived'], Archived: [] };
 
+function formValues(document?: SaveDeclaration): SaveDeclaration {
+  const empty = emptyDeclaration();
+  return { ...empty, ...document, title: document?.title ?? 'Новая декларация', applicant: { ...empty.applicant, ...document?.applicant }, manufacturer: { ...empty.manufacturer, ...document?.manufacturer }, product: { ...empty.product, ...document?.product },
+    workspace: { ...emptyWorkspace(), ...document?.workspace, sections: Object.fromEntries(declarationTabs.map(([key]) => [key, { number: '', date: null, content: '', notes: '', completed: false, ...document?.workspace?.sections[key] }])) } };
+}
+
 export function DeclarationEditor() {
   const { id: routeId } = useParams(); const id = routeId === 'new' ? undefined : routeId;
   const navigate = useNavigate(); const notify = useNotify(); const { firmId, canEdit } = useWorkspace();
   const { currentData: document, isLoading, error, refetch } = api.useDeclarationQuery({ firmId, id: id ?? '' }, { skip: !id });
   const [save, { isLoading: saving }] = api.useSaveDeclarationMutation(); const [changeStatus, { isLoading: changing }] = api.useChangeStatusMutation();
-  const form = useForm<SaveDeclaration>({ defaultValues: { ...emptyDeclaration(), title: 'Новая декларация', workspace: emptyWorkspace() }, resolver: yupResolver(schema) });
+  const form = useForm<SaveDeclaration>({ defaultValues: formValues(), resolver: yupResolver(schema) });
   const { reset, handleSubmit, formState: { isDirty } } = form;
   const dirty = useRef(isDirty); dirty.current = isDirty; const loadedId = useRef<string | undefined>(undefined);
-  useEffect(() => { if (document && (!dirty.current || loadedId.current !== document.id)) { reset({ ...document, workspace: document.workspace ?? emptyWorkspace() }); loadedId.current = document.id; } }, [document, reset]);
+  useEffect(() => { if (document && (!dirty.current || loadedId.current !== document.id)) { reset(formValues(document)); loadedId.current = document.id; } }, [document, reset]);
   useEffect(() => { const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty.current) event.preventDefault(); }; window.addEventListener('beforeunload', beforeUnload); return () => window.removeEventListener('beforeunload', beforeUnload); }, []);
   const [printReady, setPrintReady] = useState(false); const [exporting, setExporting] = useState(false); const [serverError, setServerError] = useState('');
-  useEffect(() => { if (!id) { reset({ ...emptyDeclaration(), title: 'Новая декларация', workspace: emptyWorkspace() }); loadedId.current = undefined;  } }, [id, firmId, reset]);
+  useEffect(() => { if (!id) { reset(formValues()); loadedId.current = undefined; } }, [id, firmId, reset]);
   const [statusMenu, setStatusMenu] = useState<HTMLElement | null>(null); const [statusTarget, setStatusTarget] = useState<Status | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<ArchiveSelection | null>(null);
   useEffect(() => { setRestoreTarget(null); }, [firmId, id]);
@@ -45,7 +51,7 @@ export function DeclarationEditor() {
   const close = () => { if (!isDirty || window.confirm('Изменения не сохранены. Покинуть карточку?')) navigate('/declarations'); };
   async function submit(data: SaveDeclaration) {
     setServerError('');
-    try { const result = await save({ firmId, id, data }).unwrap(); reset(result); loadedId.current = result.id; notify('Декларация сохранена'); if (!id) navigate(`/declarations/${result.id}`, { replace: true }); return result; }
+    try { const result = await save({ firmId, id, data }).unwrap(); reset(formValues(result)); loadedId.current = result.id; notify('Декларация сохранена'); if (!id) navigate(`/declarations/${result.id}`, { replace: true }); return result; }
     catch (e) { setServerError(errorMessage(e)); }
   }
   async function exportDocument(format: string) {
@@ -61,7 +67,7 @@ export function DeclarationEditor() {
   }
   async function confirmStatus() {
     if (!document || !statusTarget) return; setStatusError('');
-    try { const result = await changeStatus({ firmId, id: document.id, status: statusTarget, revision: document.revision, reason, registrationNumber, registryUrl }).unwrap(); reset(result); setStatusTarget(null); notify('Статус обновлён'); }
+    try { const result = await changeStatus({ firmId, id: document.id, status: statusTarget, revision: document.revision, reason, registrationNumber, registryUrl }).unwrap(); reset(formValues(result)); setStatusTarget(null); notify('Статус обновлён'); }
     catch (e) { setStatusError(errorMessage(e)); }
   }
   if (isLoading && loadedId.current !== id) return <Loading/>;
@@ -83,7 +89,7 @@ export function DeclarationEditor() {
     {document && !isDirty && document.missingRequirements.length > 0 && <details className="builder-requirements"><summary>Нужно дополнить: {document.missingRequirements.length}</summary><ul>{document.missingRequirements.map(item => <li key={item}>{item}</li>)}</ul></details>}
     <DeclarationBuilder key={firmId} document={document} readOnly={readOnly} disabled={saving || exporting} onPreviewState={setPrintReady}/>
     <Menu anchorEl={statusMenu} open={!!statusMenu} onClose={() => setStatusMenu(null)}>{document && transitions[document.status].map(status => <MenuItem key={status} onClick={() => { setStatusTarget(status); setStatusMenu(null); setReason(''); setRegistrationNumber(''); setRegistryUrl(''); setStatusError(''); }}>{status === 'Registered' && document.status === 'Ready' ? 'Учесть регистрацию' : status === 'Archived' ? 'В архив' : statusLabels[status]}</MenuItem>)}</Menu>
-    {document && statusTarget === 'Archived' && <ArchiveDeclarationDialog declaration={document} onClose={() => setStatusTarget(null)} onArchived={result => reset(result)}/>}
+    {document && statusTarget === 'Archived' && <ArchiveDeclarationDialog declaration={document} onClose={() => setStatusTarget(null)} onArchived={result => reset(formValues(result))}/>}
     {restoreTarget && <ArchiveSelectionDialog key={`${firmId}:${id}`} entity="declarations" items={[restoreTarget]} action="restore" onClose={() => setRestoreTarget(null)} onComplete={() => void refetch()}/>}
     <Dialog open={!!statusTarget && statusTarget !== 'Archived'} onClose={() => !changing && setStatusTarget(null)} maxWidth="sm" fullWidth><DialogTitle>{statusTarget === 'Registered' && document?.status === 'Ready' ? 'Учесть регистрацию документа' : statusTarget ? statusLabels[statusTarget] : ''}</DialogTitle><DialogContent><Typography color="text.secondary" sx={{ mb: 2 }}>Изменение будет записано в историю декларации.</Typography>
       {statusTarget === 'Registered' && document?.status === 'Ready' && <><Alert severity="info" sx={{ mb: 2 }}>Укажите сведения уже зарегистрированного документа. Это действие не отправляет декларацию в ФГИС и не подтверждает регистрацию автоматически.</Alert><TextField label="Регистрационный номер" value={registrationNumber} onChange={e => setRegistrationNumber(e.target.value)} sx={{ mb: 2 }} required/><TextField label="HTTPS-ссылка на запись в реестре" value={registryUrl} onChange={e => setRegistryUrl(e.target.value)} sx={{ mb: 2 }}/></>}

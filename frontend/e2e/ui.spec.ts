@@ -1301,6 +1301,7 @@ test('search, filtering and responsive registry', async ({ page }) => {
 });
 test('new declaration validates title and sends entered data', async ({ page }) => {
   const fixture = await fixtures(page); await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click();
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click(); await expect(page.getByText('Укажите название документа')).toBeVisible();
   await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Проверка пользовательской формы');
   await openDeclarationPart(page, 'Продукция'); await page.getByLabel('Наименование продукции', { exact: true }).fill('Упаковочная машина');
