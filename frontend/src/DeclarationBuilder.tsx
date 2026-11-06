@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type SyntheticEvent } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { Alert, Button, CircularProgress, LinearProgress, MenuItem, TextField, Typography } from '@mui/material';
 import { ArrowForwardRounded, EditOutlined, RestartAltRounded } from '@mui/icons-material';
@@ -40,6 +40,15 @@ export function DeclarationBuilder({ document: saved, readOnly, disabled, onPrev
   const [preview, setPreview] = useState<DeclarationPrintLayout>(); const [failure, setFailure] = useState(''); const [pending, setPending] = useState(true); const [retry, setRetry] = useState(0);
   const [selected, setSelected] = useState<Group>('applicant'); const [selectedKey, setSelectedKey] = useState('Заявитель');
   const [editing, setEditing] = useState<{ key: string; text: string }>(); const contextRef = useRef<HTMLElement>(null);
+  const [openCases, setOpenCases] = useState<Record<string,boolean>>({main:true});
+  const previousId = useRef(saved?.id);
+  useEffect(() => {
+    if (previousId.current && previousId.current !== saved?.id) { setPreview(undefined); setSelected('applicant'); setSelectedKey('Заявитель'); setEditing(undefined); setOpenCases({main:true}); }
+    previousId.current = saved?.id;
+  }, [saved?.id]);
+  function caseState(id: string) {
+    return { open: !!openCases[id], onToggle: (event: SyntheticEvent<HTMLDetailsElement>) => { const open = event.currentTarget.open; setOpenCases(previous => previous[id] === open ? previous : { ...previous, [id]: open }); } };
+  }
   const signature = JSON.stringify({ title: values.title, kind: values.kind, scheme: values.scheme, applicant: values.applicant, manufacturer: values.manufacturer, product: values.product, regulations: values.regulations, reports: values.reports, additionalInfo: values.additionalInfo, adoptedAt: values.adoptedAt, validUntil: values.validUntil, evidence: values.evidence, workspace: values.workspace, revision: values.revision });
   const checks = [!!values.applicant?.name && !!values.applicant?.address, !!values.manufacturer?.name && !!values.manufacturer?.address, !!values.product?.name && !!values.product?.tnVed, !!values.regulations?.length, !!values.reports?.length && values.reports.every(r => r.number && r.date && r.laboratoryName), !!values.adoptedAt && !!values.validUntil];
   const count = checks.filter(Boolean).length;
@@ -127,13 +136,13 @@ export function DeclarationBuilder({ document: saved, readOnly, disabled, onPrev
       </aside>
     </div>
     <section className="builder-case" aria-label="Дело декларации"><Typography variant="h6" component="h2">Дело декларации</Typography><p>Сведения для работы, файлы и подготовка комплекта — рядом с документом.</p>
-      <details open id="declaration-case-main"><summary>Организация работы</summary><div className="builder-case-fields"><Field name="title" label="Название декларации" required disabled={readOnly || disabled}/><div className="builder-field-stack"><Controller control={form.control} name="kind" render={({field}) => <TextField {...field} label="Вид документа" select disabled={readOnly || disabled}>{['Декларация ТР ЕАЭС','Декларация ГОСТ Р','Декларация ТР РФ'].map(v => <MenuItem key={v} value={v}>{v}</MenuItem>)}</TextField>}/><Field name="scheme" label="Схема декларирования" required disabled={readOnly || disabled}/></div></div></details>
-      <details id="declaration-case-testing"><summary>Основания, лаборатории и испытания</summary><EvidencePanel readOnly={readOnly || disabled} document={saved} onFiles={() => openDeclarationCase('scans')}/><WorkspaceSectionPanel section="testing" title="Анализ состояния производства" readOnly={readOnly || disabled}/></details>
-      <details id="declaration-case-scans"><summary>Файлы и доказательные материалы</summary><FilesPanel document={saved} readOnly={readOnly || disabled}/></details>
-      <details id="declaration-case-application"><summary>Заявка и документы</summary><WorkspaceSectionPanel section="application" title="Заявка и документы" contentLabel="Сведения о заявке, договоре и прилагаемых документах" numbered readOnly={readOnly || disabled}/></details>
-      <details id="declaration-case-closure"><summary>Опись и закрытие дела</summary><InventoryPanel document={saved} onFiles={() => openDeclarationCase('scans')}/><WorkspaceSectionPanel section="closure" title="Закрытие дела" readOnly={readOnly || disabled}/></details>
-      <details id="declaration-case-fgis"><summary>Подготовка к публикации ФГИС</summary><FgisPublicationPanel document={saved} onFiles={() => openDeclarationCase('scans')}/></details>
-      <details id="declaration-case-foreign"><summary>Foreign</summary><WorkspaceSectionPanel section="foreign" title="Foreign" readOnly={readOnly || disabled}/></details>
+      <details {...caseState('main')} id="declaration-case-main"><summary>Организация работы</summary><div className="builder-case-fields"><Field name="title" label="Название декларации" required disabled={readOnly || disabled}/><div className="builder-field-stack"><Controller control={form.control} name="kind" render={({field}) => <TextField {...field} label="Вид документа" select disabled={readOnly || disabled}>{['Декларация ТР ЕАЭС','Декларация ГОСТ Р','Декларация ТР РФ'].map(v => <MenuItem key={v} value={v}>{v}</MenuItem>)}</TextField>}/><Field name="scheme" label="Схема декларирования" required disabled={readOnly || disabled}/></div></div></details>
+      <details {...caseState('testing')} id="declaration-case-testing"><summary>Основания, лаборатории и испытания</summary><EvidencePanel readOnly={readOnly || disabled} document={saved} onFiles={() => openDeclarationCase('scans')}/><WorkspaceSectionPanel section="testing" title="Анализ состояния производства" readOnly={readOnly || disabled}/></details>
+      <details {...caseState('scans')} id="declaration-case-scans"><summary>Файлы и доказательные материалы</summary><FilesPanel document={saved} readOnly={readOnly || disabled}/></details>
+      <details {...caseState('application')} id="declaration-case-application"><summary>Заявка и документы</summary><WorkspaceSectionPanel section="application" title="Заявка и документы" contentLabel="Сведения о заявке, договоре и прилагаемых документах" numbered readOnly={readOnly || disabled}/></details>
+      <details {...caseState('closure')} id="declaration-case-closure"><summary>Опись и закрытие дела</summary><InventoryPanel document={saved} onFiles={() => openDeclarationCase('scans')}/><WorkspaceSectionPanel section="closure" title="Закрытие дела" readOnly={readOnly || disabled}/></details>
+      <details {...caseState('fgis')} id="declaration-case-fgis"><summary>Подготовка к публикации ФГИС</summary><FgisPublicationPanel document={saved} onFiles={() => openDeclarationCase('scans')}/></details>
+      <details {...caseState('foreign')} id="declaration-case-foreign"><summary>Foreign</summary><WorkspaceSectionPanel section="foreign" title="Foreign" readOnly={readOnly || disabled}/></details>
       {!!Object.keys(values.workspace?.printOverrides ?? {}).length && <details><summary>Ручные формулировки на листе</summary>{Object.entries(values.workspace?.printOverrides ?? {}).map(([key,text]) => <div className="builder-override" key={key}><strong>{key}</strong><p>{text || '(пустой текст)'}</p><Button disabled={readOnly || disabled} onClick={() => resetOverride(key)}>Восстановить из реквизитов</Button></div>)}</details>}
     </section>
   </div>;

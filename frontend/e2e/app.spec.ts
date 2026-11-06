@@ -291,7 +291,7 @@ test('create declaration, fill all sections, review, register, export and duplic
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Изменить статус' }).click();
   await page.getByRole('menuitem', { name: 'Учесть регистрацию' }).click();
-  await page.getByLabel('Регистрационный номер').fill('UI-TEST-2026');
+  await page.getByRole('dialog').getByRole('textbox', {name:'Регистрационный номер',exact:true}).fill('UI-TEST-2026');
   await page.getByLabel('HTTPS-ссылка на запись в реестре').fill('https://example.com/registry/test');
   await page.getByRole('button', { name: 'Подтвердить' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
