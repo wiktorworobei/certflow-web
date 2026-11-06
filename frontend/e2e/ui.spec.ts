@@ -1,3 +1,4 @@
+import { openDeclarationPart, organizationLookupSurface, printLayoutFixture } from './declaration-builder-helpers';
 // Isolated UI checks with explicit fixtures. Full-stack tests are in app.spec.ts.
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
@@ -10,6 +11,7 @@ test('normative field keeps selected and manually entered values', async ({ page
   const fixture = await fixtures(page);
   await page.route('**/normative-documents**', route => route.fulfill({ json: { items: [{ designation: 'ГОСТ ТЕСТ-1', name: 'Тест', status: 'Не проверен' }], total: 1, page: 1, pageSize: 50 } }));
   await login(page); await page.goto('/#/declarations/new');
+  await openDeclarationPart(page,'ГОСТы/Тех.регламент');
   const field = page.getByRole('combobox', { name: 'Технические регламенты / стандарты', exact: true });
   const group = page.getByRole('group', { name: 'Регламенты и стандарты декларации' });
   await field.fill('ТЕСТ'); await page.getByRole('option', { name: /ГОСТ ТЕСТ-1/ }).click();
@@ -72,6 +74,7 @@ test('normative directory imports a selected source result, preserves edits on r
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'normative-directory-mobile.png'), fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.goto('/#/declarations/new');
+  await openDeclarationPart(page,'ГОСТы/Тех.регламент');
   const field = page.getByRole('combobox', { name: 'Технические регламенты / стандарты', exact: true });
   await field.fill('моторных');
   await page.getByRole('option', { name: /ГОСТ ТЕСТ-2026/ }).click();
@@ -240,63 +243,41 @@ test('laboratory registry keeps the CSV source and confirms manual changes befor
   await page.screenshot({path:path.resolve('..','artifacts','screenshots','laboratory-registry-mobile.png'),fullPage:true,animations:'disabled'});
 });
 
-test('declaration sections persist completion and highlight every completed item on desktop and mobile', async ({ page }) => {
-  const fixture = await fixtures(page);
-  await login(page); await page.goto('/#/declarations/new');
-  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Проверка выполнения разделов');
-  const checkboxes = page.getByRole('checkbox', { name: /^Выполнено:/ });
-  await expect(checkboxes).toHaveCount(16);
-  for (const checkbox of await checkboxes.all()) await checkbox.check();
-  await expect(page.locator('.workspace-step.is-complete')).toHaveCount(16);
-  await expect(page.locator('.workspace-counter')).toHaveText('16 из 16');
-  await page.getByRole('checkbox', { name: 'Выполнено: Foreign', exact: true }).uncheck();
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect.poll(() => (fixture.getSaved()?.workspace as { sections: Record<string, { completed: boolean }> })?.sections.foreign.completed).toBe(false);
-  await expect(page).toHaveURL(/declarations\/44444444/); await page.reload();
-  await expect(page.locator('.workspace-step.is-complete')).toHaveCount(15);
-  await page.getByRole('tab', { name: /Приложение Адреса/ }).click();
-  await expect(page.getByRole('tabpanel')).toContainText('Приложение: адреса');
-  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'declaration-completion-desktop.png'), fullPage: true, animations: 'disabled' });
-  await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'declaration-completion-mobile.png'), fullPage: true, animations: 'disabled' });
-  await page.emulateMedia({ colorScheme: 'dark' });
-  await expect(checkboxes.first()).toBeChecked();
-  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'declaration-completion-dark.png'), fullPage: true, animations: 'disabled' });
+test('declaration builder derives progress from entered data and preserves source fields after saving', async ({ page }) => {
+  const fixture=await fixtures(page); await login(page); await page.goto('/#/declarations/new');
+  await expect(page.getByRole('tablist', { name: 'Разделы декларации' })).toHaveCount(0);
+  await openDeclarationPart(page,'Заявитель');
+  await page.getByRole('textbox',{name:'Полное наименование',exact:true}).fill('Заявитель конструктора');
+  await page.getByRole('textbox',{name:'Адрес',exact:true}).fill('Адрес заявителя');
+  await expect(page.locator('.builder-progress-label')).toContainText('1 из 6');
+  await page.getByRole('button',{name:'Сохранить',exact:true}).click();
+  await expect.poll(()=> (fixture.getSaved()?.applicant as { name:string })?.name).toBe('Заявитель конструктора');
+  await expect(page).toHaveURL(/declarations\/44444444/);
+  await page.reload(); await expect(page.locator('.builder-sheet')).toContainText('Заявитель конструктора');
+  await page.setViewportSize({width:320,height:844}); expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
-test('declaration generation saves current form before preview and downloads without calling FGIS', async ({ page }) => {
-  const fixture = await fixtures(page); const exports: string[] = []; let submissions = 0;
-  await page.route('**/export/*', route => { exports.push(route.request().url()); return route.fulfill({ contentType: route.request().url().includes('/pdf') ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: '%PDF-1.4\n% UI fixture' }); });
-  await page.route('**/fgis/send', route => { submissions++; return route.fulfill({ status: 503 }); });
+test('declaration builder saves the current revision before export and handles export failures without FGIS', async ({ page }) => {
+  const fixture=await fixtures(page); const exports:string[]=[]; let submissions=0;
+  await page.route('**/export/*',route=>{exports.push(route.request().url());return route.fulfill({contentType:'application/octet-stream',body:'UI export fixture'});});
+  await page.route('**/fgis/send',route=>{submissions++;return route.fulfill({status:503});});
   await login(page); await page.goto('/#/declarations/new');
-  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Генерация из актуальной формы');
-  await page.getByRole('checkbox', { name: 'Выполнено: Основные', exact: true }).check();
-  await page.getByRole('button', { name: 'Сформировать декларацию', exact: true }).click();
-  const preview = page.getByRole('dialog', { name: /Декларация о соответствии/ });
-  await expect(preview).toBeVisible();
-  await preview.getByRole('tab', { name: 'Предпросмотр PDF', exact: true }).click();
-  await expect(preview.getByTitle('Предпросмотр декларации')).toHaveAttribute('src', /^blob:/);
-  expect(fixture.getSaved()?.title).toBe('Генерация из актуальной формы');
-  expect(exports[0]).toContain('/export/pdf?revision=2');
-  const wordDownload = page.waitForEvent('download'); await preview.getByRole('button', { name: 'Скачать Word', exact: true }).click();
-  expect((await wordDownload).suggestedFilename()).toBe('CF-26-NEW.docx');
-  expect(exports.at(-1)).toContain('/export/docx?revision=2');
-  expect(submissions).toBe(0);
-  await preview.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  // A failed export must leave the saved form intact and allow a retry.
-  await page.route('**/export/pdf?*', route => route.fulfill({ status: 503, json: { detail: 'Генератор временно недоступен' } }));
-  await page.getByRole('button', { name: 'Сформировать декларацию', exact: true }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'Генератор временно недоступен' })).toBeVisible();
-  await expect(preview).toBeHidden();
+  await page.getByRole('textbox',{name:'Название декларации',exact:true}).fill('Генерация из актуальной формы');
+  const download=page.waitForEvent('download'); await page.getByRole('button',{name:'Word',exact:true}).click();
+  expect((await download).suggestedFilename()).toBe('CF-26-NEW.docx'); expect(fixture.getSaved()?.title).toBe('Генерация из актуальной формы');
+  expect(exports.at(-1)).toContain('/export/docx?revision=2'); expect(submissions).toBe(0);
+  await page.route('**/export/pdf?*',route=>route.fulfill({status:503,json:{detail:'Генератор временно недоступен'}}));
+  await page.getByRole('button',{name:'PDF',exact:true}).click();
+  await expect(page.getByRole('alert').filter({hasText:'Генератор временно недоступен'})).toBeVisible();
+  await expect(page.getByRole('textbox',{name:'Название декларации',exact:true})).toHaveValue('Генерация из актуальной формы');
 });
 
-test('declaration completion is read only for a viewer and does not block draft generation', async ({ page }) => {
-  await fixtures(page, false, { workspace: { sections: { main: { completed: true, number: '', date: null, content: '', notes: '' } }, files: [] } }, 'Viewer');
-  await login(page); await page.goto('/#/declarations/44444444-4444-4444-8444-000000000000');
-  await expect(page.getByRole('checkbox', { name: 'Выполнено: Основные', exact: true })).toBeChecked();
-  for (const checkbox of await page.getByRole('checkbox', { name: /^Выполнено:/ }).all()) await expect(checkbox).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Сформировать декларацию', exact: true })).toBeEnabled();
+test('declaration builder protects viewer fields while allowing saved Word export', async ({ page }) => {
+  await fixtures(page,false,{},'Viewer'); await login(page); await page.goto('/#/declarations/44444444-4444-4444-8444-000000000000');
+  await openDeclarationPart(page,'Заявитель');
+  await expect(page.getByRole('textbox',{name:'Полное наименование',exact:true})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'Текст на листе',exact:true})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'Word',exact:true})).toBeEnabled();
 });
 
 test('ZNAQ identity and layouts cover the whole workspace on desktop and small phones', async ({ page }) => {
@@ -348,9 +329,8 @@ test('ZNAQ dark mode keeps brand controls and document generation usable', async
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'znaq-overview-dark.png'), fullPage: true, animations: 'disabled' });
   await page.goto('/#/declarations/new');
-  await page.getByRole('checkbox', { name: 'Выполнено: Основные', exact: true }).check();
-  await expect(page.locator('.workspace-step.is-complete')).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Сформировать декларацию', exact: true })).toBeEnabled();
+  await expect(page.locator('.builder-sheet')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Word', exact: true })).toBeEnabled();
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'znaq-editor-dark.png'), fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -373,7 +353,7 @@ async function fixtures(page: Page, lookupConfigured = false, declarationOverrid
   let savedBody: Record<string, unknown> | null = null;
   const statusRequests: { id: string; status: string; revision: number; reason?: string }[] = []; let statusFailure = false;
   const declarationEvents = new Map<string, Record<string, unknown>[]>();
-  const declarationData = (row = rows[0]) => ({ ...row, ...(savedBody ?? {}), applicant: party, manufacturer: party,
+  const declarationData = (row = rows[0]) => ({ ...row, ...(savedBody ?? {}), applicant: { ...party, ...((savedBody?.applicant as object) ?? {}) }, manufacturer: { ...party, ...((savedBody?.manufacturer as object) ?? {}) },
     product: { name: '', identification: '', tnVed: '', okpd2: '', gtin: '', productionType: 'Serial', batchDetails: '', storageConditions: '', ...((savedBody?.product as object) ?? {}) },
     regulations: [], additionalInfo: '', adoptedAt: null, validUntil: null, scheme: '1д', reports: [], attachments: [], missingRequirements: ['заявитель'], ...declarationOverrides,
     status: row.status, revision: row.revision, events: declarationEvents.get(row.id) ?? declarationOverrides.events ?? [] });
@@ -391,6 +371,8 @@ async function fixtures(page: Page, lookupConfigured = false, declarationOverrid
     const request = route.request(); const url = new URL(request.url()); const p = url.pathname.replace(/\/$/, '');
     if (!p.startsWith('/api/')) return route.continue();
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (p.endsWith('/declarations/preview')) return json(printLayoutFixture(request.postDataJSON()));
+    if (p.startsWith('/api/document-fonts/')) return route.fulfill({ contentType: 'font/ttf', path: path.resolve('..', 'src/Modules/Certification/CertFlow.Certification.Infrastructure/Fonts', p.split('/').at(-1)! + '.ttf') });
     const auth = { accessToken: 'ui-test-token', expiresAt: '2099-01-01T00:00:00Z', user };
     if (p === '/api/auth/refresh') return signedIn ? json(auth) : json({ detail: 'Войдите в аккаунт.' }, 401);
     if (p === '/api/auth/login') {
@@ -527,7 +509,7 @@ async function okpd2Fixtures(page: Page, configured = true) {
     return route.fulfill({ json: { items: [okpd2Leaf], retrievedAt: '2026-11-03T09:00:00Z', fromCache: false } });
   });
   await login(page); await page.goto('/#/declarations/new');
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await openDeclarationPart(page, 'Продукция');
   return state;
 }
 
@@ -551,7 +533,7 @@ test('OKPD2 previews and saves the selected code while preserving other product 
   await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Моя пшеница');
   await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('1001190000');
   await page.setViewportSize({ width: 1440, height: 1050 });
-  await page.getByRole('tab', { name: 'Основные', exact: true }).click();
+  await openDeclarationPart(page, 'Основные');
   await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Проверка ОКПД2');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect.poll(() => state.getSaved()?.product).toMatchObject({ okpd2: '01.11.11.110', name: 'Моя пшеница', tnVed: '1001190000' });
@@ -636,7 +618,7 @@ test('OKPD2 ignores a slow response for an earlier query', async ({ page }) => {
 test('OKPD2 lookup is unavailable in a read-only declaration', async ({ page }) => {
   await fixtures(page, false, {}, 'Viewer'); await login(page);
   await page.goto('/#/declarations/44444444-4444-4444-8444-000000000000');
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await openDeclarationPart(page, 'Продукция');
   await expect(page.getByLabel('ОКПД2', { exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Подобрать код ОКПД2', exact: true })).toHaveCount(0);
 });
@@ -653,7 +635,7 @@ async function tnVedFixtures(page: Page, configured = true, total = 2) {
     return route.fulfill({ json: { items: codes, total: query ? 1 : total, page: current, pageSize: 25 } });
   });
   await login(page); await page.goto('/#/declarations/new');
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await openDeclarationPart(page, 'Продукция');
 }
 
 test('TN VED local directory previews leading-zero codes and fills only the product code', async ({ page }) => {
@@ -794,8 +776,8 @@ test('declaration archive requires confirmation and keeps documents accessible i
   await expect(page.getByRole('menuitem', { name: 'В архив', exact: true })).toHaveCount(0);
   await page.getByRole('menuitem', { name: 'Открыть документ', exact: true }).click();
   await expect(page.getByRole('button', { name: 'В архив', exact: true })).toHaveCount(0);
-  await expect(page.getByLabel('Название декларации')).toBeDisabled();
-  await page.getByRole('tab', { name: 'Сканы', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Название декларации', exact: true })).toBeDisabled();
+  await openDeclarationPart(page, 'Сканы');
   await expect(page.getByText('Статус: В архиве. Работа завершена', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Открыть архив', exact: true }).click();
   await expect(page).toHaveURL(/status=Archived/);
@@ -807,7 +789,7 @@ for (const status of ['InReview', 'Suspended']) {
     await page.goto('/#/declarations/44444444-4444-4444-8444-000000000000');
     const archive = page.getByRole('button', { name: 'В архив', exact: true }); await expect(archive).toBeEnabled();
     if (status === 'InReview') {
-      const title = page.getByLabel('Название декларации');
+      const title = page.getByRole('textbox', { name: 'Название декларации', exact: true });
       await expect(title).toHaveValue('Оборудование для упаковки');
       await title.fill('Несохранённые изменения'); await expect(archive).toBeDisabled();
       await title.fill('Оборудование для упаковки'); await expect(archive).toBeEnabled();
@@ -881,8 +863,8 @@ test('declaration selects a ChZ product with preview and preserves fields missin
     return route.fulfill({ json: [{ gtin: '05011846021161', name: 'Масло моторное 5W-30', brand: 'Oil Brand', tnved: '2710198200', identification: 'Торговая марка: Oil Brand; Модель: Premium', okpd2: '', storageConditions: '', status: 'published' }] });
   });
   await login(page); await page.goto('/#/declarations/new');
-  await page.getByLabel('Название декларации').fill('Декларация на моторное масло');
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Декларация на моторное масло');
+  await openDeclarationPart(page, 'Продукция');
   await page.getByLabel('ОКПД2', { exact: true }).fill('19.20.29.110');
   await page.getByLabel('Условия хранения и эксплуатации').fill('Хранить в закрытой таре');
   await page.getByLabel('Сведения о партии / изделии').fill('Партия 17');
@@ -911,7 +893,7 @@ test('declaration ChZ lookup distinguishes unavailable service from missing card
     ? route.fulfill({ status: 502, json: { message: 'Национальный каталог временно недоступен' } })
     : route.fulfill({ json: [] }));
   await login(page); await page.goto('/#/declarations/new');
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await openDeclarationPart(page, 'Продукция');
   await page.getByRole('button', { name: 'Выбрать товар из ЧЗ', exact: true }).click();
   await page.getByLabel('GTIN для поиска в ЧЗ').fill('05011846021161');
   await page.getByRole('button', { name: 'Найти в ЧЗ', exact: true }).click();
@@ -935,16 +917,16 @@ test('declaration selects a related NK declaration without INN and explicitly im
   const permit = { attributeId: 23557, number: 'ЕАЭС TEST-1', fromDate: '2026-10-01', toDate: '2027-10-01', productName: 'Масло из выбранной декларации', applicantName: 'Новый заявитель НК', manufacturerName: 'Завод НК', tnved: '2710198200', identification: 'Масло 5W-30, артикул 123', regulations: 'ТР ТС 030/2012', status: 'Действует', statusGroup: 1, active: null, updatedAt: null };
   await page.route('**/catalog/permits/by-product', route => { permitRequest = route.request().postDataJSON(); return route.fulfill({ json: { documents: [permit, { ...permit, number: 'ЕАЭС TEST-2' }, { ...permit, attributeId: 23561, number: 'Сертификат OTHER' }], errors: [], retrievedAtUtc: '2026-10-29T10:00:00Z' } }); });
   await login(page); await page.goto('/#/declarations/new');
-  await page.getByLabel('Название декларации').fill('Подстановка декларации НК');
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Подстановка декларации НК');
   await page.getByRole('button', { name: 'Включить тёмную тему' }).click();
-  await page.getByRole('tab', { name: 'Заявитель', exact: true }).click();
+  await openDeclarationPart(page, 'Заявитель');
   await page.getByLabel('Полное наименование', { exact: true }).first().fill('Старый заявитель');
   await page.getByLabel('ИНН', { exact: true }).first().fill('7707083893');
   await page.getByLabel('Телефон', { exact: true }).first().fill('Старый телефон');
-  await page.getByRole('tab', { name: 'Изготовитель', exact: true }).click();
+  await openDeclarationPart(page, 'Изготовитель');
   await page.getByLabel('Полное наименование', { exact: true }).fill('Завод НК');
   await page.getByLabel('Адрес', { exact: true }).last().fill('Сохранённый адрес завода');
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await openDeclarationPart(page, 'Продукция');
   await page.getByRole('button', { name: 'Выбрать товар из ЧЗ', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Выбрать товар из ЧЗ', exact: true });
   await dialog.getByLabel('GTIN для поиска в ЧЗ').fill('5011846021161'); await dialog.getByRole('button', { name: 'Найти в ЧЗ', exact: true }).click();
@@ -961,20 +943,20 @@ test('declaration selects a related NK declaration without INN and explicitly im
   await expect(dialog).toBeHidden();
   await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue(permit.productName);
   await expect(page.getByRole('region', { name: 'Декларация-источник из НК' })).toContainText('ЕАЭС TEST-2');
-  await page.getByRole('tab', { name: 'Заявитель', exact: true }).click();
+  await openDeclarationPart(page, 'Заявитель');
   await expect(page.getByRole('textbox', { name: 'Полное наименование', exact: true }).first()).toHaveValue('Новый заявитель НК');
   await expect(page.getByRole('textbox', { name: 'ИНН', exact: true }).first()).toHaveValue('');
   await expect(page.getByRole('textbox', { name: 'Телефон', exact: true }).first()).toHaveValue('');
-  await page.getByRole('tab', { name: 'Изготовитель', exact: true }).click();
+  await openDeclarationPart(page, 'Изготовитель');
   await expect(page.getByRole('textbox', { name: 'Адрес', exact: true })).toHaveValue('Сохранённый адрес завода');
-  await page.getByRole('tab', { name: 'Основные', exact: true }).click();
+  await openDeclarationPart(page, 'Основные');
   await expect(page.getByLabel('Дата принятия', { exact: true })).toHaveValue('2026-10-01');
   await expect(page.getByLabel('Действует до', { exact: true })).toHaveValue('2027-10-01');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect.poll(() => state.getSaved()?.evidence).toMatchObject({ catalogDeclaration: { number: 'ЕАЭС TEST-2', ownerInn: null } });
   await expect(page).toHaveURL(/declarations\/[a-f0-9-]+$/);
   await expect(page.getByText('Есть изменения', { exact: true })).toHaveCount(0);
-  await page.reload({ waitUntil: 'domcontentloaded' }); await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await page.reload({ waitUntil: 'domcontentloaded' }); await openDeclarationPart(page, 'Продукция');
   await expect(page.getByRole('region', { name: 'Декларация-источник из НК' })).toContainText('ЕАЭС TEST-2');
 });
 
@@ -984,7 +966,7 @@ test('related NK declaration lookup distinguishes a failure from pending registr
   await page.route('**/catalog/permits/by-product', route => fail
     ? route.fulfill({ status: 502, json: { message: 'Сведения НК временно недоступны' } })
     : route.fulfill({ json: { documents: [], errors: [{ code: '18', number: 'ЕАЭС PENDING', message: 'Запрос направлен', registryRequestPending: true, statusGroup: 9 }], retrievedAtUtc: '2026-10-29T10:00:00Z' } }));
-  await login(page); await page.goto('/#/declarations/new'); await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await login(page); await page.goto('/#/declarations/new'); await openDeclarationPart(page, 'Продукция');
   await page.getByRole('button', { name: 'Выбрать товар из ЧЗ', exact: true }).click(); const dialog = page.getByRole('dialog');
   await dialog.getByLabel('GTIN для поиска в ЧЗ').fill('05011846021161'); await dialog.getByRole('button', { name: 'Найти в ЧЗ', exact: true }).click();
   await expect(dialog).toContainText('Сведения НК временно недоступны');
@@ -1023,7 +1005,7 @@ test('standalone NK card creation needs no declaration and does not save or link
   await page.getByRole('button', { name: 'Добавить новый товар', exact: true }).first().click();
   await expect(page.locator('#catalog-name')).toHaveValue('');
   await page.locator('#catalog-productGroup').selectOption('43');
-  await expect(page.getByLabel('Название декларации')).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Название декларации', exact: true })).toHaveCount(0);
   expect(externalCard).toBeNull();
   await page.locator('#catalog-name').fill('Новое масло Premium');
   await page.locator('#catalog-gtin').fill('05011846021161');
@@ -1048,7 +1030,7 @@ test('standalone NK card creation needs no declaration and does not save or link
 test('declaration has no NK creation even through an old URL and separate catalog offers certificate login', async ({ page }) => {
   const state = await fixtures(page);
   await login(page); await page.goto('/#/declarations/new?catalog=create');
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await openDeclarationPart(page, 'Продукция');
   await expect(page.getByRole('button', { name: 'Сохранить и создать карточку в ЧЗ', exact: true })).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Выбрать товар из ЧЗ', exact: true })).toBeVisible();
@@ -1069,7 +1051,7 @@ test('viewer cannot create cards in the separate ChZ catalog', async ({ page }) 
 test('registered declaration cannot import or create an NK product', async ({ page }) => {
   await fixtures(page, false, { status: 'Registered' });
   await login(page); await page.goto('/#/declarations/44444444-4444-4444-8444-000000000000');
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await openDeclarationPart(page, 'Продукция');
   await expect(page.getByRole('button', { name: 'Выбрать товар из ЧЗ', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Сохранить и создать карточку в ЧЗ', exact: true })).toHaveCount(0);
 });
@@ -1320,8 +1302,8 @@ test('search, filtering and responsive registry', async ({ page }) => {
 test('new declaration validates title and sends entered data', async ({ page }) => {
   const fixture = await fixtures(page); await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click();
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click(); await expect(page.getByText('Укажите название документа')).toBeVisible();
-  await page.getByLabel('Название декларации').fill('Проверка пользовательской формы');
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click(); await page.getByLabel('Наименование продукции', { exact: true }).fill('Упаковочная машина');
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Проверка пользовательской формы');
+  await openDeclarationPart(page, 'Продукция'); await page.getByLabel('Наименование продукции', { exact: true }).fill('Упаковочная машина');
   await page.getByLabel('Код ТН ВЭД', { exact: true }).fill('8422400008');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click(); await expect(page.getByText('Декларация сохранена')).toBeVisible();
   expect(fixture.getSaved()?.title).toBe('Проверка пользовательской формы');
@@ -1332,9 +1314,9 @@ const lookupCandidate = { name: 'ООО «Тестовый заявитель»'
 
 async function identityLookup(page: Page, candidate = lookupCandidate, side = 0) {
   await page.route('**/organizations/lookup', route => route.fulfill({ json: { items: [candidate], retrievedAt: '2026-10-27T10:00:00Z', fromCache: false } }));
-  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: side === 1 ? 'Изготовитель' : 'Заявитель', exact: true }).click();
+  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await openDeclarationPart(page, side === 1 ? 'Изготовитель' : 'Заявитель');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
-  const dialog = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData' });
+  const dialog = organizationLookupSurface(page);
   await dialog.getByLabel('ИНН или ОГРН / ОГРНИП').fill(candidate.inn || candidate.ogrn);
   await dialog.getByRole('button', { name: 'Найти организацию', exact: true }).click();
   return dialog;
@@ -1357,7 +1339,7 @@ test('organization identity adds a new directory card after an INN-only lookup w
   await editor.getByLabel('ИНН', { exact: true }).fill(lookupCandidate.inn);
   await editor.getByLabel('КПП', { exact: true }).fill(lookupCandidate.kpp);
   await editor.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).click();
-  const lookup = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData' });
+  const lookup = organizationLookupSurface(page);
   await lookup.getByRole('button', { name: 'Найти организацию', exact: true }).click();
   await lookup.getByRole('button', { name: 'Подставить реквизиты', exact: true }).click();
   await expect(lookup).toBeHidden();
@@ -1498,17 +1480,21 @@ test('ordinary manual edits save without a warning and only a forced refresh ask
 test('lookup replacement waits for overwrite confirmation and cancellation preserves manual form values', async ({ page }) => {
   await fixtures(page, true, {}, 'Admin', true);
   await page.route('**/organizations/lookup', route => route.fulfill({ json: { items: [{ ...lookupCandidate, registrationAuthority: '' }], retrievedAt: '2026-10-21T10:00:00Z', fromCache: false } }));
-  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Заявитель' }).click();
+  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await openDeclarationPart(page, 'Заявитель');
   const authority = page.getByLabel('Регистрирующий орган', { exact: true }).first(); const phone = page.getByLabel('Телефон', { exact: true }).first();
   await authority.fill('Ручной орган'); await phone.fill('+7 999 111-22-33');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
-  const lookup = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData' });
+  const lookup = organizationLookupSurface(page);
   await lookup.getByLabel('ИНН или ОГРН / ОГРНИП').fill(lookupCandidate.inn);
   await lookup.getByRole('button', { name: 'Найти организацию', exact: true }).click();
   await lookup.getByRole('button', { name: 'Подставить реквизиты', exact: true }).click();
   const warning = page.getByRole('dialog', { name: 'Реквизиты формы будут заменены' });
   await warning.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await lookup.getByRole('button', { name: 'Отмена', exact: true }).click();
   await expect(authority).toHaveValue('Ручной орган'); await expect(phone).toHaveValue('+7 999 111-22-33');
+  await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
+  await lookup.getByLabel('ИНН или ОГРН / ОГРНИП').fill(lookupCandidate.inn);
+  await lookup.getByRole('button', { name: 'Найти организацию', exact: true }).click();
   await lookup.getByRole('button', { name: 'Подставить реквизиты', exact: true }).click();
   await warning.getByRole('button', { name: 'Продолжить', exact: true }).click(); await expect(lookup).toBeHidden();
   await expect(authority).toHaveValue(''); await expect(phone).toHaveValue('');
@@ -1517,9 +1503,9 @@ test('lookup replacement waits for overwrite confirmation and cancellation prese
 test('manual phone and registration authority can be entered but are replaced by another empty lookup', async ({ page }) => {
   const fixture = await fixtures(page, true); let requests = 0;
   await page.route('**/organizations/lookup', route => { requests++; return route.fulfill({ json: { items: [{ ...lookupCandidate, registrationAuthority: '' }], retrievedAt: '2026-10-20T10:00:00Z', fromCache: false } }); });
-  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Заявитель' }).click();
+  await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await openDeclarationPart(page, 'Заявитель');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
-  const dialog = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData' });
+  const dialog = organizationLookupSurface(page);
   await dialog.getByLabel('ИНН или ОГРН / ОГРНИП').fill(lookupCandidate.inn);
   await dialog.getByRole('button', { name: 'Найти организацию', exact: true }).click();
   await dialog.getByLabel('Телефон', { exact: true }).fill('+375 29 123-45-67');
@@ -1546,7 +1532,7 @@ test('directory lookup keeps source provenance while tracking manual additions m
   await page.getByRole('button', { name: 'Редактировать Старая карточка', exact: true }).click();
   const editor = page.getByRole('dialog', { name: 'Редактирование компании' });
   await editor.getByRole('button', { name: 'Найти по ИНН / ОГРН', exact: true }).click();
-  const lookup = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData' });
+  const lookup = organizationLookupSurface(page);
   await lookup.getByLabel('Телефон', { exact: true }).fill('+7 999 333-44-55');
   await lookup.getByRole('button', { name: 'Подставить реквизиты', exact: true }).click(); await expect(lookup).toBeHidden();
   await editor.getByLabel('Электронная почта', { exact: true }).fill('manual-after-lookup@example.com');
@@ -1574,7 +1560,7 @@ test('company details can be manually edited in the directory and reused after r
   await expect(dialog.getByLabel('Регистрирующий орган', { exact: true })).toHaveValue('Регистрирующий орган от пользователя');
   await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
   await page.getByRole('link', { name: 'Обзор', exact: true }).click(); await page.getByRole('link', { name: 'Новая декларация' }).click();
-  await page.getByRole('tab', { name: 'Заявитель' }).click();
+  await openDeclarationPart(page, 'Заявитель');
   await page.getByRole('combobox', { name: 'Подставить из справочника' }).first().fill('Уточнённое название');
   await page.getByRole('option', { name: /Уточнённое название/ }).click();
   await expect(page.getByLabel('Телефон', { exact: true }).first()).toHaveValue('+7 999 888-77-66');
@@ -1602,7 +1588,7 @@ test('directory company deletion requires confirmation and updates saved lists',
   await page.reload();
   await expect(page.getByRole('row').filter({ hasText: lookupCandidate.name })).toHaveCount(0);
   await page.getByRole('button', { name: 'Создать декларацию', exact: true }).click();
-  await page.getByRole('tab', { name: 'Заявитель' }).click();
+  await openDeclarationPart(page, 'Заявитель');
   await page.getByRole('combobox', { name: 'Подставить из справочника' }).first().fill(lookupCandidate.name);
   await expect(page.getByRole('option', { name: /Тестовый заявитель/ })).toHaveCount(0);
 });
@@ -1659,10 +1645,10 @@ test('DaData result can be saved directly to the directory and reused by name IN
   const fixture = await fixtures(page, true); let requests = 0;
   await page.route('**/organizations/lookup', route => { requests++; return route.fulfill({ json: { items: [lookupCandidate], retrievedAt: '2026-10-20T10:00:00Z', fromCache: false } }); });
   await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click();
-  await page.getByRole('tab', { name: 'Заявитель' }).click();
+  await openDeclarationPart(page, 'Заявитель');
   await page.getByLabel('Телефон', { exact: true }).first().fill('+7 999 1234567');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
-  const dialog = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData' });
+  const dialog = organizationLookupSurface(page);
   await dialog.getByLabel('ИНН или ОГРН / ОГРНИП').fill(lookupCandidate.inn);
   await dialog.getByRole('button', { name: 'Найти организацию', exact: true }).click();
   await dialog.getByRole('checkbox', { name: 'Подставить руководителя как подписанта' }).check();
@@ -1671,7 +1657,7 @@ test('DaData result can be saved directly to the directory and reused by name IN
   await expect(dialog).toBeHidden();
   expect(fixture.getOrganizations()).toHaveLength(1);
   expect(fixture.getOrganizations()[0]).toMatchObject({ inn: lookupCandidate.inn, kpp: lookupCandidate.kpp, autoRefresh: true, signatory: lookupCandidate.managerName, phone: '+7 999 1234567' });
-  await page.reload(); await page.getByRole('tab', { name: 'Заявитель' }).click();
+  await page.reload(); await openDeclarationPart(page, 'Заявитель');
   const selector = page.getByRole('combobox', { name: 'Подставить из справочника' }).first();
   for (const search of ['Тестовый заявитель', lookupCandidate.inn, lookupCandidate.kpp]) {
     await selector.fill(search);
@@ -1681,7 +1667,7 @@ test('DaData result can be saved directly to the directory and reused by name IN
   await expect(page.getByLabel('Телефон', { exact: true }).first()).toHaveValue('+7 999 1234567');
   expect(requests).toBe(1);
   await page.getByRole('combobox', { name: 'Компания', exact: true }).selectOption('22222222-2222-4222-8222-222222222222');
-  await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Заявитель' }).click();
+  await page.getByRole('link', { name: 'Новая декларация' }).click(); await openDeclarationPart(page, 'Заявитель');
   await page.getByRole('combobox', { name: 'Подставить из справочника' }).first().fill(lookupCandidate.inn);
   await expect(page.getByRole('option', { name: /Тестовый заявитель/ })).toHaveCount(0);
 });
@@ -1733,7 +1719,7 @@ test('DaData directory preview selects branch and replaces prior contacts after 
   await page.getByLabel('Телефон', { exact: true }).fill('+7 000 000-00-00');
   await page.getByLabel('ФИО подписанта', { exact: true }).fill('Уполномоченный сотрудник');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData', exact: true });
+  const dialog = organizationLookupSurface(page);
   await dialog.getByLabel('ИНН или ОГРН / ОГРНИП').fill('123');
   await dialog.getByRole('button', { name: 'Найти организацию', exact: true }).click();
   await expect(dialog.getByText('Введите ИНН из 10 или 12 цифр либо ОГРН / ОГРНИП из 13 или 15 цифр.')).toBeVisible();
@@ -1763,12 +1749,12 @@ test('DaData declaration lookup handles empty and failed responses and requires 
     ? route.fulfill({ status: 503, json: { detail: 'Достигнут лимит запросов DaData.' } })
     : route.fulfill({ json: { items: mode === 'empty' ? [] : [lookupCandidate], retrievedAt: '2026-10-20T10:00:00Z', fromCache: false } }));
   await page.getByRole('link', { name: 'Новая декларация' }).click();
-  await page.getByLabel('Название декларации').fill('Автозаполнение заявителя');
-  await page.getByRole('tab', { name: 'Заявитель' }).click();
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Автозаполнение заявителя');
+  await openDeclarationPart(page, 'Заявитель');
   await page.getByLabel('ИНН', { exact: true }).first().fill('7707083893');
   await page.getByLabel('ФИО подписанта', { exact: true }).fill('Старый подписант');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
-  const dialog = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData', exact: true });
+  const dialog = organizationLookupSurface(page);
   await expect(dialog.getByLabel('ИНН или ОГРН / ОГРНИП')).toHaveValue('7707083893');
   await dialog.getByRole('button', { name: 'Найти организацию', exact: true }).click();
   await expect(dialog.getByText(/Организация не найдена/)).toBeVisible();
@@ -1803,11 +1789,11 @@ test('personal DaData key can be configured in account and used to fill OGRN req
   await expect(page.getByLabel('Новый API-ключ DaData')).toHaveValue('');
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'dadata-personal-account.png'), animations: 'disabled' });
   await page.getByRole('link', { name: 'Перейти к новой декларации', exact: true }).click();
-  await page.getByLabel('Название декларации').fill('Подстановка по ОГРН');
-  await page.getByRole('tab', { name: 'Заявитель' }).click();
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Подстановка по ОГРН');
+  await openDeclarationPart(page, 'Заявитель');
   await page.getByLabel('ОГРН / ОГРНИП', { exact: true }).first().fill('1027700132195');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
-  const dialog = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData', exact: true });
+  const dialog = organizationLookupSurface(page);
   await expect(dialog.getByText(lookupCandidate.name, { exact: true })).toBeVisible();
   expect(requestedIdentifier).toBe('1027700132195');
   await dialog.getByRole('checkbox', { name: 'Подставить руководителя как подписанта' }).check();

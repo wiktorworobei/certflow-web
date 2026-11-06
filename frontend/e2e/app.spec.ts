@@ -1,3 +1,4 @@
+import { openDeclarationPart, organizationLookupSurface } from './declaration-builder-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,10 +21,10 @@ test('laboratory evidence survives reload, file upload during editing, exports a
   await page.getByRole('textbox',{name:'Название декларации',exact:true}).fill(`Испытания образцов ${Date.now()}`);
   await page.getByRole('button',{name:'Сохранить',exact:true}).click(); await expect(page).toHaveURL(/declarations\/[a-f0-9-]+$/);
   const documentUrl=page.url();
-  await page.getByRole('tab',{name:'Сканы',exact:true}).click();
+  await openDeclarationPart(page, 'Сканы');
   await page.locator('input[type=file]').setInputFiles({name:'evidence.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4\nEvidence')});
   await expect(page.getByText('evidence.pdf',{exact:true})).toBeVisible();
-  await page.getByRole('tab',{name:'Отбор / Испытания (ПИ) / Анализ пр-ва',exact:true}).click();
+  await openDeclarationPart(page, 'Отбор / Испытания (ПИ) / Анализ пр-ва');
   await page.getByRole('button',{name:'Добавить направление',exact:true}).click();
   await page.getByLabel('Номер направления',{exact:true}).fill('DIR-E2E');
   await page.getByLabel('Дата направления',{exact:true}).fill('2026-10-14');
@@ -48,13 +49,13 @@ test('laboratory evidence survives reload, file upload during editing, exports a
   await page.getByRole('combobox',{name:'Файл протокола'}).click();
   await page.getByRole('option',{name:'evidence.pdf',exact:true}).click();
   await page.getByLabel('Комментарий к протоколу',{exact:true}).fill('Изменения до загрузки второго файла');
-  await page.getByRole('tab',{name:'Сканы',exact:true}).click();
+  await openDeclarationPart(page, 'Сканы');
   await page.locator('input[type=file]').setInputFiles({name:'extra.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4\nExtra')});
   await expect(page.getByText('extra.pdf',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Сохранить',exact:true}).click();
   await expect(page.getByText('Декларация сохранена',{exact:true})).toBeVisible();
   await expect(page.getByText('Есть изменения',{exact:true})).toHaveCount(0);
-  await page.reload(); await page.getByRole('tab',{name:'Отбор / Испытания (ПИ) / Анализ пр-ва',exact:true}).click();
+  await page.reload(); await openDeclarationPart(page, 'Отбор / Испытания (ПИ) / Анализ пр-ва');
   await expect(page.getByLabel('Номер направления',{exact:true})).toHaveValue('DIR-E2E');
   await expect(page.getByLabel('Комментарий к протоколу',{exact:true})).toHaveValue('Изменения до загрузки второго файла');
   await expect(page.getByRole('combobox',{name:'Файл протокола'})).toHaveText('evidence.pdf');
@@ -72,7 +73,7 @@ test('laboratory evidence survives reload, file upload during editing, exports a
   await page.getByRole('button',{name:`Удалить лабораторию ${labName}`,exact:true}).click();
   await page.getByRole('dialog',{name:'Удалить лабораторию из справочника?'}).getByRole('button',{name:'Удалить запись',exact:true}).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.goto(documentUrl); await page.getByRole('tab',{name:'Отбор / Испытания (ПИ) / Анализ пр-ва',exact:true}).click();
+  await page.goto(documentUrl); await openDeclarationPart(page, 'Отбор / Испытания (ПИ) / Анализ пр-ва');
   await expect(page.getByLabel('Наименование лаборатории',{exact:true})).toHaveValue(labName);
   await expect(page.getByLabel('Адрес лаборатории протокола',{exact:true})).toHaveValue('Алматы, адрес испытаний');
 });
@@ -84,8 +85,8 @@ test('ChZ related declaration import persists through the real certification API
     return route.fulfill({ json: { documents: [{ attributeId: 23557, number: 'ЕАЭС E2E-NK-1', fromDate: '2026-10-01', toDate: '2027-10-01', productName: 'Масло по декларации НК', applicantName: 'Заявитель НК', manufacturerName: 'Изготовитель НК', tnved: '2710198200', identification: 'Артикул NK-E2E', regulations: 'ТР ТС 030/2012', status: 'Действует', statusGroup: 1, active: null, updatedAt: null }], errors: [], retrievedAtUtc: '2026-10-29T10:00:00Z' } });
   });
   await login(page); await page.goto('/#/declarations/new');
-  await page.getByLabel('Название декларации').fill(`Подстановка НК ${Date.now()}`);
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill(`Подстановка НК ${Date.now()}`);
+  await openDeclarationPart(page, 'Продукция');
   await page.getByLabel('Сведения о партии / изделии').fill('Наша новая партия');
   await page.getByRole('button', { name: 'Выбрать товар из ЧЗ', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Выбрать товар из ЧЗ', exact: true });
@@ -98,21 +99,21 @@ test('ChZ related declaration import persists through the real certification API
   expect(data.status).toBe('Draft'); expect(data.registrationNumber).toBe(''); expect(data.reports).toEqual([]);
   expect(data.evidence.catalogDeclaration).toMatchObject({ number: 'ЕАЭС E2E-NK-1', gtin: '05011846021161', ownerInn: null });
   await expect(page).toHaveURL(/declarations\/[a-f0-9-]+$/); await page.reload();
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await openDeclarationPart(page, 'Продукция');
   await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Масло по декларации НК');
   await expect(page.getByLabel('Сведения о партии / изделии')).toHaveValue('Наша новая партия');
   await expect(page.getByRole('region', { name: 'Декларация-источник из НК' })).toContainText('ЕАЭС E2E-NK-1');
-  await page.getByRole('tab', { name: 'Заявитель', exact: true }).click();
+  await openDeclarationPart(page, 'Заявитель');
   await expect(page.getByLabel('Полное наименование', { exact: true }).first()).toHaveValue('Заявитель НК');
-  await page.getByRole('tab', { name: 'Основные', exact: true }).click();
+  await openDeclarationPart(page, 'Основные');
   await expect(page.getByLabel('Дата принятия', { exact: true })).toHaveValue('2026-10-01');
 });
 
 test('manual declaration product persists independently of the standalone NK catalog', async ({ page }) => {
   await login(page); await page.goto('/#/declarations/new');
   const title = `Моторное масло для НК ${Date.now()}`;
-  await page.getByLabel('Название декларации').fill(title);
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill(title);
+  await openDeclarationPart(page, 'Продукция');
   await page.getByLabel('Наименование продукции', { exact: true }).fill('Масло моторное Premium 5W-30');
   await page.getByLabel('Модель, марка, артикул и другие признаки').fill('Oil Brand, канистра 4 л');
   await page.getByLabel('Код ТН ВЭД', { exact: true }).fill('2710198200');
@@ -121,7 +122,7 @@ test('manual declaration product persists independently of the standalone NK cat
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page).toHaveURL(/declarations\/[a-f0-9-]+$/);
   await page.reload();
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await openDeclarationPart(page, 'Продукция');
   await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Масло моторное Premium 5W-30');
   await expect(page.getByLabel('Модель, марка, артикул и другие признаки')).toHaveValue('Oil Brand, канистра 4 л');
   await expect(page.getByLabel('GTIN', { exact: true })).toHaveValue('05011846021161');
@@ -154,7 +155,7 @@ test('company directory fills a declaration after reload and a failed refresh pr
   await expect(row.getByRole('alert')).toContainText('DaData отключён');
   await page.reload(); await expect(page.getByText(name, { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Обзор', exact: true }).click();
-  await page.getByRole('link', { name: 'Новая декларация' }).click(); await page.getByRole('tab', { name: 'Заявитель' }).click();
+  await page.getByRole('link', { name: 'Новая декларация' }).click(); await openDeclarationPart(page, 'Заявитель');
   await page.getByRole('combobox', { name: 'Подставить из справочника' }).first().fill('7707083893');
   await page.getByRole('option', { name: new RegExp(name) }).click();
   await expect(page.getByRole('textbox', { name: 'Полное наименование', exact: true }).first()).toHaveValue(name);
@@ -188,10 +189,10 @@ async function searchDeclarations(page: Page, search: string) {
 test('declaration archive and restore persist across reload with attachments and history', async ({ page }) => {
   await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click();
   const title = `Архивная декларация ${Date.now()}`;
-  await page.getByLabel('Название декларации').fill(title);
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill(title);
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByText('Декларация сохранена', { exact: true })).toBeVisible();
-  await page.getByRole('tab', { name: 'Сканы', exact: true }).click();
+  await openDeclarationPart(page, 'Сканы');
   await page.locator('input[type=file]').setInputFiles({ name: 'archive.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\narchive test') });
   await expect(page.getByText('archive.pdf', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'К реестру деклараций', exact: true }).click();
@@ -207,8 +208,8 @@ test('declaration archive and restore persist across reload with attachments and
   await page.reload(); await expect(row).toBeVisible();
   await row.getByRole('link', { name: title, exact: true }).click();
   await expect(page.getByRole('button', { name: 'В архив', exact: true })).toHaveCount(0);
-  await expect(page.getByLabel('Название декларации')).toBeDisabled();
-  await page.getByRole('tab', { name: 'Сканы', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Название декларации', exact: true })).toBeDisabled();
+  await openDeclarationPart(page, 'Сканы');
   await expect(page.getByText('archive.pdf', { exact: true })).toBeVisible();
   await expect(page.getByText('Статус: В архиве. Завершено в браузерной проверке', { exact: true })).toBeVisible();
   const downloaded = page.waitForEvent('download'); await page.getByRole('button', { name: 'Скачать archive.pdf', exact: true }).click();
@@ -219,11 +220,11 @@ test('declaration archive and restore persist across reload with attachments and
   await restore.getByRole('button', { name: 'Восстановить', exact: true }).click();
   await expect(restore).toBeHidden();
   await expect(page.getByText('Восстановлена из архива. Статус: Черновик. Возобновлена работа', { exact: true })).toBeVisible();
-  await page.getByRole('tab', { name: 'Основные', exact: true }).click();
-  await expect(page.getByLabel('Название декларации')).toBeEnabled();
+  await openDeclarationPart(page, 'Основные');
+  await expect(page.getByRole('textbox', { name: 'Название декларации', exact: true })).toBeEnabled();
   await page.reload();
-  await expect(page.getByLabel('Название декларации')).toBeEnabled();
-  await page.getByRole('tab', { name: 'Сканы', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Название декларации', exact: true })).toBeEnabled();
+  await openDeclarationPart(page, 'Сканы');
   await expect(page.getByText('archive.pdf', { exact: true })).toBeVisible();
 });
 
@@ -248,27 +249,29 @@ test('create declaration, fill all sections, review, register, export and duplic
   await login(page);
   await page.getByRole('link', { name: 'Новая декларация' }).click();
   const title = `Браузерная проверка ${Date.now()}`;
-  await page.getByLabel('Название декларации').fill(title);
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill(title);
+  await openDeclarationPart(page,'ГОСТы/Тех.регламент');
   await page.getByRole('combobox', { name: 'Технические регламенты / стандарты' }).fill('ТР ТС 010/2011');
   await page.getByRole('combobox', { name: 'Технические регламенты / стандарты' }).press('Enter');
-  await page.getByLabel('Дата принятия').fill('2026-10-15');
+  await openDeclarationPart(page, 'Основные');
+  await page.getByLabel('Дата принятия', { exact: true }).fill('2026-10-15');
   await page.getByLabel('Действует до').fill('2027-10-14');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByText('Декларация сохранена')).toBeVisible();
-  await page.getByRole('tab', { name: 'Заявитель' }).click();
+  await openDeclarationPart(page, 'Заявитель');
   const orgSelectors = page.getByRole('combobox', { name: 'Подставить из справочника' });
   await orgSelectors.first().click();
   await page.getByRole('option', { name: /ООО «Атлас Импорт»/ }).click();
-  await page.getByRole('tab', { name: 'Изготовитель', exact: true }).click();
+  await openDeclarationPart(page, 'Изготовитель');
   await orgSelectors.first().click();
   await page.getByRole('option', { name: /Atlas Manufacturing Co., Ltd./ }).click();
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await openDeclarationPart(page, 'Продукция');
   await page.getByLabel('Наименование продукции', { exact: true }).fill('Машина упаковочная тестовая');
   await page.getByLabel('Код ТН ВЭД', { exact: true }).fill('8422400008');
-  await page.getByRole('tab', { name: 'Сканы' }).click();
+  await openDeclarationPart(page, 'Сканы');
   await page.locator('input[type=file]').setInputFiles({name:'ui-protocol.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4\nUI report')});
   await expect(page.getByText('ui-protocol.pdf',{exact:true})).toBeVisible();
-  await page.getByRole('tab', { name: 'Отбор / Испытания (ПИ) / Анализ пр-ва' }).click();
+  await openDeclarationPart(page, 'Отбор / Испытания (ПИ) / Анализ пр-ва');
   await page.getByRole('button', { name: 'Добавить протокол', exact: true }).click();
   await page.getByRole('combobox',{name:'Файл протокола'}).click();
   await page.getByRole('option',{name:'ui-protocol.pdf',exact:true}).click();
@@ -297,7 +300,7 @@ test('create declaration, fill all sections, review, register, export and duplic
   const pdfDownload = page.waitForEvent('download'); await page.getByRole('button', { name: 'PDF', exact: true }).click();
   const pdf = await pdfDownload; expect(pdf.suggestedFilename()).toMatch(/\.pdf$/);
   const pdfPath = await pdf.path(); expect(fs.readFileSync(pdfPath!).subarray(0, 5).toString()).toBe('%PDF-');
-  await page.getByRole('tab', { name: 'Сканы' }).click();
+  await openDeclarationPart(page, 'Сканы');
   await page.locator('input[type=file]').setInputFiles({ name: 'протокол.pdf', mimeType: 'application/pdf', buffer: fs.readFileSync(pdfPath!) });
   await expect(page.getByText('протокол.pdf', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'К реестру деклараций' }).click();
@@ -306,8 +309,9 @@ test('create declaration, fill all sections, review, register, export and duplic
   await row.getByRole('button', { name: /Действия/ }).click(); await page.getByRole('menuitem', { name: 'Создать копию' }).click();
   await expect(page.getByRole('heading', { name: `${title} — копия` })).toBeVisible();
   await expect(page.getByText('Черновик', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Дата принятия')).toHaveValue('');
-  await page.getByRole('tab', { name: 'Сканы' }).click();
+  await openDeclarationPart(page, 'Основные');
+  await expect(page.getByLabel('Дата принятия', { exact: true })).toHaveValue('');
+  await openDeclarationPart(page, 'Сканы');
   await expect(page.getByText('Файлы ещё не добавлены.')).toBeVisible();
 });
 
@@ -329,7 +333,7 @@ test('local TN VED codes are loaded from Excel and persist in a product after sa
   await page.getByRole('combobox', { name: 'Компания', exact: true }).selectOption({ label: 'Моя компания' });
   await page.goto('/#/declarations/new');
   await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Локальный справочник ТН ВЭД');
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await openDeclarationPart(page, 'Продукция');
   await page.getByLabel('Наименование продукции', { exact: true }).fill('Племенные лошади');
   await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
@@ -340,7 +344,7 @@ test('local TN VED codes are loaded from Excel and persist in a product after sa
   await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('0101210000');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page).toHaveURL(/declarations\/[a-f0-9-]+$/);
-  await page.reload(); await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await page.reload(); await openDeclarationPart(page, 'Продукция');
   await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('0101210000');
   await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Племенные лошади');
 });
@@ -367,7 +371,7 @@ test('DaData without a key keeps manual organization entry available', async ({ 
   await page.getByRole('button', { name: 'Добавить компанию' }).click();
   await page.getByRole('textbox', { name: 'Полное наименование', exact: true }).fill('Проверка ручных реквизитов');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Поиск реквизитов в DaData', exact: true });
+  const dialog = organizationLookupSurface(page);
   await expect(dialog.getByText(/Добавьте свой API-ключ DaData/)).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Найти организацию', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
@@ -376,8 +380,8 @@ test('DaData without a key keeps manual organization entry available', async ({ 
 
 test('declaration GTIN and confirmed code batch persist through the real marking API', async ({ page }) => {
   await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click();
-  await page.getByLabel('Название декларации').fill(`Масло E2E ${Date.now()}`);
-  await page.getByRole('tab', { name: 'Продукция', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill(`Масло E2E ${Date.now()}`);
+  await openDeclarationPart(page, 'Продукция');
   await page.getByLabel('Наименование продукции', { exact: true }).fill('Моторное масло 5W-30');
   await page.getByLabel('GTIN', { exact: true }).fill('05011846021161');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click(); await expect(page.getByText('Декларация сохранена')).toBeVisible();
@@ -523,35 +527,27 @@ test('bulk company archive, restore and cleanup on mobile preserve the selected 
 
 
 
-test('all sixteen video tabs save section drafts and file purposes, and block unconfigured FGIS submission', async ({ page }) => {
+test('document builder preserves case drafts, appendices and file purposes without creation tabs', async ({ page }) => {
   test.slow(); page.setDefaultTimeout(15000); await login(page); await page.goto('/#/declarations/new');
-  const tabs = page.getByRole('tablist', { name: 'Разделы декларации' });
-  await expect(tabs.getByRole('tab')).toHaveCount(16);
-  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill(`Разделы видео ${Date.now()}`);
-  await tabs.getByRole('tab', { name: 'Заявка/Документы', exact: true }).click();
+  await expect(page.getByRole('tablist', { name: 'Разделы декларации' })).toHaveCount(0);
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill(`Дело конструктора ${Date.now()}`);
+  await openDeclarationPart(page, 'Заявка/Документы');
   await page.getByLabel('Номер заявки', { exact: true }).fill('ЗАЯВКА-17');
   await page.getByLabel('Дата заявки', { exact: true }).fill('2026-01-01');
   await page.getByLabel('Сведения о заявке, договоре и прилагаемых документах', { exact: true }).fill('Договор с лабораторией');
-  await tabs.getByRole('tab', { name: 'Приложение Продукция', exact: true }).click();
-  await page.getByLabel('Перечень продукции, моделей, марок и артикулов').fill('Модель Тест-17');
-  await page.getByRole('checkbox', { name: 'Выполнено: Приложение Продукция', exact: true }).check();
-  await tabs.getByRole('tab', { name: 'Foreign', exact: true }).click();
-  await page.getByLabel('Заметки к разделу', { exact: true }).fill('Уточнить состав полей');
+  await page.getByRole('button', { name: '+ Приложение', exact: true }).click();
+  await page.getByLabel('Приложение Продукция', { exact: true }).fill('Модель Тест-17');
+  await openDeclarationPart(page, 'Foreign');
+  await page.locator('#declaration-case-foreign').getByLabel('Заметки к разделу', { exact: true }).fill('Уточнить состав полей');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page).toHaveURL(/declarations\/[a-f0-9-]+$/);
-  await page.reload(); await page.getByRole('tab', { name: 'Foreign', exact: true }).click();
-  await expect(page.getByLabel('Заметки к разделу', { exact: true })).toHaveValue('Уточнить состав полей');
-  await expect(page.getByRole('checkbox', { name: 'Выполнено: Приложение Продукция', exact: true })).toBeChecked();
-  await page.getByRole('button', { name: 'Сформировать декларацию', exact: true }).click();
-  const generated = page.getByRole('dialog', { name: /Декларация о соответствии/ });
-  await expect(generated).toBeVisible();
-  const generatedDownload = page.waitForEvent('download');
-  await generated.getByRole('button', { name: 'Скачать Word', exact: true }).click();
-  const generatedWord = await generatedDownload; expect(generatedWord.suggestedFilename()).toMatch(/\.docx$/);
-  await generated.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await page.getByRole('tab', { name: 'Заявка/Документы', exact: true }).click();
+  await page.reload(); await openDeclarationPart(page, 'Foreign');
+  await expect(page.locator('#declaration-case-foreign').getByLabel('Заметки к разделу', { exact: true })).toHaveValue('Уточнить состав полей');
+  await expect(page.locator('.builder-sheet')).toHaveCount(2);
+  await expect(page.locator('.builder-sheet').nth(1)).toContainText('Модель Тест-17');
+  await openDeclarationPart(page, 'Заявка/Документы');
   await expect(page.getByLabel('Номер заявки', { exact: true })).toHaveValue('ЗАЯВКА-17');
-  await page.getByRole('tab', { name: 'Сканы', exact: true }).click();
+  await openDeclarationPart(page, 'Сканы');
   await page.locator('input[type=file]').setInputFiles({ name: 'Заявка.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\nTest') });
   await expect(page.getByText('Заявка.pdf', { exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: /^Тип документа/ }).click();
@@ -559,21 +555,11 @@ test('all sixteen video tabs save section drafts and file purposes, and block un
   await page.getByRole('checkbox', { name: 'Включить в комплект ФГИС', exact: true }).check();
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByText('Есть изменения', { exact: true })).toHaveCount(0);
-  await page.reload(); await page.getByRole('tab', { name: 'Сканы', exact: true }).click();
+  await page.reload(); await openDeclarationPart(page, 'Сканы');
   await expect(page.getByRole('checkbox', { name: 'Включить в комплект ФГИС', exact: true })).toBeChecked();
-  await expect(page.getByRole('combobox', { name: /^Тип документа/ })).toHaveText('Заявка');
-  await page.getByRole('tab', { name: 'Публикация ФГИС', exact: true }).click();
-  await expect(page.getByText('Отправка во ФГИС · заглушка', { exact: true })).toBeVisible();
+  await openDeclarationPart(page, 'Публикация ФГИС');
   await expect(page.getByRole('button', { name: 'Отправить черновик в ФГИС', exact: true })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Подготовить комплект', exact: true })).toBeDisabled();
-  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'video-tabs-fgis-desktop.png'), fullPage: true, animations: 'disabled' });
-  for (const width of [390, 320]) {
-    await page.setViewportSize({ width, height: 844 });
-    await expect(tabs.getByRole('tab')).toHaveCount(16);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  }
-  await page.getByRole('button', { name: 'Включить тёмную тему', exact: true }).click();
-  await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'video-tabs-fgis-mobile-dark.png'), fullPage: true, animations: 'disabled' });
+  for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
 });
 
 test('editable instruction and generated declaration persist changes and download the edited revision', async ({ page }) => {
@@ -588,32 +574,11 @@ test('editable instruction and generated declaration persist changes and downloa
   await expect(page.getByRole('heading', { name: '1. QA инструкция', exact: true })).toBeVisible();
   await page.reload(); await expect(page.getByRole('heading', { name: '1. QA инструкция', exact: true })).toBeVisible();
   await page.goto('/#/declarations/new');
-  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('QA ручной макет ' + Date.now());
-  await page.getByRole('button', { name: 'Сформировать декларацию', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: /Декларация о соответствии/ });
-  await expect(dialog).toBeVisible();
-  await dialog.getByLabel('Заявитель', { exact: true }).fill('QA изменённый заявитель');
-  await dialog.getByLabel('Приложение: Дополнительные сведения', { exact: true }).fill('QA изменённое приложение\nВторая строка');
-  const savedRequest = page.waitForRequest(request => request.method() === 'PUT' && /\/declarations\/[a-f0-9-]+$/.test(new URL(request.url()).pathname));
-  const wordDownload = page.waitForEvent('download');
-  await dialog.getByRole('button', { name: 'Скачать Word', exact: true }).click();
-  const payload = (await savedRequest).postDataJSON();
-  expect(payload.workspace.printOverrides['Заявитель']).toBe('QA изменённый заявитель');
-  const word = await wordDownload; expect(word.suggestedFilename()).toMatch(/\.docx$/);
-  fs.mkdirSync(path.resolve('..', 'artifacts', 'qa-20261106'), { recursive: true });
-  await word.saveAs(path.resolve('..', 'artifacts', 'qa-20261106', 'generated-edited.docx'));
-  expect(fs.readFileSync((await word.path())!).subarray(0, 2).toString()).toBe('PK');
-  await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await page.reload(); await page.getByRole('button', { name: 'Сформировать декларацию', exact: true }).click();
-  await expect(dialog.getByLabel('Заявитель', { exact: true })).toHaveValue('QA изменённый заявитель');
-  await dialog.getByLabel('Заявитель', { exact: true }).fill('QA вторая правка PDF');
-  const pdfDownload = page.waitForEvent('download'); await dialog.getByRole('button', { name: 'Скачать PDF', exact: true }).click();
-  const pdf = await pdfDownload; expect(fs.readFileSync((await pdf.path())!).subarray(0, 4).toString()).toBe('%PDF');
-  await pdf.saveAs(path.resolve('..', 'artifacts', 'qa-20261106', 'generated-edited.pdf'));
-  await dialog.getByRole('button', { name: 'Сбросить ручные правки', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Обновить предпросмотр', exact: true }).click();
-  await dialog.getByRole('tab', { name: 'Редактирование', exact: true }).click();
-  await expect(dialog.getByLabel('Заявитель', { exact: true })).toHaveValue('не указано');
-  await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Редактировать: Заявитель', exact: true }).click();
+  await page.getByRole('button', { name: 'Текст на листе', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Текст фрагмента: Заявитель', exact: true }).fill('QA изменённый заявитель');
+  await page.getByRole('button', { name: 'Готово', exact: true }).click();
+  const download = page.waitForEvent('download'); await page.getByRole('button', { name: 'Word', exact: true }).click();
+  const word = await download; expect(word.suggestedFilename()).toMatch(/\.docx$/);
+  await page.reload(); await expect(page.locator('.builder-sheet').first()).toContainText('QA изменённый заявитель');
 });

@@ -14,6 +14,8 @@ export interface Attachment { id: string; fileName: string; contentType: string;
 export interface DocumentEvent { occurredAt: string; actor: string; description: string }
 export interface DeclarationRow { id: string; reference: string; title: string; kind: string; status: Status; applicant: string; manufacturer: string; product: string; tnVed: string; registrationNumber: string; validUntil: string | null; updatedAt: string; isSample: boolean; revision: number }
 export interface SaveDeclaration { title: string; kind: string; scheme: string; applicant: Party; manufacturer: Party; product: Product; regulations: string[]; additionalInfo: string; adoptedAt: string | null; validUntil: string | null; reports: Report[]; revision: number; evidence?: EvidenceWorkflow; workspace?: DeclarationWorkspace }
+export interface DeclarationPrintField { key: string; label: string; text: string }
+export interface DeclarationPrintLayout { width: number; height: number; fields: DeclarationPrintField[]; pages: { lines: { key: string | null; y: number; size: number; family: string; runs: { text: string; x: number; bold: boolean }[] }[]; images: { data: string; x: number; y: number; width: number; height: number }[] }[] }
 export interface Declaration extends SaveDeclaration { id: string; reference: string; status: Status; registrationNumber: string; registryUrl: string; createdAt: string; updatedAt: string; isSample: boolean; attachments: Attachment[]; events: DocumentEvent[]; missingRequirements: string[]; fgisPreparation?: FgisPreparation | null }
 export interface Page<T> { items: T[]; total: number; page: number; pageSize: number }
 export interface Filters { search?: string; status?: Status; page?: number; pageSize?: number; expiring?: boolean }

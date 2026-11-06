@@ -8,7 +8,7 @@ import { useDaDataOverwriteWarning } from './DaDataOverwriteWarning';
 
 const organizationStatuses: Record<string, string> = { ACTIVE: 'Действующая', LIQUIDATING: 'Ликвидируется', LIQUIDATED: 'Ликвидирована', BANKRUPT: 'Банкротство', REORGANIZING: 'Реорганизация' };
 
-export function OrganizationLookup({ value, onApply, disabled = false, directoryKind }: { value: Party; onApply: (data: OrganizationRequisites, origin?: Pick<OrganizationInput, 'replaceFromDaData' | 'manuallyEditedFields'>) => void; disabled?: boolean; directoryKind?: OrganizationInput['kind'] }) {
+export function OrganizationLookup({ value, onApply, disabled = false, directoryKind, inline = false, onClose }: { value: Party; onApply: (data: OrganizationRequisites, origin?: Pick<OrganizationInput, 'replaceFromDaData' | 'manuallyEditedFields'>) => void; disabled?: boolean; directoryKind?: OrganizationInput['kind']; inline?: boolean; onClose?: () => void }) {
   const { firmId } = useWorkspace();
   const { confirmOverwrite, warningDialog } = useDaDataOverwriteWarning();
   const integrations = api.useIntegrationsQuery(firmId);
@@ -18,7 +18,7 @@ export function OrganizationLookup({ value, onApply, disabled = false, directory
   const [matchOrganization] = api.useLazyMatchOrganizationQuery();
   const [preparing, setPreparing] = useState(false);
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState(''); const [kpp, setKpp] = useState('');
+  const [query, setQuery] = useState(inline ? value.ogrn || value.inn : ''); const [kpp, setKpp] = useState(inline ? value.kpp : '');
   const [error, setError] = useState(''); const [result, setResult] = useState<OrganizationLookupResult | null>(null);
   const [selected, setSelected] = useState(-1); const [useManager, setUseManager] = useState(false);
   const [useStandardAddress, setUseStandardAddress] = useState(false);
@@ -30,6 +30,8 @@ export function OrganizationLookup({ value, onApply, disabled = false, directory
   const generation = useRef(0);
   const activeRequest = useRef<{ abort: () => void } | null>(null);
   useEffect(() => () => { generation.current++; activeRequest.current?.abort(); }, []);
+  const autoSearched = useRef(false);
+  useEffect(() => { if (inline && configured && !autoSearched.current) { autoSearched.current = true; const identifier = value.ogrn || value.inn; if (/^(\d{10}|\d{12}|\d{13}|\d{15})$/.test(identifier)) void search(identifier, value.kpp); } }, [inline, configured]);
   const candidate = result?.items[selected];
 
   function selectCandidate(index: number, items = result?.items ?? []) {
@@ -39,7 +41,7 @@ export function OrganizationLookup({ value, onApply, disabled = false, directory
     setRegistrationAuthority(item?.registrationAuthority?.trim() ?? '');
   }
   function clearResult() { setResult(null); setSelected(-1); setError(''); setUseManager(false); setUseStandardAddress(false); setPhone(''); setRegistrationAuthority(''); setManualFields([]); }
-  function close() { if (saving.isLoading || preparing) return; generation.current++; activeRequest.current?.abort(); setOpen(false); clearResult(); }
+  function close() { if (saving.isLoading || preparing) return; generation.current++; activeRequest.current?.abort(); setOpen(false); clearResult(); onClose?.(); }
   async function search(identifier = query, branchKpp = kpp) {
     if (saving.isLoading) return;
     const digits = identifier.trim(); const branch = branchKpp.trim(); clearResult();
@@ -97,9 +99,7 @@ export function OrganizationLookup({ value, onApply, disabled = false, directory
     finally { setPreparing(false); }
   }
 
-  return <>
-    <Button type="button" disabled={disabled} startIcon={<SearchRounded/>} onClick={() => { const identifier = value.ogrn || value.inn; clearResult(); setQuery(identifier); setKpp(value.kpp); setOpen(true); if (configured && /^(\d{10}|\d{12}|\d{13}|\d{15})$/.test(identifier)) void search(identifier, value.kpp); }}>Найти по ИНН / ОГРН</Button>
-    <Dialog open={open} onClose={close} maxWidth="md" fullWidth aria-labelledby="organization-lookup-title">
+  const content = <>
       <DialogTitle id="organization-lookup-title">Поиск реквизитов в DaData</DialogTitle>
       <DialogContent sx={{ pt: '10px !important' }}>
         <fieldset disabled={saving.isLoading || preparing} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
@@ -136,7 +136,10 @@ export function OrganizationLookup({ value, onApply, disabled = false, directory
         </fieldset>
       </DialogContent>
       <DialogActions sx={{ p: 2.5, flexWrap: 'wrap', gap: 1 }}><Button type="button" disabled={saving.isLoading || preparing} onClick={close}>Отмена</Button><Button type="button" variant={directoryKind ? 'outlined' : 'contained'} disabled={!candidate || busy || disabled} onClick={apply}>Подставить реквизиты</Button>{directoryKind && <Button type="button" variant="contained" disabled={!candidate || busy || disabled} onClick={() => void saveAndApply()}>{saving.isLoading ? 'Сохраняем…' : 'Сохранить в справочник и подставить'}</Button>}</DialogActions>
-    </Dialog>
+  </>;
+  return <>
+    {!inline && (<Button type="button" disabled={disabled} startIcon={<SearchRounded/>} onClick={() => { const identifier = value.ogrn || value.inn; clearResult(); setQuery(identifier); setKpp(value.kpp); setOpen(true); if (configured && /^(\d{10}|\d{12}|\d{13}|\d{15})$/.test(identifier)) void search(identifier, value.kpp); }}>Найти по ИНН / ОГРН</Button>)}
+    {inline ? <Box className="builder-lookup" role="region" aria-labelledby="organization-lookup-title">{content}</Box> : <Dialog open={open} onClose={close} maxWidth="md" fullWidth aria-labelledby="organization-lookup-title">{content}</Dialog>}
     {warningDialog}
   </>;
 }

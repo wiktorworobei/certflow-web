@@ -5,6 +5,7 @@ import type { MarkingSettings, MarkingConnections, MarkingLink, SaveMarkingLink,
 import type { ArchiveAction } from './types';
 import { API_BASE_URL, apiUrl } from './apiUrl';
 import type { LinkedCertificate } from './certificateAuthentication';
+import type { DeclarationPrintLayout } from './types';
 
 interface Session { token: string | null; user: Profile | null; firmId: string; ready: boolean }
 const sessionSlice = createSlice({
@@ -53,6 +54,7 @@ export const api = createApi({
     instruction: b.query<{ content: string; revision: string }, string>({ query: id => firmUrl(id, '/instruction'), keepUnusedDataFor: 0 }),
     saveInstruction: b.mutation<{ content: string; revision: string }, { firmId: string; content: string; revision: string }>({ query: ({ firmId, ...body }) => ({ url: firmUrl(firmId, '/instruction'), method: 'PUT', body }) }),
     printFields: b.query<{ key: string; label: string; text: string }[], { firmId: string; id: string; revision: number }>({ query: ({ firmId, id, revision }) => ({ url: firmUrl(firmId, `/declarations/${id}/print-fields`), params: { revision } }), keepUnusedDataFor: 0 }),
+    declarationPreview: b.mutation<DeclarationPrintLayout, { firmId: string; id?: string; data: SaveDeclaration }>({ query: ({ firmId, id, data }) => ({ url: firmUrl(firmId, '/declarations/preview'), params: id ? { id } : undefined, method: 'POST', body: data }) }),
     certificates: b.query<LinkedCertificate[], void>({ query: () => '/auth/certificates/', keepUnusedDataFor: 0 }),
     dashboard: b.query<Dashboard, string>({ query: id => firmUrl(id, '/dashboard'), providesTags: ['Declarations', 'Directories'] }),
     declarations: b.query<Page<DeclarationRow>, { firmId: string; filters: Filters }>({ query: ({ firmId, filters }) => ({ url: firmUrl(firmId, '/declarations/'), params: filters }), providesTags: ['Declarations'] }),
