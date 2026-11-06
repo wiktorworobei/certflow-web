@@ -29,8 +29,8 @@ export function OrganizationLookup({ value, onApply, disabled = false, directory
   const busy = isLoading || saving.isLoading || preparing;
   const generation = useRef(0);
   const activeRequest = useRef<{ abort: () => void } | null>(null);
-  useEffect(() => () => { generation.current++; activeRequest.current?.abort(); }, []);
   const autoSearched = useRef(false);
+  useEffect(() => () => { generation.current++; activeRequest.current?.abort(); autoSearched.current = false; }, []);
   useEffect(() => { if (inline && configured && !autoSearched.current) { autoSearched.current = true; const identifier = value.ogrn || value.inn; if (/^(\d{10}|\d{12}|\d{13}|\d{15})$/.test(identifier)) void search(identifier, value.kpp); } }, [inline, configured]);
   const candidate = result?.items[selected];
 
