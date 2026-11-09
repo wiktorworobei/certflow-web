@@ -1103,6 +1103,7 @@ async function fillBatch(page: Page) {
   await login(page); await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click(); await page.getByRole('tab', { name: 'Партии и коды' }).click();
   await page.getByRole('combobox', { name: 'Декларация партии' }).click(); await page.getByRole('option', { name: /CF-26-100/ }).click();
   await expect(page).toHaveURL(/declarationId=44444444-4444-4444-8444-000000000000/);
+  await expect(page.getByRole('combobox', { name: 'Декларация партии' })).toContainText('CF-26-100');
   await page.getByLabel('Название партии').fill('Масло · партия OIL-42'); await page.getByLabel('GTIN партии').fill('05011846021161');
 }
 
