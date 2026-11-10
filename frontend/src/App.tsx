@@ -9,6 +9,7 @@ import { Login } from './pages/Login';
 import { Overview } from './pages/Overview';
 import { Registry } from './pages/Registry';
 import { DeclarationEditor } from './pages/DeclarationEditor';
+import { NewDeclaration } from './pages/NewDeclaration';
 import { Instruction } from './pages/Instruction';
 const Directories = lazy(() => import('./pages/Directories').then(module => ({ default: module.Directories })));
 import { Settings, Team } from './pages/Settings';
@@ -23,6 +24,7 @@ export default function App() {
     <Route path="/login" element={session.user ? <Navigate to="/" replace/> : <Login/>}/>
     <Route element={session.user ? <Layout/> : <Navigate to="/login" replace/>}>
       <Route index element={<Overview/>}/><Route path="declarations" element={<Registry/>}/>
+      <Route path="declarations/new" element={<NewDeclaration/>}/>
       <Route path="declarations/:id" element={<DeclarationEditor/>}/>
       <Route path="instruction" element={<Instruction/>}/>
       <Route path="directories" element={<Suspense fallback={<Loading/>}><Directories/></Suspense>}/><Route path="development-plan" element={<Suspense fallback={<Loading/>}><DevelopmentPlan/></Suspense>}/>
