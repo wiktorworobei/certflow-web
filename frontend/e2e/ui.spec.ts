@@ -795,7 +795,7 @@ test('declaration archive requires confirmation and keeps documents accessible i
   await page.getByRole('menuitem', { name: 'Открыть документ', exact: true }).click();
   await expect(page.getByRole('button', { name: 'В архив', exact: true })).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: 'Название декларации', exact: true })).toBeDisabled();
-  await openDeclarationPart(page, 'Сканы');
+  await openDeclarationPart(page, 'История изменений');
   await expect(page.getByText('Статус: В архиве. Работа завершена', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Открыть архив', exact: true }).click();
   await expect(page).toHaveURL(/status=Archived/);

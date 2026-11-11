@@ -186,6 +186,7 @@ async function searchDeclarations(page: Page, search: string) {
 }
 
 test('declaration archive and restore persist across reload with attachments and history', async ({ page }) => {
+  test.slow();
   await login(page); await page.locator('a[href="#/declarations/new"]').click(); await createDeclarationDraft(page);
   const title = `Архивная декларация ${Date.now()}`;
   await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill(title);
@@ -210,9 +211,10 @@ test('declaration archive and restore persist across reload with attachments and
   await expect(page.getByRole('textbox', { name: 'Название декларации', exact: true })).toBeDisabled();
   await openDeclarationPart(page, 'Сканы');
   await expect(page.getByText('archive.pdf', { exact: true })).toBeVisible();
-  await expect(page.getByText('Статус: В архиве. Завершено в браузерной проверке', { exact: true })).toBeVisible();
   const downloaded = page.waitForEvent('download'); await page.getByRole('button', { name: 'Скачать archive.pdf', exact: true }).click();
   expect((await downloaded).suggestedFilename()).toBe('archive.pdf');
+  await openDeclarationPart(page, 'История изменений');
+  await expect(page.getByText('Статус: В архиве. Завершено в браузерной проверке', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Восстановить из архива', exact: true }).click();
   const restore = page.getByRole('dialog', { name: 'Восстановить из архива?' });
   await restore.getByLabel('Комментарий к восстановлению').fill('Возобновлена работа');
@@ -359,10 +361,12 @@ test('company switching, filters, CSV and honest integration states', async ({ p
   await page.getByRole('combobox', { name: 'Компания', exact: true }).selectOption({ label: 'Моя компания' });
   await expect(page.getByRole('heading', { name: 'Добрый день, Виктор' })).toBeVisible();
   await page.getByRole('link', { name: 'Настройки', exact: true }).click();
-  for (const name of ['ФГИС Росаккредитации', 'Реестр деклараций', 'Реестр лабораторий и обмен с ИЛ']) {
+  for (const name of ['ФГИС Росаккредитации', 'Реестр лабораторий и обмен с ИЛ']) {
     const card = page.locator('.connection-card').filter({ has: page.getByRole('heading', { name, exact: true }) });
     await expect(card.getByText('Не подключено', { exact: true })).toBeVisible();
   }
+  const registry = page.locator('.connection-card').filter({ has: page.getByRole('heading', { name: 'Реестры Росаккредитации', exact: true }) });
+  await expect(registry.getByText('Нет ключа', { exact: true })).toBeVisible();
   const tnved = page.locator('.connection-card').filter({ has: page.getByRole('heading', { name: 'ТН ВЭД — локальный справочник', exact: true }) });
   await expect(tnved.getByText('Загружен', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Успешных подключений пока нет' })).toBeVisible();
@@ -561,7 +565,10 @@ test('document builder preserves case drafts, appendices and file purposes witho
   await page.reload(); await openDeclarationPart(page, 'Сканы');
   await expect(page.getByRole('checkbox', { name: 'Включить в комплект ФГИС', exact: true })).toBeChecked();
   await openDeclarationPart(page, 'Публикация ФГИС');
-  await expect(page.getByRole('button', { name: 'Отправить черновик в ФГИС', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Отправить черновик в ФГИС', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Перенести в ФГИС', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Заполнить открытый раздел', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
 });
 

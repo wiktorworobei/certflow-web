@@ -20,8 +20,8 @@ export async function openDeclarationPart(page: Page, name: string) {
     } return;
   }
   if(name === 'Основные') { await page.getByRole('button',{name:'Редактировать: Дата принятия декларации о соответствии',exact:true}).first().click(); name='Организация работы'; }
-  const cases:Record<string,string>={'Организация работы':'main','Отбор / Испытания (ПИ) / Анализ пр-ва':'testing','Сканы':'scans','Заявка/Документы':'application','Опись/Закрытие':'closure','Публикация ФГИС':'fgis','Foreign':'foreign'};
-  const groups:Record<string,string>={main:'Данные дела',application:'Данные дела',foreign:'Данные дела',testing:'Испытания и основания',scans:'Файлы и приложения',closure:'Файлы и приложения',fgis:'Публикация'};
+  const cases:Record<string,string>={'Организация работы':'main','Отбор / Испытания (ПИ) / Анализ пр-ва':'testing','Сканы':'scans','Заявка/Документы':'application','Опись/Закрытие':'closure','Публикация ФГИС':'fgis','Foreign':'foreign','История изменений':'history'};
+  const groups:Record<string,string>={main:'Данные дела',application:'Данные дела',foreign:'Данные дела',history:'Данные дела',testing:'Испытания и основания',scans:'Файлы и приложения',closure:'Файлы и приложения',fgis:'Публикация'};
   await page.getByRole('tab',{name:groups[cases[name]],exact:true}).click();
   const details=page.locator(`#declaration-case-${cases[name]}`); await expect(details).toBeAttached(); if(await details.getAttribute('open')===null) await details.locator(':scope > summary').click();
 }
