@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { Avatar, Button, Divider, Drawer, IconButton, Menu, MenuItem, Select, Tooltip, Typography } from '@mui/material';
-import { AddRounded, ArrowForwardRounded, CorporateFareOutlined, DarkModeOutlined, DescriptionOutlined, GroupOutlined, KeyboardArrowDownRounded, LightModeOutlined, LogoutRounded, MenuRounded, QrCode2Rounded, RouteOutlined, SettingsOutlined, SpaceDashboardOutlined, Inventory2Outlined } from '@mui/icons-material';
+import { AddRounded, ArrowForwardRounded, CorporateFareOutlined, DarkModeOutlined, DescriptionOutlined, GroupOutlined, KeyboardArrowDownRounded, LightModeOutlined, LogoutRounded, MenuRounded, QrCode2Rounded, RouteOutlined, SettingsOutlined, SpaceDashboardOutlined, Inventory2Outlined, FactCheckOutlined } from '@mui/icons-material';
 import { api, authRequest, selectFirm, signedOut } from './store';
 import { useWorkspace } from './common';
 import { useAppearance } from './theme';
 import { ColorThemeMenu } from './ColorThemeMenu';
 import { Brand, BrandMark } from './Brand';
+import { RegistryNotificationBell } from './RegistryMonitoring';
 export { Brand } from './Brand';
 
 export function ThemeSwitch() {
@@ -19,6 +20,7 @@ export function ThemeSwitch() {
 const navigation = [
   { to: '/', label: 'Обзор', icon: <SpaceDashboardOutlined/> },
   { to: '/declarations', label: 'Декларации', icon: <DescriptionOutlined/> },
+  { to: '/registries', label: 'Проверка документов', icon: <FactCheckOutlined/> },
   { to: '/instruction', label: 'Инструкция', icon: <DescriptionOutlined/> },
   { to: '/directories', label: 'Справочники', icon: <CorporateFareOutlined/> },
   { to: '/catalog', label: 'Карточки ЧЗ', icon: <Inventory2Outlined/> },
@@ -45,7 +47,7 @@ export function Layout() {
   </aside>;
   return <div className="app-layout"><a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); const main = document.getElementById('main-content'); main?.focus(); main?.scrollIntoView({ block: 'start' }); }}>К содержимому</a><div className="desktop-sidebar">{sidebar}</div><Drawer id="mobile-navigation" open={mobileOpen} onClose={() => setMobileOpen(false)} PaperProps={{ sx: { width: 264, bgcolor: 'var(--sidebar)' } }}>{sidebar}</Drawer>
     <div className="workspace"><header className="topbar"><div className="topbar-left"><IconButton className="mobile-menu" aria-label="Открыть меню" aria-expanded={mobileOpen} aria-controls={mobileOpen ? 'mobile-navigation' : undefined} onClick={() => setMobileOpen(true)}><MenuRounded/></IconButton><NavLink className="mobile-brand" aria-label="ZNAQ — на главную" to="/"><BrandMark/><span>ZNAQ</span></NavLink><span className="breadcrumb-home">Пространство</span><span className="breadcrumb-divider">/</span><span className="breadcrumb-page">{page}</span></div>
-      <div className="topbar-right">{user && user.firms.length > 0 && <Select native value={firmId} size="small" inputProps={{ 'aria-label': 'Компания' }} className="firm-select" onChange={e => { dispatch(selectFirm(e.target.value)); dispatch(api.util.resetApiState()); navigate('/'); }}>{user.firms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</Select>}<ColorThemeMenu/><ThemeSwitch/><div className="topbar-separator"/><Button color="inherit" aria-label="Меню профиля" aria-haspopup="menu" aria-expanded={!!profileMenu} onClick={e => setProfileMenu(e.currentTarget)} className="profile-button"><Avatar className="profile-avatar">{(user?.displayName || user?.userName)?.slice(0, 1).toUpperCase()}</Avatar><div><strong>{user?.displayName || user?.userName}</strong><span>{isAdmin ? 'Администратор' : firm?.role === 'Manager' ? 'Специалист' : 'Наблюдатель'}</span></div><KeyboardArrowDownRounded fontSize="small"/></Button></div>
+      <div className="topbar-right">{user && user.firms.length > 0 && <Select native value={firmId} size="small" inputProps={{ 'aria-label': 'Компания' }} className="firm-select" onChange={e => { dispatch(selectFirm(e.target.value)); dispatch(api.util.resetApiState()); navigate('/'); }}>{user.firms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</Select>}<RegistryNotificationBell key={firmId}/><ColorThemeMenu/><ThemeSwitch/><div className="topbar-separator"/><Button color="inherit" aria-label="Меню профиля" aria-haspopup="menu" aria-expanded={!!profileMenu} onClick={e => setProfileMenu(e.currentTarget)} className="profile-button"><Avatar className="profile-avatar">{(user?.displayName || user?.userName)?.slice(0, 1).toUpperCase()}</Avatar><div><strong>{user?.displayName || user?.userName}</strong><span>{isAdmin ? 'Администратор' : firm?.role === 'Manager' ? 'Специалист' : 'Наблюдатель'}</span></div><KeyboardArrowDownRounded fontSize="small"/></Button></div>
     </header><Menu anchorEl={profileMenu} open={!!profileMenu} onClose={() => setProfileMenu(null)}><MenuItem onClick={() => { setProfileMenu(null); navigate('/settings?tab=profile'); }}><SettingsOutlined fontSize="small" sx={{ mr: 1.5 }}/>Настройки профиля</MenuItem><Divider/><MenuItem onClick={() => { setProfileMenu(null); void logout(); }}><LogoutRounded fontSize="small" sx={{ mr: 1.5 }}/>Выйти</MenuItem></Menu>
       <main tabIndex={-1} id="main-content" className="page-content">{firm ? <Outlet key={firmId}/> : <div className="empty-state"><Typography variant="h5">Нет доступных компаний</Typography><Typography color="text.secondary">Администратор должен предоставить доступ к рабочему пространству.</Typography><Button sx={{ mt: 2 }} onClick={() => void logout()}>Выйти <ArrowForwardRounded/></Button></div>}</main>
       <footer className="workspace-footer"><span className="footer-wordmark">ZNAQ</span><span>Декларации. Сертификация. Маркировка.</span><span className="footer-label">Точность имеет знак.</span></footer>

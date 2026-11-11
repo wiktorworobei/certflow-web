@@ -3,7 +3,7 @@ import { Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTi
 import { useWorkspace } from './common';
 import type { Organization } from './types';
 
-type Reason = 'refresh' | 'save' | 'apply';
+type Reason = 'save' | 'apply';
 const preferenceKey = (userId: string) => `certflow.dadata-overwrite-warning.v1.${userId}`;
 
 export function useDaDataOverwriteWarning() {
@@ -41,7 +41,7 @@ export function useDaDataOverwriteWarning() {
         ? 'Сохранение результата поиска заменит реквизиты существующей компании данными DaData, включая прежние ручные изменения. Новые дополнения, введённые вами в окне поиска, сохранятся как ручные.'
         : 'Подстановка или обновление из DaData заменит текущие реквизиты компании, включая изменения, внесённые вручную.'}</Typography>
       <Alert severity="warning">Поля, которых нет в ответе DaData, будут очищены. Это касается и телефона, электронной почты и регистрирующего органа. Подписант и его должность также сбрасываются: при подстановке руководителя можно выбрать отдельно.</Alert>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Ночное обновление сохраняет поля, заполненные или изменённые вручную, и обновляет остальные сведения. Сохранённые декларации автоматически не меняются.</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Ночная проверка только ставит флаг при изменениях и сохраняет реквизиты. Сохранённые декларации автоматически не меняются.</Typography>
       <FormControlLabel sx={{ mt: 1.5 }} control={<Checkbox checked={hideNextTime} onChange={event => setHideNextTime(event.target.checked)}/>} label="Больше не показывать"/>
     </DialogContent>
     <DialogActions sx={{ p: 2.5 }}><Button onClick={() => finish(false)}>Отмена</Button><Button variant="contained" color="warning" onClick={() => finish(true)}>Продолжить</Button></DialogActions>

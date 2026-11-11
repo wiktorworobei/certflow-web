@@ -1,4 +1,5 @@
 import { DeclarationBuilder } from '../DeclarationBuilder';
+import { FgisTransferButton } from '../FgisTransferButton';
 import { declarationTabs, emptyWorkspace, type DeclarationWorkspace } from '../workspaceTypes';
 import '../declarationWorkspace.css';
 import type { EvidenceWorkflow } from '../evidenceTypes';
@@ -130,6 +131,7 @@ function DeclarationEditorForm({ id }: { id?: string }) {
     {document?.status === 'Archived' && <Alert severity="info" sx={{ mb: 2 }} action={<Button color="inherit" onClick={() => navigate('/declarations?status=Archived')}>Открыть архив</Button>}>Декларация находится в архиве. Данные, файлы и история сохранены.</Alert>}
     {document && <Button variant="text" sx={{ mb: 2 }} disabled={isDirty} onClick={() => navigate(`/marking?declarationId=${document.id}`)}>Товары в ЧЗ и Нашей марке</Button>}
     <div className="editor-title"><div><div className="eyebrow">{document?.reference ?? 'НОВЫЙ ДОКУМЕНТ'}{document?.isSample && <span className="sample-label">Учебный пример</span>}</div><Typography variant="h4" component="h1">{document?.title ?? 'Новая декларация'}</Typography><div className="editor-title-meta"><StatusChip status={document?.status ?? 'Draft'}/><span>{document ? `Обновлено ${dateTime(document.updatedAt)}` : 'Заполните основные сведения и сохраните документ'}</span>{isDirty && <span className="unsaved-label">Есть изменения</span>}{!readOnly && <span role="status" aria-live="polite">{autosaving ? 'Автосохранение…' : autosavedAt ? `Автосохранено ${dateTime(autosavedAt)}` : 'Автосохранение каждую минуту'}</span>}</div></div><div className="page-actions">
+      {document && <FgisTransferButton key={`fgis-${firmId}-${document.id}`} document={document} disabled={saving || changing || exporting}/>}
       {['docx','pdf','zip'].map(format => <Button key={format} variant="outlined" startIcon={format === 'docx' ? <FileDownloadOutlined/> : undefined} disabled={!printReady || saving || exporting} onClick={() => void exportDocument(format)}>{format === 'docx' ? 'Word' : format === 'pdf' ? 'PDF' : 'Комплект ZIP'}</Button>)}
       {document && canEdit && document.status !== 'Archived' && <Tooltip title={isDirty ? 'Сначала сохраните изменения' : 'Убрать из рабочего списка, сохранив документ'}><span><Button variant="outlined" startIcon={<ArchiveOutlined/>} disabled={isDirty || saving || changing} onClick={() => setStatusTarget('Archived')}>В архив</Button></span></Tooltip>}
       {document && canEdit && document.status === 'Archived' && <Button variant="contained" startIcon={<UnarchiveOutlined/>} disabled={saving || changing} onClick={() => setRestoreTarget({ id: document.id, revision: document.revision, title: document.title })}>Восстановить из архива</Button>}

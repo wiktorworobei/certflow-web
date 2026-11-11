@@ -1,6 +1,15 @@
 import { expect, type Page } from '@playwright/test';
 import type { SaveDeclaration } from '../src/types';
 
+export async function createDeclarationDraft(page: Page, title = 'Тестовый черновик декларации') {
+  const dialog = page.getByRole('dialog', { name: 'Новая декларация', exact: true });
+  await dialog.getByRole('textbox', { name: 'Название декларации', exact: true }).fill(title);
+  await dialog.getByRole('button', { name: 'Продолжить', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/declarations\/[a-f0-9-]+(?:\?.*)?$/);
+  await expect(page.getByRole('textbox', { name: 'Название декларации', exact: true })).toBeVisible();
+}
+
 export async function openDeclarationPart(page: Page, name: string) {
   const fragments: Record<string,string> = { 'Заявитель':'Заявитель','Изготовитель':'Изготовитель','Продукция':'заявляет, что','ГОСТы/Тех.регламент':'соответствует требованиям','ДЕКЛАРАЦИЯ':'Схема декларирования соответствия' };
   if (name in fragments) {
@@ -12,6 +21,8 @@ export async function openDeclarationPart(page: Page, name: string) {
   }
   if(name === 'Основные') { await page.getByRole('button',{name:'Редактировать: Дата принятия декларации о соответствии',exact:true}).first().click(); name='Организация работы'; }
   const cases:Record<string,string>={'Организация работы':'main','Отбор / Испытания (ПИ) / Анализ пр-ва':'testing','Сканы':'scans','Заявка/Документы':'application','Опись/Закрытие':'closure','Публикация ФГИС':'fgis','Foreign':'foreign'};
+  const groups:Record<string,string>={main:'Данные дела',application:'Данные дела',foreign:'Данные дела',testing:'Испытания и основания',scans:'Файлы и приложения',closure:'Файлы и приложения',fgis:'Публикация'};
+  await page.getByRole('tab',{name:groups[cases[name]],exact:true}).click();
   const details=page.locator(`#declaration-case-${cases[name]}`); await expect(details).toBeAttached(); if(await details.getAttribute('open')===null) await details.locator(':scope > summary').click();
 }
 export const organizationLookupSurface = (page: Page) => page.getByRole('dialog',{name:'Поиск реквизитов в DaData',exact:true}).or(page.getByRole('region',{name:'Поиск реквизитов в DaData',exact:true}));

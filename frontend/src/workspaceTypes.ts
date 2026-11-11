@@ -3,7 +3,7 @@ export const declarationTabs = [
   ['regulations', 'ГОСТы/Тех.регламент'], ['application', 'Заявка/Документы'], ['testing', 'Отбор / Испытания (ПИ) / Анализ пр-ва'],
   ['declaration', 'ДЕКЛАРАЦИЯ'], ['appendix-products', 'Приложение Продукция'], ['appendix-addresses', 'Приложение Адреса'],
   ['appendix-standards', 'Приложение ГОСТы'], ['appendix-free', 'Приложение Свободное / Префиксы'], ['closure', 'Опись/Закрытие'],
-  ['fgis', 'Публикация ФГИС'], ['scans', 'Сканы'], ['foreign', 'Foreign'],
+  ['fgis', 'Публикация ФГИС'], ['scans', 'Сканы'], ['foreign', 'Иностранные документы'],
 ] as const;
 export type DeclarationTab = typeof declarationTabs[number][0];
 export interface WorkspaceSection { number: string; date: string | null; content: string; notes: string; completed?: boolean }

@@ -1,0 +1,20 @@
+name: Wake API for daily registry monitoring
+on:
+  schedule:
+    # UTC. The API persists the daily 06:00 Europe/Minsk boundary and catches up after sleep.
+    - cron: '7 * * * *'
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: registry-monitoring-wakeup
+  cancel-in-progress: false
+jobs:
+  check-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Wake and verify the deployed API
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --retry 2 --retry-delay 10 --connect-timeout 20 --max-time 60 \
+            https://mytomtom-001-site1.htempurl.com/api/health | python3 -c 'import json,sys; assert json.load(sys.stdin)["status"] == "ok"'

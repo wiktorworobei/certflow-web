@@ -7,13 +7,14 @@ import { api, download } from './store';
 import { dateTime, errorMessage, type Declaration, type SaveDeclaration } from './types';
 import { declarationTabs, emptyWorkspace, fileKinds, type DeclarationTab, type WorkspaceAttachment } from './workspaceTypes';
 
-export function WorkspaceSectionPanel({ section, title, contentLabel = 'Содержание раздела', readOnly, numbered = false }: { section: DeclarationTab; title: string; contentLabel?: string; readOnly: boolean; numbered?: boolean }) {
+export function WorkspaceSectionPanel({ section, title, contentLabel = 'Содержание раздела', readOnly, numbered = false, embedded = false }: { section: DeclarationTab; title: string; contentLabel?: string; readOnly: boolean; numbered?: boolean; embedded?: boolean }) {
   const { control } = useFormContext<SaveDeclaration>();
-  return <Section title={title} subtitle="Сведения сохраняются вместе с декларацией и входят в комплект документов."><Grid container spacing={2.5}>
+  const fields = <Grid container spacing={2.5}>
     {numbered && <><Grid item xs={12} sm={6}><Controller control={control} name={`workspace.sections.${section}.number`} render={({ field }) => <TextField {...field} value={field.value ?? ''} label="Номер заявки" disabled={readOnly} inputProps={{ maxLength: 150 }}/>}/></Grid><Grid item xs={12} sm={6}><Controller control={control} name={`workspace.sections.${section}.date`} render={({ field }) => <TextField {...field} value={field.value ?? ''} type="date" label="Дата заявки" InputLabelProps={{ shrink: true }} disabled={readOnly} onChange={e => field.onChange(e.target.value || null)}/>}/></Grid></>}
     <Grid item xs={12}><Controller control={control} name={`workspace.sections.${section}.content`} render={({ field }) => <TextField {...field} value={field.value ?? ''} label={contentLabel} multiline minRows={6} disabled={readOnly} inputProps={{ maxLength: 20000 }}/>}/></Grid>
     <Grid item xs={12}><Controller control={control} name={`workspace.sections.${section}.notes`} render={({ field }) => <TextField {...field} value={field.value ?? ''} label="Заметки к разделу" multiline minRows={2} disabled={readOnly} inputProps={{ maxLength: 10000 }}/>}/></Grid>
-  </Grid></Section>;
+  </Grid>;
+  return embedded ? fields : <Section title={title} subtitle="Сведения сохраняются вместе с декларацией и входят в комплект документов.">{fields}</Section>;
 }
 
 function AttachmentMetadata({ attachmentId, readOnly }: { attachmentId: string; readOnly: boolean }) {
@@ -32,7 +33,7 @@ function AttachmentMetadata({ attachmentId, readOnly }: { attachmentId: string; 
   </Grid>;
 }
 
-export function FilesPanel({ document, readOnly }: { document?: Declaration; readOnly: boolean }) {
+export function FilesPanel({ document, readOnly, showHistory = true }: { document?: Declaration; readOnly: boolean; showHistory?: boolean }) {
   const { getValues, setValue, formState: { isDirty } } = useFormContext<SaveDeclaration>();
   const { firmId, canEdit } = useWorkspace(); const notify = useNotify();
   const [upload, { isLoading: uploading }] = api.useUploadMutation(); const [remove, { isLoading: removing }] = api.useRemoveAttachmentMutation();
@@ -50,7 +51,7 @@ export function FilesPanel({ document, readOnly }: { document?: Declaration; rea
     {!document ? <Alert severity="info">Сохраните декларацию, чтобы прикрепить файлы.</Alert> : <>{canEdit && <Button component="label" className="file-dropzone" disabled={uploading || removing} startIcon={<UploadFileOutlined/>}>{uploading ? 'Загружаем файл…' : 'Добавить файл'}<span>Заявки, протоколы, акты, договоры и приложения</span><input type="file" hidden accept=".pdf,.docx,.png,.jpg,.jpeg" onChange={e => { void uploadFile(e.target.files?.[0]); e.target.value = ''; }}/></Button>}
     {document.attachments.map(file => <div className="workspace-file" key={file.id}><div className="attachment-row"><DescriptionOutlined sx={{ color: 'var(--accent-text)' }}/><div><strong>{file.fileName}</strong><span>{Math.max(1, Math.round(file.length / 1024))} КБ · {dateTime(file.createdAt)}</span></div><IconButton aria-label={`Скачать ${file.fileName}`} onClick={async () => { try { await download(`/firms/${firmId}/declarations/${document.id}/attachments/${file.id}`, file.fileName); } catch (e) { notify(errorMessage(e), 'error'); } }}><FileDownloadOutlined fontSize="small"/></IconButton>{canEdit && <IconButton aria-label={`Удалить ${file.fileName}`} disabled={removing || uploading || isDirty} onClick={() => setDeleting({ id: file.id, name: file.fileName })}><DeleteOutlineRounded fontSize="small"/></IconButton>}</div><AttachmentMetadata attachmentId={file.id} readOnly={readOnly}/></div>)}
     {!document.attachments.length && <Typography color="text.secondary" sx={{ mt: 2 }}>Файлы ещё не добавлены.</Typography>}</>}
-  </Section><HistoryPanel document={document}/>
+  </Section>{showHistory && <HistoryPanel document={document}/>}
   <Dialog open={!!deleting} onClose={() => setDeleting(null)} maxWidth="xs" fullWidth><DialogTitle>Удалить файл?</DialogTitle><DialogContent><Typography>{deleting?.name}</Typography></DialogContent><DialogActions><Button onClick={() => setDeleting(null)}>Отмена</Button><Button color="error" disabled={removing || isDirty} onClick={async () => { if (!document || !deleting) return; try { await remove({ firmId, id: document.id, attachmentId: deleting.id }).unwrap(); setDeleting(null); notify('Файл удалён'); } catch (e) { notify(errorMessage(e), 'error'); } }}>Удалить</Button></DialogActions></Dialog></>;
 }
 

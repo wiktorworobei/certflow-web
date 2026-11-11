@@ -16,6 +16,7 @@ import { Settings, Team } from './pages/Settings';
 const DevelopmentPlan = lazy(() => import('./pages/DevelopmentPlan').then(module => ({ default: module.DevelopmentPlan })));
 const Marking = lazy(() => import('./pages/Marking').then(module => ({ default: module.Marking })));
 const Catalog = lazy(() => import('./pages/Catalog').then(module => ({ default: module.Catalog })));
+const RegistryChecks = lazy(() => import('./pages/RegistryChecks').then(module => ({ default: module.RegistryChecks })));
 
 export default function App() {
   const session = useSelector((s: RootState) => s.session);
@@ -31,6 +32,7 @@ export default function App() {
       <Route path="integrations" element={<Navigate to="/settings" replace/>}/>
       <Route path="marking" element={<Suspense fallback={<Loading/>}><Marking/></Suspense>}/>
       <Route path="catalog" element={<Suspense fallback={<Loading/>}><Catalog/></Suspense>}/>
+      <Route path="registries" element={<Suspense fallback={<Loading/>}><RegistryChecks/></Suspense>}/>
       <Route path="team" element={<Team/>}/><Route path="settings" element={<Settings/>}/>
       <Route path="*" element={<Navigate to="/" replace/>}/>
     </Route>

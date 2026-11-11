@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "ZNAQ → ФГИС",
+  "version": "1.0.0",
+  "description": "Перенос сведений декларации ZNAQ в открытый кабинет ФГИС. Проверка и подписание выполняются пользователем.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://srd.fsa.gov.ru/*"],
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "ZNAQ → ФГИС", "default_popup": "popup.html" },
+  "content_scripts": [{ "matches": ["https://srd.fsa.gov.ru/*"], "js": ["protocol.js", "form.js", "target.js"], "run_at": "document_idle" }]
+}

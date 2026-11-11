@@ -6,6 +6,7 @@ import type { ArchiveAction } from './types';
 import { API_BASE_URL, apiUrl } from './apiUrl';
 import type { LinkedCertificate } from './certificateAuthentication';
 import type { DeclarationPrintLayout } from './types';
+import type { OrganizationRegistryComparison } from './types';
 
 interface Session { token: string | null; user: Profile | null; firmId: string; ready: boolean }
 const sessionSlice = createSlice({
@@ -49,7 +50,7 @@ const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> =
 };
 const firmUrl = (firmId: string, path: string) => `/firms/${firmId}${path}`;
 export const api = createApi({
-  reducerPath: 'api', baseQuery, tagTypes: ['Declarations', 'Directories', 'Team', 'Integrations', 'PersonalIntegrations', 'Marking'],
+  reducerPath: 'api', baseQuery, tagTypes: ['Declarations', 'Directories', 'Team', 'Integrations', 'PersonalIntegrations', 'Marking', 'RegistryRequests', 'RegistryMonitoring', 'RegistryNotifications'],
   endpoints: b => ({
     instruction: b.query<{ content: string; revision: string }, string>({ query: id => firmUrl(id, '/instruction'), keepUnusedDataFor: 0 }),
     saveInstruction: b.mutation<{ content: string; revision: string }, { firmId: string; content: string; revision: string }>({ query: ({ firmId, ...body }) => ({ url: firmUrl(firmId, '/instruction'), method: 'PUT', body }) }),
@@ -72,8 +73,9 @@ export const api = createApi({
     lookupOrganization: b.mutation<OrganizationLookupResult, { firmId: string; query: string; kpp?: string }>({ query: ({ firmId, ...body }) => ({ url: firmUrl(firmId, '/organizations/lookup'), method: 'POST', body }) }),
     saveOrganization: b.mutation<Organization, { firmId: string; id?: string; data: OrganizationInput }>({ query: ({ firmId, id, data }) => ({ url: firmUrl(firmId, `/organizations/${id ?? ''}`), method: id ? 'PUT' : 'POST', body: data }), invalidatesTags: ['Directories'] }),
     deleteOrganization: b.mutation<void, { firmId: string; id: string }>({ query: ({ firmId, id }) => ({ url: firmUrl(firmId, `/organizations/${id}`), method: 'DELETE' }), invalidatesTags: ['Directories'] }),
-    refreshOrganization: b.mutation<Organization, { firmId: string; id: string }>({ query: ({ firmId, id }) => ({ url: firmUrl(firmId, `/organizations/${id}/refresh`), method: 'POST' }), invalidatesTags: ['Directories'] }),
+    refreshOrganization: b.mutation<Organization, { firmId: string; id: string; overwriteManualFields: boolean }>({ query: ({ firmId, id, overwriteManualFields }) => ({ url: firmUrl(firmId, `/organizations/${id}/refresh`), method: 'POST', params: { overwriteManualFields } }), invalidatesTags: ['Directories'] }),
     organizationRefreshSchedule: b.query<{ enabled: boolean; hour: number; timeZoneId: string }, string>({ query: id => firmUrl(id, '/organizations/refresh-schedule') }),
+    organizationChanges: b.query<OrganizationRegistryComparison, { firmId: string; id: string }>({ query: ({ firmId, id }) => ({ url: firmUrl(firmId, `/organizations/${id}/changes`), cache: 'no-store' }), providesTags: ['Directories'], keepUnusedDataFor: 0 }),
     laboratories: b.query<Laboratory[], string>({ query: id => firmUrl(id, '/laboratories/'), providesTags: ['Directories'] }),
     laboratorySearch: b.query<Page<Laboratory>, LaboratoryFilters>({ query: ({ firmId, ...params }) => ({ url: firmUrl(firmId, '/laboratories/search'), params }), providesTags: ['Directories'] }),
     deleteLaboratory: b.mutation<void, { firmId: string; id: string }>({ query: ({ firmId, id }) => ({ url: firmUrl(firmId, `/laboratories/${id}`), method: 'DELETE' }), invalidatesTags: ['Directories'] }),
