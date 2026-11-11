@@ -1660,6 +1660,7 @@ test('directory company deletion requires confirmation and updates saved lists',
   await page.reload();
   await expect(page.getByRole('row').filter({ hasText: lookupCandidate.name })).toHaveCount(0);
   await page.getByRole('button', { name: 'Создать декларацию', exact: true }).click();
+  await createDeclarationDraft(page);
   await openDeclarationPart(page, 'Заявитель');
   await page.getByRole('combobox', { name: 'Подставить из справочника' }).first().fill(lookupCandidate.name);
   await expect(page.getByRole('option', { name: /Тестовый заявитель/ })).toHaveCount(0);
@@ -1863,7 +1864,7 @@ test('personal DaData key can be configured in account and used to fill OGRN req
   await expect(page.getByLabel('Новый API-ключ DaData')).toHaveValue('');
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'dadata-personal-account.png'), animations: 'disabled' });
   await page.getByRole('link', { name: 'Перейти к новой декларации', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Подстановка по ОГРН');
+  await createDeclarationDraft(page, 'Подстановка по ОГРН');
   await openDeclarationPart(page, 'Заявитель');
   await page.getByLabel('ОГРН / ОГРНИП', { exact: true }).first().fill('1027700132195');
   await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
