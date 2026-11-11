@@ -301,9 +301,9 @@ test('ZNAQ identity and layouts cover the whole workspace on desktop and small p
     for (const [name, url] of screens) {
       await page.goto(url);
       if (name === 'editor') await createDeclarationDraft(page);
-      await expect(page.getByRole('status', { name: 'Загрузка', exact: true })).toBeHidden({ timeout: 15000 });
+      await expect(page.getByRole('status', { name: 'Загрузка', exact: true })).toHaveCount(0, { timeout: 15000 });
       await expect(page.locator('#main-content').getByRole('heading', { level: 1 }).first()).toBeVisible();
-      await expect(page.getByRole('status', { name: 'Загрузка', exact: true })).toBeHidden();
+      await expect(page.getByRole('status', { name: 'Загрузка', exact: true })).toHaveCount(0);
       if (name === 'chz') await expect(page.locator('.integration-theme').first()).toBeVisible();
       if (name === 'dmkod') await expect(page.locator('[data-integration="dmkod"]').first()).toBeVisible();
       await expect(page).toHaveTitle(/ZNAQ/);

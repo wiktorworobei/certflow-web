@@ -566,7 +566,7 @@ test('document builder preserves case drafts, appendices and file purposes witho
   await expect(page.getByRole('checkbox', { name: 'Включить в комплект ФГИС', exact: true })).toBeChecked();
   await openDeclarationPart(page, 'Публикация ФГИС');
   await expect(page.getByRole('button', { name: 'Отправить черновик в ФГИС', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Перенести в ФГИС', exact: true }).click();
+  await page.getByRole('tabpanel', { name: 'Публикация', exact: true }).getByRole('button', { name: 'Перенести в ФГИС', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Заполнить открытый раздел', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
