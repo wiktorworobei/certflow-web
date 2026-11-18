@@ -7,6 +7,7 @@ import { Notice } from "@marking/components/honest-sign/ui/notice";
 import { Badge } from "@marking/components/ui/badge";
 import { Button } from "@marking/components/ui/button";
 import { Checkbox } from "@marking/components/ui/checkbox";
+import { captureMarkingScope, assertMarkingScope } from '@marking/lib/workspace-scope';
 import {
     Collapsible,
     CollapsibleContent,
@@ -100,6 +101,7 @@ export function CatalogCardWorkflow({
         ),
         retry: false,
         mutationFn: async (kind: "Moderate" | "Sign") => {
+            const scope = captureMarkingScope();
             if (editorDirty)
                 throw new Error(
                     t("honestSign.catalog.workflow.saveBeforeModeration"),
@@ -137,6 +139,7 @@ export function CatalogCardWorkflow({
                     submissionId,
                     publicationAgreement,
                 );
+                assertMarkingScope(scope);
                 const normalize = (value: string) =>
                     value.replace(/[^a-f0-9]/gi, "").toUpperCase();
                 if (
@@ -151,6 +154,7 @@ export function CatalogCardWorkflow({
                     message: data.xml,
                     cadesType: "bes",
                 });
+                assertMarkingScope(scope);
                 pending.current ??= crypto.randomUUID();
                 return await catalogApiService.sign(submissionId, {
                     requestId: pending.current,
@@ -165,6 +169,7 @@ export function CatalogCardWorkflow({
                     publicationAgreement,
                 });
             } catch (error) {
+                assertMarkingScope(scope);
                 if (pending.current) {
                     const requestId = pending.current;
                     return await recoverCatalogOperationFailure(

@@ -12,8 +12,9 @@ export async function installCertificatePluginFixture(page: Page, unavailable = 
       if (kind === 'CAdESCOM.Store') return { Certificates: certificates, Open: async () => {}, Close: async () => {} };
       if (kind === 'CADESCOM.CPAttribute') return { propset_Name: async () => {}, propset_Value: async () => {} };
       if (kind === 'CAdESCOM.CPSigner') return { propset_Certificate: async () => {}, propset_CheckCertificate: async () => {}, propset_Options: async () => {}, AuthenticatedAttributes2: { Add: async () => {} } };
+      if (kind === 'CAdESCOM.HashedData') { let value = ''; return { propset_Algorithm: async () => {}, propset_DataEncoding: async () => {}, Hash: async (input: string) => { value = input; }, SetHashValue: async (input: string) => { value = input; }, get Value() { return value; } }; }
       let content = '';
-      return { propset_ContentEncoding: async () => {}, propset_Content: async (value: string) => { content = value; }, SignCades: async (_signer: unknown, type: number) => {
+      return { propset_ContentEncoding: async () => {}, propset_Content: async (value: string) => { content = value; }, SignHash: async (hash: { Value: string }, _signer: unknown, type: number) => { if (type !== 1) throw new Error('Expected CAdES-BES'); (w.certificateSignedMessages as string[]).push(new TextDecoder().decode(Uint8Array.from(atob(hash.Value), c => c.charCodeAt(0)))); return 'synthetic-certificate-proof'; }, SignCades: async (_signer: unknown, type: number) => {
         if (type !== 1) throw new Error('Expected CAdES-BES');
         (w.certificateSignedMessages as string[]).push(new TextDecoder().decode(Uint8Array.from(atob(content), c => c.charCodeAt(0))));
         return 'synthetic-certificate-proof';

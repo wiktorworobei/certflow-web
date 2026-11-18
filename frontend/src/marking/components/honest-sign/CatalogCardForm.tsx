@@ -1,4 +1,5 @@
 import { useMarkingDeclaration } from '@marking/DeclarationContext';
+import { captureMarkingScope, assertMarkingScope } from '@marking/lib/workspace-scope';
 import { TnVedPicker } from '../../../TnVedPicker';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -68,6 +69,7 @@ export function CatalogCardForm({
     externalGoodId = 0,
     onDirtyChange,
     onBusyChange,
+    onStage,
 }: {
     companyId: string;
     categories?: CatalogCategory[];
@@ -79,6 +81,7 @@ export function CatalogCardForm({
     externalGoodId?: number;
     onDirtyChange?: (dirty: boolean) => void;
     onBusyChange?: (busy: boolean) => void;
+    onStage?: (request: CatalogCardRequest) => void;
 }) {
     const { t } = useTranslation();
     const declaration = useMarkingDeclaration();
@@ -107,10 +110,12 @@ export function CatalogCardForm({
             request: CatalogCardRequest;
             send: boolean;
         }) => {
+            const scope = captureMarkingScope();
             const saved = await catalogApiService.saveDraft(
                 request,
                 savedId.current,
             );
+            assertMarkingScope(scope);
             savedId.current = saved.id;
             savedReceipt.current = saved;
             return send
@@ -213,7 +218,9 @@ export function CatalogCardForm({
         else setLookupTnved(tnved);
     };
     const submit = async (request: CatalogCardRequest, send = false) => {
+        const scope = captureMarkingScope();
         if (inFlight.current || readOnly) return;
+        if (onStage) { onStage(request); onDirtyChange?.(false); return; }
         inFlight.current = true;
         sendIntent.current = send;
         setSentRequest(request);
@@ -227,6 +234,7 @@ export function CatalogCardForm({
             requestId.current = crypto.randomUUID();
             setSentRequest(submissionId ? null : request);
         } catch (error) {
+            assertMarkingScope(scope);
             const status = getHttpErrorStatus(error);
             const code = getHttpErrorCode(error);
             if (code === "error.honest_sign_catalog_request_payload_conflict") {
@@ -857,10 +865,10 @@ export function CatalogCardForm({
                             ) : (
                                 <Save className="size-4" aria-hidden="true" />
                             )}
-                            {t("honestSign.catalog.createDraft")}
+                            {onStage ? 'Добавить в пакет' : t("honestSign.catalog.createDraft")}
                         </Button>
                     )}
-                    {!locked && (
+                    {!locked && !onStage && (
                         <Button
                             type="button"
                             onClick={() => void sendCurrent()}

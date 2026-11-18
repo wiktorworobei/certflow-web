@@ -1,0 +1,793 @@
+.crpt-page {
+  --crpt-ink: #382c61;
+  --crpt-accent: #6b4cce;
+  --crpt-soft: #f4f0fc;
+  --crpt-border: #e5def4;
+  --cf-accent: #6b4cce;
+  --cf-accent-solid: #6b4cce;
+  --cf-on-accent: #fff;
+  --cf-accent-soft: #f2edfc;
+  --cf-sidebar-accent: #c8b5ff;
+  min-width: 0;
+}
+.crpt-page.crpt-dark {
+  --crpt-ink: #e5dcff;
+  --crpt-accent: #c3b4ff;
+  --crpt-soft: #2a233b;
+  --crpt-border: #483b60;
+  --cf-accent: #c3b4ff;
+  --cf-accent-solid: #6b4cce;
+  --cf-on-accent: #21143b;
+  --cf-accent-soft: #c3b4ff14;
+}
+.crpt-page .page-title .eyebrow {
+  color: var(--crpt-accent);
+}
+.crpt-banner {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: #302546;
+  color: #f4efff;
+  border-radius: 15px;
+  padding: 24px 28px;
+  margin-bottom: 24px;
+}
+.crpt-banner-symbol {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  color: #d3c3ff;
+  border: 1px solid #a489de55;
+  background: #cab3ff0b;
+  border-radius: 12px;
+}
+.crpt-banner-symbol svg {
+  font-size: 26px;
+}
+.crpt-banner strong {
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: -0.03em;
+}
+.crpt-banner p {
+  color: #c4b7db;
+  font-size: 12px;
+  margin: 7px 0 0;
+  line-height: 1.7;
+}
+.crpt-version {
+  margin-left: auto;
+  padding-left: 20px;
+  flex-shrink: 0;
+  color: #cfc1ed;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+.crpt-environments.MuiPaper-root {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px 0 4px;
+  border: 1px solid var(--border);
+  box-shadow: none;
+  border-radius: 12px;
+}
+.crpt-environments .MuiTab-root {
+  min-height: 58px;
+  font-size: 13px;
+  text-transform: none;
+}
+.crpt-environments .MuiChip-root {
+  color: var(--crpt-accent);
+  border-color: var(--crpt-border);
+  background: var(--crpt-soft);
+  font-size: 10px;
+}
+.crpt-environment-note {
+  margin: 12px 3px 23px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.crpt-surface {
+  --cf-accent: var(--crpt-accent);
+  --cf-accent-soft: var(--crpt-soft);
+  --cf-on-accent: #fff;
+}
+.crpt-dark .crpt-surface {
+  --cf-on-accent: #21143b;
+}
+.crpt-surface .integration-brand {
+  background: #302546;
+}
+.crpt-surface .integration-theme {
+  border-radius: 14px;
+}
+.crpt-surface .integration-brand svg {
+  color: #d3c3ff;
+}
+.crpt-surface .integration-theme > .flex.min-h-\[calc\(100svh-7rem\)\] {
+  min-height: 550px;
+}
+.crpt-console {
+  padding: 0 22px 24px;
+  min-width: 0;
+}
+.crpt-console-tabs {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+.crpt-console-tabs .MuiTab-root {
+  text-transform: none;
+  font-size: 11px;
+  padding: 16px 13px;
+  min-height: 54px;
+  min-width: 0;
+}
+.crpt-catalog-intro,
+.crpt-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.crpt-catalog-intro h2,
+.crpt-panel h2,
+.crpt-connection h2 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  margin: 0;
+  line-height: 1.4;
+}
+.crpt-catalog-intro p,
+.crpt-panel-heading p,
+.crpt-connection > p {
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--cf-muted);
+  margin: 7px 0 0;
+}
+.crpt-catalog-intro > .MuiChip-root {
+  margin-top: 4px;
+  color: var(--crpt-accent);
+  border-color: var(--crpt-border);
+  font-size: 10px;
+}
+.crpt-panel {
+  padding: 22px;
+  border: 1px solid var(--cf-border);
+  border-radius: 12px;
+  background: var(--cf-surface);
+  min-width: 0;
+}
+.crpt-panel .MuiAlert-root {
+  margin: 12px 0;
+}
+.crpt-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.crpt-toolbar > .MuiButton-root {
+  font-size: 11px;
+  white-space: nowrap;
+  min-height: 37px;
+}
+.crpt-toolbar-spacer {
+  flex: 1;
+}
+.crpt-main-toolbar {
+  margin: -3px -3px 20px;
+}
+.crpt-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 0;
+  border-top: 1px solid var(--cf-border);
+}
+.crpt-filters > .MuiTextField-root {
+  width: 172px;
+}
+.crpt-filters > .crpt-search {
+  flex: 1 1 260px;
+  width: auto;
+}
+.crpt-filters .MuiInputBase-root,
+.crpt-access-form .MuiInputBase-root {
+  font-size: 12px;
+}
+.crpt-filters .MuiInputLabel-root {
+  font-size: 12px;
+}
+.crpt-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+.crpt-table {
+  width: 100%;
+  border-collapse: separate !important;
+  border-spacing: 0;
+  text-align: left;
+  font-size: 11px;
+}
+.crpt-table th {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--cf-muted);
+  background: var(--cf-surface-soft);
+  white-space: nowrap;
+  text-align: left;
+  border-block: 1px solid var(--cf-border);
+  padding: 14px 12px;
+}
+.crpt-table th > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font-size: inherit;
+}
+.crpt-table th svg {
+  font-size: 12px;
+}
+.crpt-table td {
+  padding: 16px 12px;
+  border-bottom: 1px solid var(--cf-border);
+  line-height: 1.6;
+  vertical-align: middle;
+}
+.crpt-table .crpt-check-cell {
+  padding: 3px;
+  width: 42px;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--cf-surface);
+}
+.crpt-table th.crpt-check-cell {
+  background: var(--cf-surface-soft);
+}
+.crpt-table .crpt-mono {
+  white-space: nowrap;
+}
+.crpt-table .crpt-product-name {
+  min-width: 200px;
+  max-width: 340px;
+  font-weight: 500;
+}
+.crpt-table tbody tr:hover td {
+  background: var(--cf-surface-soft);
+}
+.crpt-table .crpt-row-selected td {
+  background: var(--crpt-soft);
+}
+.crpt-table td > .MuiButton-root {
+  font-size: 10px;
+}
+.crpt-date {
+  white-space: nowrap;
+  color: var(--cf-muted);
+}
+.crpt-mono {
+  font-family: 'Consolas', monospace;
+  font-size: 11px;
+  letter-spacing: 0.015em;
+  overflow-wrap: anywhere;
+}
+.crpt-selection {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--crpt-soft);
+  color: var(--crpt-accent);
+  font-size: 11px;
+  border: 1px solid var(--crpt-border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.crpt-selection span {
+  color: var(--cf-muted);
+}
+.crpt-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 15px;
+  color: var(--cf-muted);
+  font-size: 10px;
+}
+.crpt-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.crpt-pagination .MuiButton-root {
+  min-width: 32px;
+  padding: 5px;
+}
+.crpt-empty {
+  text-align: center;
+  padding: 52px 15px;
+  color: var(--cf-muted);
+}
+.crpt-empty > svg {
+  color: var(--crpt-accent);
+  font-size: 34px;
+  margin-bottom: 14px;
+  opacity: 0.6;
+}
+.crpt-empty h3 {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--cf-text);
+}
+.crpt-empty p {
+  font-size: 12px;
+  line-height: 1.8;
+  max-width: 450px;
+  margin: 10px auto 20px;
+}
+.crpt-catalog-help {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  font-size: 11px;
+  color: var(--cf-muted);
+  padding: 18px 5px 0;
+  line-height: 1.8;
+}
+.crpt-catalog-help > svg {
+  color: var(--crpt-accent);
+  font-size: 17px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.crpt-panel-footer {
+  padding-top: 20px;
+  border-top: 1px solid var(--cf-border);
+  margin-top: 16px;
+}
+.crpt-panel-footer > span {
+  font-size: 10px;
+  color: var(--cf-muted);
+  line-height: 1.7;
+}
+.crpt-error-text {
+  color: var(--cf-danger);
+}
+.crpt-outcomes {
+  margin-top: 18px;
+}
+.crpt-outcomes h3 {
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+.crpt-access-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 20px;
+}
+.crpt-access-form,
+.crpt-connection form {
+  display: grid;
+  gap: 18px;
+  margin-top: 24px;
+}
+.crpt-access-form p {
+  font-size: 12px;
+  color: var(--cf-muted);
+  line-height: 1.8;
+}
+.crpt-access-form .MuiFormControlLabel-label {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.crpt-xml {
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--cf-surface-soft);
+  border: 1px solid var(--cf-border);
+  padding: 15px;
+  margin-top: 10px;
+  max-height: 280px;
+  overflow: auto;
+}
+.crpt-access-form summary,
+.crpt-account-list summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--crpt-accent);
+}
+.crpt-account-list article {
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid var(--cf-border);
+  padding: 18px 0;
+  font-size: 12px;
+}
+.crpt-account-list article > span {
+  color: var(--cf-muted);
+  font-size: 11px;
+}
+.crpt-account-list article > small {
+  font-size: 10px;
+  color: var(--crpt-accent);
+}
+.crpt-deletion {
+  display: grid;
+  gap: 18px;
+  max-width: 950px;
+}
+.crpt-deletion p,
+.crpt-deletion li {
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--cf-muted);
+}
+.crpt-deletion h3 {
+  font-size: 14px;
+}
+.crpt-deletion ul {
+  list-style: disc;
+  padding-left: 20px;
+}
+.crpt-deletion small {
+  color: var(--cf-muted);
+  font-size: 11px;
+  line-height: 1.8;
+}
+.crpt-connection.MuiPaper-root {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 26px;
+  max-width: 760px;
+  box-shadow: none;
+}
+.crpt-connection h2 {
+  margin: 18px 0 12px;
+}
+.crpt-editor-dialog {
+  max-height: 90dvh !important;
+  overflow-y: auto;
+}
+.nav-item[href$='/crpt'] svg {
+  color: #c3b4ff;
+}
+.nav-item[href$='/crpt'].active {
+  background: #c3b4ff13;
+  border-color: #c3b4ff44;
+}
+.nav-item[href$='/crpt'].active .nav-active-mark {
+  background: #c3b4ff;
+}
+.crpt-services.MuiPaper-root {
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: none;
+  overflow: hidden;
+}
+.crpt-services .MuiTab-root {
+  text-transform: none;
+  font-weight: 650;
+}
+.crpt-suz {
+  padding: 0 24px 24px;
+  min-width: 0;
+}
+.crpt-suz > .MuiTabs-root {
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--cf-border);
+}
+.crpt-suz .MuiTab-root {
+  text-transform: none;
+  font-size: 12px;
+  font-weight: 600;
+}
+.crpt-suz-intro {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 24px 0;
+}
+.crpt-suz-intro strong {
+  font-size: 17px;
+}
+.crpt-suz-intro p {
+  color: var(--cf-muted);
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+.crpt-suz-intro > .MuiChip-root {
+  margin-left: auto;
+}
+.crpt-suz-icon {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--crpt-soft);
+  color: var(--crpt-accent);
+  display: flex;
+}
+.crpt-suz .crpt-toolbar > .MuiTextField-root {
+  min-width: 180px;
+}
+.crpt-suz-filters {
+  flex-wrap: wrap;
+}
+.crpt-suz-filters > .MuiTextField-root {
+  flex: 1;
+}
+.crpt-suz .crpt-table small {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--cf-muted);
+  max-width: 260px;
+  overflow-wrap: anywhere;
+}
+.crpt-suz-orders {
+  min-width: 1000px;
+}
+.crpt-suz-row-actions {
+  display: grid;
+  white-space: nowrap;
+}
+.crpt-suz-order-link {
+  color: var(--crpt-accent);
+  text-align: left;
+  font-weight: 650;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.crpt-suz-buffers {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  background: var(--cf-surface-soft);
+  border-radius: 10px;
+}
+.crpt-suz-buffers > div {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.crpt-suz-composer {
+  display: grid;
+  gap: 16px;
+  margin-block: 18px;
+}
+.crpt-suz-catalog-picker {
+  padding: 18px 0;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--cf-border);
+}
+.crpt-suz-catalog-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 18px;
+  border-radius: 12px;
+  background: var(--crpt-soft);
+  font-size: 12px;
+}
+.crpt-suz-catalog-result > strong,
+.crpt-suz-catalog-result > p {
+  flex-basis: 100%;
+}
+.crpt-suz-product {
+  border: 1px solid var(--cf-border);
+  border-radius: 12px;
+  padding: 18px;
+  background: var(--cf-surface-soft);
+}
+.crpt-suz-product-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  font-size: 13px;
+}
+.crpt-suz-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px 14px;
+}
+.crpt-suz-fields .MuiInputBase-root {
+  background: var(--cf-surface);
+}
+.crpt-suz-fields .MuiFormHelperText-root {
+  font-size: 10px;
+}
+.crpt-suz-dialog-fields {
+  display: grid;
+  gap: 20px;
+  margin: 24px 0;
+}
+.crpt-suz-review {
+  margin-block: 20px;
+}
+.crpt-suz-review > small {
+  display: block;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.crpt-suz-help > p {
+  color: var(--cf-muted);
+  font-size: 13px;
+  line-height: 1.9;
+}
+.crpt-suz-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-block: 24px;
+}
+.crpt-suz-status-grid > div {
+  padding: 20px;
+  border: 1px solid var(--cf-border);
+  border-radius: 12px;
+}
+.crpt-suz-status-grid p {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 8px;
+  font-size: 12px;
+}
+.crpt-suz-status-grid code {
+  color: var(--crpt-accent);
+}
+.crpt-suz-imports > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border-bottom: 1px solid var(--cf-border);
+  font-size: 12px;
+}
+@media (max-width: 1100px) {
+  .crpt-suz-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 650px) {
+  .crpt-services .MuiTab-root {
+    min-width: 0;
+    flex: 1;
+    font-size: 12px;
+    padding-inline: 10px;
+  }
+  .crpt-suz {
+    padding: 0 12px 18px;
+  }
+  .crpt-suz-intro {
+    flex-wrap: wrap;
+  }
+  .crpt-suz-intro > .MuiChip-root {
+    margin-left: 0;
+  }
+  .crpt-suz-fields,
+  .crpt-suz-status-grid {
+    grid-template-columns: 1fr;
+  }
+  .crpt-suz-product {
+    padding: 14px;
+  }
+  .crpt-suz .crpt-toolbar > .MuiTextField-root {
+    min-width: 0;
+    width: 100%;
+    flex: 1 1 100%;
+  }
+}
+@media (max-width: 1100px) {
+  .crpt-access-grid {
+    grid-template-columns: 1fr;
+  }
+  .crpt-toolbar-spacer {
+    display: none;
+  }
+  .crpt-main-toolbar {
+    gap: 6px;
+  }
+}
+@media (max-width: 650px) {
+  .crpt-banner {
+    padding: 20px;
+    gap: 12px;
+  }
+  .crpt-banner strong {
+    font-size: 15px;
+  }
+  .crpt-version {
+    display: none;
+  }
+  .crpt-environments.MuiPaper-root {
+    display: block;
+    padding: 0;
+  }
+  .crpt-environments .MuiChip-root {
+    margin: 0 12px 12px;
+  }
+  .crpt-environments .MuiTab-root {
+    min-height: 51px;
+    font-size: 12px;
+    flex: 1;
+  }
+  .crpt-environments .MuiTabs-flexContainer {
+    width: 100%;
+  }
+  .crpt-console {
+    padding: 0 12px 18px;
+  }
+  .crpt-console-tabs {
+    margin-inline: -5px;
+  }
+  .crpt-console-tabs .MuiTab-root {
+    padding: 15px 10px;
+  }
+  .crpt-catalog-intro {
+    flex-wrap: wrap;
+  }
+  .crpt-panel {
+    padding: 16px 12px;
+  }
+  .crpt-panel h2,
+  .crpt-catalog-intro h2 {
+    font-size: 16px;
+  }
+  .crpt-toolbar > .MuiButton-root {
+    flex: 1 1 auto;
+  }
+  .crpt-filters {
+    gap: 14px;
+  }
+  .crpt-filters > .MuiTextField-root {
+    width: calc(50% - 7px);
+  }
+  .crpt-filters > .crpt-search {
+    flex-basis: 100%;
+  }
+  .crpt-selection {
+    gap: 8px;
+  }
+  .crpt-pagination {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .crpt-pagination > div {
+    margin-left: auto;
+  }
+  .crpt-connection.MuiPaper-root {
+    padding: 20px 15px;
+  }
+  .crpt-access-grid > .crpt-panel > .crpt-toolbar {
+    align-items: stretch;
+  }
+  .crpt-access-grid .crpt-toolbar > .MuiTextField-root {
+    width: 100%;
+  }
+}

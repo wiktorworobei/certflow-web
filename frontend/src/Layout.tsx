@@ -24,6 +24,7 @@ const navigation = [
   { to: '/instruction', label: 'Инструкция', icon: <DescriptionOutlined/> },
   { to: '/directories', label: 'Справочники', icon: <CorporateFareOutlined/> },
   { to: '/catalog', label: 'Карточки ЧЗ', icon: <Inventory2Outlined/> },
+  { to: '/crpt', label: 'ZNAQ.CRPT', icon: <QrCode2Rounded/> },
   { to: '/marking', label: 'ЧЗ и Наша марка', icon: <QrCode2Rounded/> },
 ];
 export function Layout() {

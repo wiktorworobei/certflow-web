@@ -1,5 +1,6 @@
 import { BadgeCheck, CloudOff, Loader2, LogOut, ScanLine } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import type { ReactNode } from 'react';
 import { AuthorizedAppContent } from "@marking/components/honest-sign/AuthorizedAppContent";
 import { CertificateLogin } from "@marking/components/honest-sign/CertificateLogin";
 import { NationalCatalogWorkspace } from "@marking/components/honest-sign/NationalCatalogWorkspace";
@@ -16,17 +17,21 @@ import { cn } from "@marking/lib/utils";
 type HonestSignAppProps = {
     companyId: string;
     catalogOnly?: boolean;
+    catalogWorkspace?: (selectedThumbprint: string) => ReactNode;
+    workspaceTitle?: string;
+    workspaceDescription?: string;
 };
 
-export function HonestSignApp({ companyId, catalogOnly = false }: HonestSignAppProps) {
+export function HonestSignApp(props: HonestSignAppProps) {
+    const { companyId } = props;
     return (
         <IntegrationSurface integration="honestSign">
-            <HonestSignWorkspace key={companyId} companyId={companyId} catalogOnly={catalogOnly}/>
+            <HonestSignWorkspace key={companyId} {...props}/>
         </IntegrationSurface>
     );
 }
 
-function HonestSignWorkspace({ companyId, catalogOnly = false }: HonestSignAppProps) {
+function HonestSignWorkspace({ companyId, catalogOnly = false, catalogWorkspace, workspaceTitle, workspaceDescription }: HonestSignAppProps) {
     const { t } = useTranslation();
     const app = useMarkingApp(companyId, catalogOnly);
     const connectivity = useHonestSignConnectivity(companyId, app.isAuthorized && !catalogOnly);
@@ -65,10 +70,10 @@ function HonestSignWorkspace({ companyId, catalogOnly = false }: HonestSignAppPr
                     </div>
                     <div>
                         <p className="text-xs font-medium tracking-wide text-muted-foreground">
-                            {catalogOnly ? 'Национальный каталог · карточки товаров' : t("honestSign.systemLabel")}
+                            {catalogOnly ? workspaceTitle ? 'Честный знак · СУЗ 3.0' : 'Национальный каталог · карточки товаров' : t("honestSign.systemLabel")}
                         </p>
                         <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                            <WorkspaceHeader title={catalogOnly ? 'Работа с карточками товаров' : t("honestSign.title")} />
+                            <WorkspaceHeader title={catalogOnly ? workspaceTitle ?? 'Работа с карточками товаров' : t("honestSign.title")} />
                             <Badge variant="secondary" className="gap-1">
                                 <BadgeCheck
                                     className="size-3.5"
@@ -106,7 +111,7 @@ function HonestSignWorkspace({ companyId, catalogOnly = false }: HonestSignAppPr
                             </Badge>}
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">
-                            {catalogOnly ? 'Описание товара, характеристики, модерация и подписание карточки.' : t("honestSign.description")}
+                            {catalogOnly ? workspaceDescription ?? 'Описание товара, характеристики, модерация и подписание карточки.' : t("honestSign.description")}
                         </p>
                     </div>
                 </div>
@@ -146,7 +151,7 @@ function HonestSignWorkspace({ companyId, catalogOnly = false }: HonestSignAppPr
                     </Notice>
                 </div>
             ) : null}
-            {catalogOnly ? <NationalCatalogWorkspace companyId={companyId} selectedThumbprint={app.selectedThumbprint}/> : <AuthorizedAppContent app={app} companyId={companyId} />}
+            {catalogOnly ? catalogWorkspace ? catalogWorkspace(app.selectedThumbprint) : <NationalCatalogWorkspace companyId={companyId} selectedThumbprint={app.selectedThumbprint}/> : <AuthorizedAppContent app={app} companyId={companyId} />}
         </div>
     );
 }

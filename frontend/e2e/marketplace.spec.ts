@@ -130,7 +130,7 @@ test('daily status monitoring shows changes in the notification bell and marks o
   const bell = page.getByRole('button', { name: 'Уведомления реестра: 1 непрочитанных', exact: true }); await expect(bell).toBeVisible(); await bell.click();
   const menu = page.getByRole('menu'); await expect(menu.getByText('Изменился статус декларации', { exact: true })).toBeVisible();
   await menu.getByRole('button', { name: 'Прочитать все', exact: true }).click();
-  await page.keyboard.press('Escape');
+  await expect(menu).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Уведомления реестра', exact: true })).toBeVisible();
   expect(read).toBe(true); expect(checks).toBe(1);
   await page.screenshot({ path: '../artifacts/screenshots/registry-monitoring.png' });

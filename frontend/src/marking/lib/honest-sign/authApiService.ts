@@ -1,6 +1,7 @@
 import { cryptoProSignatureService } from "@marking/lib/honest-sign/cryptoProSignatureService";
 import { apiClient, toHttpError } from "@marking/lib/honest-sign/httpClient";
 import i18n from "@marking/src/i18n";
+import { captureMarkingScope, assertMarkingScope } from '../workspace-scope';
 
 export type AppSessionResponse = {
     isAuthenticated: true;
@@ -82,17 +83,21 @@ export const authApiService = {
     },
 
     async signAndSendAuthKey(thumbprint: string): Promise<AppSessionResponse> {
+        const scope = captureMarkingScope();
         const clientChallenge = await this.getHonestSignChallenge();
+        assertMarkingScope(scope);
         const clientSignature = await cryptoProSignatureService.signAttached({
             thumbprint,
             message: clientChallenge.data,
         });
         const bearerChallenge = await this.getHonestSignChallenge();
+        assertMarkingScope(scope);
         const bearerSignature = await cryptoProSignatureService.signAttached({
             thumbprint,
             message: bearerChallenge.data,
         });
 
+        assertMarkingScope(scope);
         return this.completeHonestSign({
             uuid: clientChallenge.uuid,
             data: clientSignature,
