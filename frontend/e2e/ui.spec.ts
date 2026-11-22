@@ -6,6 +6,48 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { installCertificatePluginFixture } from './certificate-plugin-fixture';
 import type { NormativeDocument } from '../src/normativeApi';
+import { emptyDeclaration, type Declaration } from '../src/types';
+import { emptyDirection, emptyEvidence } from '../src/evidenceTypes';
+import { emptyWorkspace } from '../src/workspaceTypes';
+
+test('adds a list of test protocols with a shared date and laboratory direction', async ({ page }) => {
+  test.setTimeout(120000);
+  const direction = {
+    ...emptyDirection(), number: 'Л-01', laboratoryName: 'Испытательная лаборатория', accreditationNumber: 'RA.TEST',
+  };
+  const fixture = await fixtures(page, false, {
+    reports: [{ number: 'Ранее внесённый', date: '2026-11-02', laboratoryName: 'Другая лаборатория', accreditationNumber: '' }],
+    evidence: { ...emptyEvidence(), directions: [direction] },
+  });
+  await login(page);
+  await page.goto('/#/declarations/44444444-4444-4444-8444-000000000000');
+  await openDeclarationPart(page, 'Отбор / Испытания (ПИ) / Анализ пр-ва');
+  await page.getByRole('button', { name: 'Внести протоколы по направлению', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Внести протоколы списком' });
+  await dialog.getByLabel('Номера протоколов').fill(' ИП-1, ИП-2\nИП 3\nИП-1 ');
+  const add = dialog.getByRole('button', { name: 'Добавить протоколы', exact: true });
+  await expect(add).toBeDisabled();
+  await dialog.getByLabel('Общая дата протоколов').fill('2026-11-10');
+  await add.click();
+  await expect(dialog).toBeHidden();
+  const numbers = page.getByLabel('Номер протокола', { exact: true });
+  await expect(numbers).toHaveCount(4);
+  await expect(numbers.nth(3)).toHaveValue('ИП 3');
+  await page.getByRole('button', { name: 'Внести протоколы по направлению', exact: true }).click();
+  await dialog.getByLabel('Номера протоколов').fill('ИП-2');
+  await dialog.getByLabel('Общая дата протоколов').fill('2026-11-10');
+  await expect(dialog.getByRole('alert')).toContainText('Уже добавлено');
+  await expect(add).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect.poll(() => fixture.getSaved()?.reports).toMatchObject([
+    { number: 'Ранее внесённый' },
+    ...['ИП-1', 'ИП-2', 'ИП 3'].map(number => ({
+      number, date: '2026-11-10', laboratoryName: 'Испытательная лаборатория', accreditationNumber: 'RA.TEST',
+      details: { directionId: direction.id, scopeConfirmed: false },
+    })),
+  ]);
+});
 
 test('normative field keeps selected and manually entered values', async ({ page }) => {
   const fixture = await fixtures(page);
@@ -257,6 +299,142 @@ test('declaration builder derives progress from entered data and preserves sourc
   await page.setViewportSize({width:320,height:844}); expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
+test('saves a foreign manufacturer branch and calculates the validity end date', async ({ page }) => {
+  const fixture = await fixtures(page);
+  await login(page);
+  await page.goto(`/#/declarations/${fixture.getDeclarations()[0].id}`);
+  await openDeclarationPart(page, 'Изготовитель');
+  await page.getByRole('button', { name: 'Вручную', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Страна', exact: true }).fill('KR');
+  await page.getByRole('option', { name: /\(KR\)$/ }).click();
+  await expect(page.getByText('Код страны KR', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Добавить площадку или филиал', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Добавить площадку или филиал' });
+  await dialog.getByRole('combobox', { name: 'Тип адреса' }).click();
+  await page.getByRole('option', { name: 'Филиал', exact: true }).click();
+  await dialog.getByRole('combobox', { name: 'Страна площадки' }).fill('CN');
+  await page.getByRole('option', { name: 'Китай (CN)', exact: true }).click();
+  await dialog.getByLabel('Адрес площадки').fill('Шанхай, улица Примерная');
+  await dialog.getByRole('combobox', { name: 'Идентификатор адреса' }).click();
+  await page.getByRole('option', { name: 'Координаты', exact: true }).click();
+  await dialog.getByLabel('Широта').fill('91');
+  await dialog.getByLabel('Долгота').fill('121,47');
+  await dialog.getByRole('button', { name: 'Применить', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Укажите широту');
+  await dialog.getByLabel('Широта').fill('31,23');
+  await dialog.getByRole('button', { name: 'Применить', exact: true }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole('button', { name: 'Срок действия', exact: true }).click();
+  await page.getByLabel('Дата принятия', { exact: true }).fill('2028-02-29');
+  await page.getByRole('button', { name: '+1 год', exact: true }).click();
+  await expect(page.getByLabel('Действует до', { exact: true })).toHaveValue('2029-02-28');
+  await page.getByLabel('Дата принятия', { exact: true }).fill('2026-11-16');
+  await page.getByRole('button', { name: '+5 лет', exact: true }).click();
+  await expect(page.getByLabel('Действует до', { exact: true })).toHaveValue('2031-11-15');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect.poll(() => fixture.getSaved()).toMatchObject({
+    validUntil: '2031-11-15',
+    workspace: { manufacturerCountryCode: 'KR', manufacturerSites: [{ kind: 'Branch', country: 'Китай', countryCode: 'CN', address: 'Шанхай, улица Примерная', identifier: { latitude: '31.23', longitude: '121.47' } }] },
+  });
+
+  await page.reload();
+  await openDeclarationPart(page, 'Изготовитель');
+  await page.getByRole('button', { name: 'Изменить адрес 1', exact: true }).click();
+  const saved = page.getByRole('dialog', { name: 'Изменить адрес изготовителя' });
+  await expect(saved.getByText('Код страны CN', { exact: true })).toBeVisible();
+  await expect(saved.getByLabel('Широта')).toHaveValue('31.23');
+  await expect(saved.getByLabel('Долгота')).toHaveValue('121.47');
+});
+
+test('records why a customs document is missing and reloads the explanation', async ({ page }) => {
+  test.setTimeout(120_000);
+  const fixture = await fixtures(page);
+  await login(page);
+  await page.goto('/#/declarations/44444444-4444-4444-8444-000000000000');
+  await openDeclarationPart(page, 'Отбор / Испытания (ПИ) / Анализ пр-ва');
+  await page.getByRole('button', { name: 'Добавить направление', exact: true }).click();
+  await page.getByRole('button', { name: 'Добавить таможенный документ', exact: true }).click();
+  await page.getByLabel('Номер доказательного документа', { exact: true }).fill('ДТ-01');
+  await page.getByRole('combobox', { name: /^Тип документа/ }).click();
+  await page.getByRole('option', { name: 'Нет документа', exact: true }).click();
+  await expect(page.getByLabel('Номер доказательного документа', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Файл доказательного документа', exact: true })).toHaveCount(0);
+  const reason = page.getByLabel('Причина отсутствия таможенного документа');
+  const explanation = 'Образцы отобраны на территории страны испытаний.';
+  await reason.fill(explanation);
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect.poll(() => fixture.getSaved()?.evidence).toMatchObject({ directions: [{ customsDocuments: [{
+    kind: 'Missing', description: explanation, number: '', date: null, issuer: '', attachmentId: null,
+  }] }] });
+
+  await page.reload();
+  await openDeclarationPart(page, 'Отбор / Испытания (ПИ) / Анализ пр-ва');
+  await expect(reason).toHaveValue(explanation);
+});
+
+test('declaration builder saves structured batch details and shipping documents', async ({ page }) => {
+  const fixture = await fixtures(page);
+  await login(page);
+  await page.goto(`/#/declarations/${fixture.getDeclarations()[0].id}`);
+  await openDeclarationPart(page, 'Продукция');
+  await expect(page.getByLabel('Количество в партии')).toHaveCount(0);
+  await page.getByRole('combobox', { name: 'Объект декларирования' }).click();
+  await page.getByRole('option', { name: 'Партия', exact: true }).click();
+  await page.getByLabel('Количество в партии').fill('150');
+  await page.getByLabel('Единица измерения').fill('штук');
+  await page.getByLabel('Идентификатор партии (GS1)').fill('BATCH-150');
+
+  for (const [name, number, date] of [
+    ['Контракт', 'CT-15', '2025-10-21'],
+    ['Инвойс', 'INV-42', '2026-10-19'],
+  ]) {
+    await page.getByRole('button', { name: 'Добавить документ', exact: true }).click();
+    await page.getByRole('menuitem', { name, exact: true }).click();
+    const row = page.getByRole('group', { name: /^Документ \d+$/ }).last();
+    await expect(row.getByLabel('Наименование документа')).toHaveValue(name);
+    await row.getByLabel('Номер документа').fill(number);
+    await row.getByLabel('Дата документа').fill(date);
+  }
+
+  const printText = 'Партия 150 штук. Контракт № CT-15 от 21.10.2025, Инвойс № INV-42 от 19.10.2026';
+  await expect(page.getByText(printText, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Срок действия', exact: true }).click();
+  await page.getByLabel('Действует до', { exact: true }).fill('2029-10-18');
+  await page.getByRole('checkbox', { name: 'Срок не установлен' }).check();
+  await expect(page.getByLabel('Действует до', { exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Действует до', { exact: true })).toHaveValue('');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect.poll(() => fixture.getSaved()?.product).toMatchObject({
+    productionType: 'Batch',
+    batchQuantity: '150',
+    batchUnit: 'штук',
+    batchIdentifier: 'BATCH-150',
+    shippingDocuments: [
+      { name: 'Контракт', number: 'CT-15', date: '2025-10-21' },
+      { name: 'Инвойс', number: 'INV-42', date: '2026-10-19' },
+    ],
+  });
+  await expect.poll(() => fixture.getSaved()).toMatchObject({
+    validUntil: null,
+    workspace: { validityNotEstablished: true },
+  });
+
+  await page.reload();
+  await openDeclarationPart(page, 'Заявка/Документы');
+  const application = page.locator('#declaration-case-application');
+  await expect(application.getByRole('heading', { name: 'Товаросопроводительные документы' })).toBeVisible();
+  await expect(application).toContainText('Контракт № CT-15 от 21.10.2025, Инвойс № INV-42 от 19.10.2026');
+  await openDeclarationPart(page, 'Продукция');
+  await expect(page.getByText(printText, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Удалить документ 1', exact: true }).click();
+  await expect(page.getByLabel('Номер документа')).toHaveValue('INV-42');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect.poll(() => fixture.getSaved()?.product).toMatchObject({
+    shippingDocuments: [{ name: 'Инвойс', number: 'INV-42', date: '2026-10-19' }],
+  });
+});
+
 test('declaration builder saves the current revision before export and handles export failures without FGIS', async ({ page }) => {
   const fixture=await fixtures(page); const exports:string[]=[]; let submissions=0;
   await page.route('**/export/*',route=>{exports.push(route.request().url());return route.fulfill({contentType:'application/octet-stream',body:'UI export fixture'});});
@@ -356,7 +534,7 @@ async function fixtures(page: Page, lookupConfigured = false, declarationOverrid
   const declarationEvents = new Map<string, Record<string, unknown>[]>();
   const declarationData = (row = rows[0]) => ({ ...row, ...(savedBody ?? {}), applicant: { ...party, ...((savedBody?.applicant as object) ?? {}) }, manufacturer: { ...party, ...((savedBody?.manufacturer as object) ?? {}) },
     product: { name: '', identification: '', tnVed: '', okpd2: '', gtin: '', productionType: 'Serial', batchDetails: '', storageConditions: '', ...((savedBody?.product as object) ?? {}) },
-    regulations: [], additionalInfo: '', adoptedAt: null, validUntil: null, scheme: '1д', reports: [], attachments: [], missingRequirements: ['заявитель'], ...declarationOverrides,
+    regulations: savedBody?.regulations ?? [], additionalInfo: '', adoptedAt: null, validUntil: null, scheme: '1д', reports: [], attachments: [], missingRequirements: ['заявитель'], ...declarationOverrides,
     status: row.status, revision: row.revision, events: declarationEvents.get(row.id) ?? declarationOverrides.events ?? [] });
   let markingSettings = { profile: 'Sandbox', omsId: '', connectionId: '', participantInn: '', updatedAtUtc: null as string | null };
   const markingLinks: Record<string, unknown>[] = [];
@@ -503,7 +681,7 @@ async function fixtures(page: Page, lookupConfigured = false, declarationOverrid
     }
     if (p.endsWith('/declarations')) {
       const search = (url.searchParams.get('search') ?? '').toLowerCase();
-      const status = url.searchParams.get('status'); const list = rows.filter(r => r.title.toLowerCase().includes(search) && (status ? r.status === status : r.status !== 'Archived'));
+      const status = url.searchParams.get('status'); const list = rows.filter(r => `${r.reference} ${r.title}`.toLowerCase().includes(search) && (status ? r.status === status : r.status !== 'Archived'));
       const page = Number(url.searchParams.get('page') ?? 1); const pageSize = Number(url.searchParams.get('pageSize') ?? 10);
       return json({ items: list.slice((page - 1) * pageSize, page * pageSize), total: list.length, page, pageSize });
     }
@@ -643,8 +821,8 @@ test('OKPD2 lookup is unavailable in a read-only declaration', async ({ page }) 
 
 const tnVedLeaf = { code: '0101210000', text: 'лошади: чистопородные племенные животные', tariff: '0%', detailsUrl: 'https://www.tws.by/tws/tnved' };
 const tnVedOther = { code: '0101291000', text: 'лошади: прочие: убойные', tariff: '5%', detailsUrl: '' };
-async function tnVedFixtures(page: Page, configured = true, total = 2) {
-  await fixtures(page);
+async function tnVedFixtures(page: Page, configured = true, total = 2, existingDraft = false) {
+  const state = await fixtures(page);
   await page.route('**/classifiers/tnved/**', route => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('/settings')) return route.fulfill({ json: { isConfigured: configured, provider: 'Локальный справочник', codeCount: 13294, dataDate: '2026-10-30', sourceFile: 'TWS_TNVED_2026-10-30.xlsx', importedAt: '2026-10-30T12:00:00Z' } });
@@ -652,7 +830,9 @@ async function tnVedFixtures(page: Page, configured = true, total = 2) {
     const codes = query ? [tnVedLeaf] : current === 1 ? [tnVedLeaf, tnVedOther] : [{ ...tnVedLeaf, code: '0201100001', text: 'Код на второй странице' }];
     return route.fulfill({ json: { items: codes, total: query ? 1 : total, page: current, pageSize: 25 } });
   });
-  await login(page); await page.goto('/#/declarations/new'); await createDeclarationDraft(page);
+  await login(page);
+  await page.goto(`/#/declarations/${existingDraft ? state.getDeclarations()[0].id : 'new'}`);
+  if (!existingDraft) await createDeclarationDraft(page);
   await openDeclarationPart(page, 'Продукция');
 }
 
@@ -673,6 +853,72 @@ test('TN VED local directory previews leading-zero codes and fills only the prod
   await expect(page.getByLabel('Код ТН ВЭД', { exact: true })).toHaveValue('0101210000');
   await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Моя продукция');
   await expect(page.getByLabel('ОКПД2', { exact: true })).toHaveValue('01.43.10');
+});
+
+test('TN VED adds a directory code to manually entered declaration codes without replacing them', async ({ page }) => {
+  await tnVedFixtures(page, true, 2, true);
+  const codes = page.getByLabel('Код ТН ВЭД', { exact: true });
+  await codes.fill('6201; 6202');
+  await page.getByRole('button', { name: 'Подобрать код ТН ВЭД', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: /Подбор кода ТН ВЭД/ });
+  await dialog.getByRole('button', { name: /чистопородные племенные животные/ }).click();
+  await dialog.getByRole('button', { name: 'Добавить код', exact: true }).click();
+  await expect(codes).toHaveValue('6201, 6202, 0101210000');
+  const saved = page.waitForRequest(request => request.method() === 'PUT' && /\/declarations\/[^/]+$/.test(new URL(request.url()).pathname));
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  expect((await saved).postDataJSON().product.tnVed).toBe('6201, 6202, 0101210000');
+});
+
+test('TN VED flags an unknown typed code and clears the warning after replacing it with a valid prefix', async ({ page }) => {
+  await tnVedFixtures(page, true, 2, true);
+  await page.route('**/classifiers/tnved/search?**', route => {
+    const query = new URL(route.request().url()).searchParams.get('query');
+    const items = query === '6201' || query === '6202' ? [{ ...tnVedLeaf, code: `${query}000001` }] : [];
+    return route.fulfill({ json: { items, total: items.length, page: 1, pageSize: 1 } });
+  });
+  const field = page.getByLabel('Код ТН ВЭД', { exact: true });
+  await field.fill('6201, 0000');
+  await expect(field).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByText(/В справочнике ТН ВЭД не найдены коды: 0000/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Сохранить', exact: true })).toBeEnabled();
+  await field.fill('6201, 6202');
+  await expect(field).toHaveAttribute('aria-invalid', 'false');
+  await expect(page.getByText(/Введите до 30 кодов/)).toBeVisible();
+});
+
+test('EAEU groups are tied to selected regulations and can be corrected after a regulation is removed', async ({ page }) => {
+  const state = await fixtures(page);
+  await login(page);
+  await page.goto(`/#/declarations/${state.getDeclarations()[0].id}`);
+  await openDeclarationPart(page, 'ГОСТы/Тех.регламент');
+  const normative = page.getByRole('combobox', { name: 'Технические регламенты / стандарты' });
+  const add = page.getByRole('button', { name: 'Добавить группу ЕАЭС' });
+  await expect(add).toBeDisabled();
+  for (const document of ['ГОСТ 12345-2020', 'ТР ТС 007/2011', 'ТР ТС 017/2011']) {
+    await normative.fill(document);
+    await normative.press('Enter');
+  }
+  await add.click();
+  const dialog = page.getByRole('dialog', { name: 'Добавить группу продукции ЕАЭС' });
+  await dialog.getByRole('combobox', { name: /Технический регламент группы/ }).click();
+  await expect(page.getByRole('option', { name: 'ГОСТ 12345-2020' })).toHaveCount(0);
+  await page.getByRole('option', { name: 'ТР ТС 017/2011' }).click();
+  await dialog.getByLabel('Код группы').fill('017.002.08');
+  await dialog.getByRole('textbox', { name: /Наименование группы/ }).fill('Изделия костюмные');
+  await dialog.getByRole('button', { name: 'Применить', exact: true }).click();
+  const groups = page.getByRole('region', { name: 'Группы продукции ЕАЭС' });
+  await expect(groups).toContainText('017.002.08 · Изделия костюмные');
+  await normative.press('Backspace');
+  await expect(groups).toContainText('Регламент этой группы убран из декларации.');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect.poll(() => state.getSaved()?.workspace).toMatchObject({ productGroups: [{ regulation: 'ТР ТС 017/2011', code: '017.002.08', name: 'Изделия костюмные' }] });
+  await groups.getByRole('button', { name: 'Изменить', exact: true }).click();
+  const edit = page.getByRole('dialog', { name: 'Изменить группу продукции ЕАЭС' });
+  await edit.getByRole('combobox', { name: /Технический регламент группы/ }).click();
+  await page.getByRole('option', { name: 'ТР ТС 007/2011' }).click();
+  await edit.getByLabel('Код группы').fill('007.001');
+  await edit.getByRole('button', { name: 'Применить', exact: true }).click();
+  await expect(groups).not.toContainText('Регламент этой группы убран из декларации.');
 });
 
 test('TN VED local search uses the product name and resets selection on input changes', async ({ page }) => {
@@ -857,7 +1103,42 @@ test('declaration archive can be read by a viewer who cannot archive documents',
   await expect(page.getByRole('button', { name: 'Открыть архив', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /Восстановить/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'В архив', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Создать копию', exact: true })).toHaveCount(0);
   expect(fixture.getStatusRequests()).toHaveLength(0);
+});
+
+test('declaration copy from the editor opens a new draft with a persistent source link', async ({ page }) => {
+  const fixture = await fixtures(page, false, {}, 'Manager');
+  const [source] = fixture.getDeclarations();
+  const copy = {
+    ...source, ...emptyDeclaration(), id: '55555555-5555-4555-8555-000000000000', reference: 'CF-26-COPY',
+    title: `${source.title} — копия`, status: 'Draft', revision: 1, attachments: [], events: [], missingRequirements: [],
+    workspace: { sections: {}, files: [], copySource: { id: source.id, reference: source.reference } },
+  };
+  let requests = 0;
+  await page.route(`**/declarations/${source.id}/copy`, route => {
+    expect(route.request().method()).toBe('POST');
+    requests++;
+    return route.fulfill({ json: copy });
+  });
+  await page.route(`**/declarations/${copy.id}`, route => route.fulfill({ json: copy }));
+  await login(page);
+  await page.goto(`/#/declarations/${source.id}`);
+  await page.getByRole('button', { name: 'Создать копию', exact: true }).click();
+  await expect(page.getByRole('heading', { name: copy.title, exact: true })).toBeVisible();
+  expect(requests).toBe(1);
+
+  await page.reload();
+  const sourceLink = page.getByRole('link', { name: `Исходная декларация ${source.reference}`, exact: true });
+  await expect(sourceLink).toBeVisible();
+  await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill('Несохранённое название');
+  await expect(page.getByRole('button', { name: 'Создать копию', exact: true })).toBeDisabled();
+  page.once('dialog', dialog => dialog.dismiss());
+  await sourceLink.click();
+  await expect(page).toHaveURL(new RegExp(copy.id));
+  page.once('dialog', dialog => dialog.accept());
+  await sourceLink.click();
+  await expect(page.getByRole('heading', { name: source.title, exact: true })).toBeVisible();
 });
 
 test('declaration archive returns to a valid page after the last row on a page is archived', async ({ page }) => {
@@ -1596,6 +1877,75 @@ test('manual phone and registration authority can be entered but are replaced by
   expect(requests).toBe(2);
 });
 
+test('builder saves manual company details and reuses them by OGRN separately from the registry', async ({ page }) => {
+  test.setTimeout(60000);
+  const fixture = await fixtures(page, true);
+  const ogrn = '1077761726790';
+  const phone = '+7 999 123-45-67';
+  const email = 'directory-contacts@example.com';
+  const name = 'Заявитель с ручными контактами';
+  const registrySearches: string[] = [];
+  await page.route('**/organizations/lookup', route => {
+    registrySearches.push(route.request().postDataJSON().query);
+    return route.fulfill({ json: { items: [], retrievedAt: '2026-11-19T12:00:00Z', fromCache: false } });
+  });
+  await login(page);
+  await page.goto('/#/declarations/new');
+  await createDeclarationDraft(page, 'Макет с новыми реквизитами');
+  await page.getByRole('button', { name: 'Вручную', exact: true }).click();
+  await page.getByLabel('Полное наименование', { exact: true }).fill(name);
+  await page.getByLabel('ОГРН / ОГРНИП', { exact: true }).fill(ogrn);
+  await page.getByLabel('Телефон', { exact: true }).fill(phone);
+  await page.getByLabel('Электронная почта', { exact: true }).fill(email);
+  const addCompany = page.getByRole('button', { name: 'Добавить в справочник', exact: true });
+  await addCompany.click();
+  await expect.poll(() => fixture.getOrganizations()[0]).toMatchObject({ kind: 'Applicant', name, ogrn, phone, email });
+  await expect(addCompany).toHaveCount(0);
+
+  await page.goto('/#/declarations/new');
+  await createDeclarationDraft(page, 'Макет с повторной подстановкой');
+  const directory = page.getByRole('combobox', { name: 'Подставить из справочника' });
+  await directory.fill(ogrn);
+  await expect(page.getByRole('option', { name: new RegExp(name) })).toBeVisible();
+  await page.getByRole('button', { name: 'Реестр DaData', exact: true }).click();
+  const registry = organizationLookupSurface(page);
+  await expect(registry.getByLabel('ИНН или ОГРН / ОГРНИП')).toHaveValue(ogrn);
+  expect(registrySearches).toEqual([]);
+  await registry.getByRole('button', { name: 'Найти организацию', exact: true }).click();
+  await expect(registry.getByText(/Организация не найдена/)).toBeVisible();
+  expect(registrySearches).toEqual([ogrn]);
+  await registry.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(directory).toHaveValue(ogrn);
+  await directory.press('ArrowDown');
+  await page.getByRole('option', { name: new RegExp(name) }).click();
+  await openDeclarationPart(page, 'Заявитель');
+  await expect(page.getByLabel('Телефон', { exact: true })).toHaveValue(phone);
+  await expect(page.getByLabel('Электронная почта', { exact: true })).toHaveValue(email);
+  expect(registrySearches).toEqual([ogrn]);
+
+  await openDeclarationPart(page, 'Изготовитель');
+  await directory.fill(ogrn);
+  await expect(page.getByText('В справочнике нет совпадений', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Вручную', exact: true }).click();
+  await page.getByLabel('Полное наименование', { exact: true }).fill(name);
+  await page.getByLabel('ОГРН / ОГРНИП', { exact: true }).fill(ogrn);
+  await expect(addCompany).toHaveCount(0);
+  await expect(page.getByText(/Компания уже есть в справочнике/)).toBeVisible();
+
+  const foreignName = 'Изготовитель из Казахстана';
+  await page.getByLabel('Полное наименование', { exact: true }).fill(foreignName);
+  await page.getByLabel('ОГРН / ОГРНИП', { exact: true }).clear();
+  await page.getByRole('combobox', { name: 'Страна', exact: true }).fill('Казахстан');
+  await page.getByRole('option', { name: 'Казахстан (KZ)', exact: true }).click();
+  await addCompany.click();
+  await expect.poll(() => fixture.getOrganizations()[1]).toMatchObject({ kind: 'Manufacturer', name: foreignName, country: 'Казахстан', ogrn: '' });
+  await page.getByRole('button', { name: 'Справочник', exact: true }).click();
+  await directory.fill(foreignName);
+  await page.getByRole('option', { name: new RegExp(foreignName) }).click();
+  await expect(page.getByRole('combobox', { name: 'Страна', exact: true })).toHaveValue('Казахстан');
+  expect(registrySearches).toEqual([ogrn]);
+});
+
 test('directory lookup keeps source provenance while tracking manual additions made before and after applying it', async ({ page }) => {
   const fixture = await fixtures(page, true);
   fixture.seedOrganization({ ...lookupCandidate, country: 'Россия', name: 'Старая карточка' });
@@ -1715,6 +2065,7 @@ test('directory company deletion is scoped to the selected firm and works for a 
 });
 
 test('DaData result can be saved directly to the directory and reused by name INN and KPP without another lookup', async ({ page }) => {
+  test.slow();
   const fixture = await fixtures(page, true); let requests = 0;
   await page.route('**/organizations/lookup', route => { requests++; return route.fulfill({ json: { items: [lookupCandidate], retrievedAt: '2026-10-20T10:00:00Z', fromCache: false } }); });
   await login(page); await page.getByRole('link', { name: 'Новая декларация' }).click(); await createDeclarationDraft(page);
@@ -1850,6 +2201,48 @@ test('DaData declaration lookup handles empty and failed responses and requires 
   expect(fixture.getSaved()?.applicant).toMatchObject({ name: lookupCandidate.name, inn: lookupCandidate.inn, signatory: lookupCandidate.managerName });
 });
 
+test('replacing the applicant clears the previous branch filter and keeps or replaces the address by choice', async ({ page }) => {
+  const fixture = await fixtures(page, true, {}, 'Admin', true);
+  await login(page);
+  const searches: { query: string; kpp?: string }[] = [];
+  await page.route('**/organizations/lookup', route => {
+    const request = route.request().postDataJSON();
+    searches.push(request);
+    return route.fulfill({ json: { items: request.query === lookupCandidate.ogrn ? [lookupCandidate] : [], retrievedAt: '2026-10-20T10:00:00Z', fromCache: false } });
+  });
+  await page.getByRole('link', { name: 'Новая декларация', exact: true }).click();
+  await createDeclarationDraft(page, 'Замена заявителя');
+  await openDeclarationPart(page, 'Заявитель');
+  const oldAddress = 'Адрес заявителя по документам';
+  const printAddress = 'Место нахождения и адрес деятельности для макета';
+  await page.getByLabel('ОГРН / ОГРНИП', { exact: true }).first().fill('1077761726790');
+  await page.getByLabel('КПП', { exact: true }).first().fill('770701001');
+  await page.getByLabel('Адрес', { exact: true }).first().fill(oldAddress);
+  await page.getByLabel('Адрес для печатной формы', { exact: true }).fill(printAddress);
+  await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
+  const lookup = organizationLookupSurface(page);
+  await expect(lookup.getByText(/Организация не найдена/)).toBeVisible();
+  await lookup.getByLabel('ИНН или ОГРН / ОГРНИП').fill(lookupCandidate.ogrn);
+  await expect(lookup.getByLabel('КПП филиала (необязательно)')).toHaveValue('');
+  await lookup.getByRole('button', { name: 'Найти организацию', exact: true }).click();
+  await expect(lookup.getByRole('radio', { name: /Сохранить текущий адрес/ })).toBeChecked();
+  expect(searches.at(-1)).toEqual({ query: lookupCandidate.ogrn });
+  await lookup.getByRole('button', { name: 'Подставить реквизиты', exact: true }).click();
+  await expect(page.getByLabel('КПП', { exact: true }).first()).toHaveValue(lookupCandidate.kpp);
+  await expect(page.getByLabel('Адрес', { exact: true }).first()).toHaveValue(oldAddress);
+  await expect(page.getByLabel('Адрес для печатной формы', { exact: true })).toHaveValue(printAddress);
+
+  await page.getByRole('button', { name: 'Найти по ИНН / ОГРН' }).first().click();
+  await lookup.getByRole('radio', { name: /Использовать найденный адрес/ }).check();
+  await lookup.getByRole('button', { name: 'Подставить реквизиты', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Продолжить', exact: true }).click();
+  await expect(page.getByLabel('Адрес', { exact: true }).first()).toHaveValue(lookupCandidate.address);
+  await expect(page.getByLabel('Адрес для печатной формы', { exact: true })).toHaveValue('');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page.getByText('Декларация сохранена')).toBeVisible();
+  expect(fixture.getSaved()?.applicant).toMatchObject({ ogrn: lookupCandidate.ogrn, kpp: lookupCandidate.kpp, address: lookupCandidate.address });
+});
+
 test('personal DaData key can be configured in account and used to fill OGRN requisites like the video', async ({ page }) => {
   const fixture = await fixtures(page); await login(page);
   let requestedIdentifier = '';
@@ -1881,10 +2274,15 @@ test('personal DaData key can be configured in account and used to fill OGRN req
   await expect(page.getByLabel('Регистрирующий орган', { exact: true }).first()).toHaveValue(lookupCandidate.registrationAuthority);
   await expect(page.getByLabel('Адрес', { exact: true }).first()).toHaveValue(lookupCandidate.standardizedAddress);
   await page.getByLabel('Адрес', { exact: true }).first().fill('Адрес, исправленный вручную');
+  const printAddress = page.getByRole('textbox', { name: 'Адрес для печатной формы', exact: true });
+  const addressFragment = 'Место нахождения и адрес места осуществления деятельности';
+  await printAddress.fill('Адрес по документам заявителя');
   await page.getByLabel('Электронная почта', { exact: true }).first().fill('manual@example.com');
+  await expect(printAddress).toHaveValue('Адрес по документам заявителя');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByText('Декларация сохранена')).toBeVisible();
   expect(fixture.getSaved()?.applicant).toMatchObject({ registrationDate: '2003-01-01', managerName: lookupCandidate.managerName, signatory: lookupCandidate.managerName, address: 'Адрес, исправленный вручную', email: 'manual@example.com' });
+  expect(fixture.getSaved()?.workspace).toMatchObject({ printOverrides: { [addressFragment]: 'Адрес по документам заявителя' } });
   await page.getByRole('link', { name: 'Настройки', exact: true }).click();
   await page.getByRole('button', { name: 'Удалить личный ключ', exact: true }).click();
   await expect(page.getByText('Ключ не добавлен', { exact: true })).toBeVisible();
@@ -2085,6 +2483,7 @@ test.describe('touch phones and the dragonfly theme', () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
   test('dragonflies are optional, support both modes and keep phone controls readable', async ({ page }) => {
+    test.slow();
     await fixtures(page);
     await page.goto('/');
     await expect(page.getByRole('textbox', { name: 'Логин', exact: true })).toBeVisible();
@@ -2226,4 +2625,158 @@ test('builder groups case fields and opens appendices without losing additional 
   await page.screenshot({ path: '../artifacts/screenshots/declaration-case-blocks.png' });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('copies only the chosen party from a declaration of another kind by its internal number', async ({ page }) => {
+  test.setTimeout(60_000);
+  const baseline = emptyDeclaration();
+  const applicantPrintAddress = 'Место нахождения и адрес места осуществления деятельности';
+  const destinationProduct = { ...baseline.product, name: 'Продукция получателя' };
+  const destinationFile = { attachmentId: randomUUID(), kind: 'Other', section: 'scans' as const, description: '', includeInFgis: false };
+  const unrelatedPrintText = { 'соответствует требованиям': 'Сохранить ручной текст регламента' };
+  const destinationWorkspace = {
+    ...emptyWorkspace(),
+    files: [destinationFile],
+    authorizedRepresentativeAgreementNumber: 'Договор получателя',
+    printOverrides: { ...unrelatedPrintText, 'Контактные сведения': 'Старый печатный телефон' },
+  };
+  const fixture = await fixtures(page, false, {
+    kind: 'Декларация ГОСТ Р',
+    product: destinationProduct,
+    manufacturer: { ...baseline.manufacturer, name: 'Прежний изготовитель', address: 'Прежний адрес' },
+    workspace: destinationWorkspace,
+  });
+  const [destinationRow, , sourceRow] = fixture.getDeclarations();
+  const source: Declaration = {
+    ...baseline,
+    ...sourceRow,
+    status: 'Ready',
+    registryUrl: '',
+    createdAt: sourceRow.updatedAt,
+    attachments: [],
+    events: [],
+    missingRequirements: [],
+    applicant: { ...baseline.applicant, name: 'Заявитель из ТР ЕАЭС', phone: '+7 999 123-45-67', email: 'custom@example.com', signatory: 'Иван Иванов' },
+    manufacturer: { ...baseline.manufacturer, name: 'Изготовитель из ТР ЕАЭС', country: 'Китай', address: 'Адрес производства' },
+    product: { ...baseline.product, name: 'Продукция источника' },
+    workspace: {
+      ...emptyWorkspace(),
+      files: [{ ...destinationFile, attachmentId: randomUUID() }],
+      authorizedRepresentativeAgreementNumber: 'Договор источника',
+      manufacturerCountryCode: 'CN',
+      manufacturerAddressIdentifier: { gln: '1234567890005' },
+      manufacturerSites: [{ kind: 'Production', name: 'Площадка из источника', country: 'Китай', countryCode: 'CN', address: 'Новый адрес', identifier: null }],
+      printOverrides: { [applicantPrintAddress]: 'Особый адрес для печати', 'соответствует требованиям': 'Текст источника' },
+    },
+  };
+  await page.route(`**/declarations/${source.id}`, route => {
+    expect(route.request().method()).toBe('GET');
+    return route.fulfill({ json: source });
+  });
+
+  async function copyParty() {
+    await page.getByRole('button', { name: 'Скопировать из другого макета', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Скопировать из другого макета', exact: true });
+    await dialog.getByRole('combobox', { name: 'Исходный макет', exact: true }).fill(source.reference.toLowerCase());
+    await page.getByRole('option', { name: new RegExp(source.reference) }).click();
+    await dialog.getByRole('button', { name: 'Скопировать реквизиты', exact: true }).click();
+    await expect(dialog).toBeHidden();
+  }
+
+  await login(page);
+  await page.goto(`/#/declarations/${destinationRow.id}`);
+  await openDeclarationPart(page, 'Заявитель');
+  await copyParty();
+  await expect(page.getByRole('textbox', { name: 'Телефон', exact: true })).toHaveValue(source.applicant.phone);
+  await expect(page.getByRole('textbox', { name: 'Адрес для печатной формы', exact: true })).toHaveValue('Особый адрес для печати');
+
+  await openDeclarationPart(page, 'Изготовитель');
+  await expect(page.getByRole('textbox', { name: 'Полное наименование', exact: true })).toHaveValue('Прежний изготовитель');
+  await copyParty();
+  await expect(page.getByText('Место производства · Площадка из источника', { exact: true })).toBeVisible();
+  await expect(page.getByText('GLN 1234567890005', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect.poll(() => fixture.getSaved()).toMatchObject({
+    kind: 'Декларация ГОСТ Р',
+    applicant: source.applicant,
+    manufacturer: source.manufacturer,
+    product: destinationProduct,
+    workspace: {
+      files: [destinationFile],
+      authorizedRepresentativeAgreementNumber: destinationWorkspace.authorizedRepresentativeAgreementNumber,
+      manufacturerCountryCode: source.workspace?.manufacturerCountryCode,
+      manufacturerAddressIdentifier: source.workspace?.manufacturerAddressIdentifier,
+      manufacturerSites: source.workspace?.manufacturerSites,
+    },
+  });
+  expect((fixture.getSaved()?.workspace as Declaration['workspace'])?.printOverrides).toEqual({
+    [applicantPrintAddress]: 'Особый адрес для печати',
+    ...unrelatedPrintText,
+  });
+});
+
+test('saves the source before applying chosen fields to editable declarations', async ({ page }) => {
+  test.setTimeout(60_000);
+  const fixture = await fixtures(page);
+  const [source, first, locked, second] = fixture.getDeclarations();
+  const sourceRevision = source.revision;
+  const firstRevision = first.revision;
+  const requests: unknown[] = [];
+  await page.route(`**/declarations/${source.id}/apply-fields`, route => {
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    expect(fixture.getSaved()).toMatchObject({
+      applicant: { phone: '+7 900 111-22-33' },
+      workspace: { authorizedRepresentativeAgreementNumber: 'ДУ-18' },
+    });
+    if (requests.length === 1) {
+      first.revision++;
+      return route.fulfill({ status: 409, json: { detail: 'Один из макетов изменился. Повторите выбор.' } });
+    }
+    return route.fulfill({ json: { count: 2 } });
+  });
+
+  await login(page);
+  await page.goto(`/#/declarations/${source.id}`);
+  await openDeclarationPart(page, 'Заявитель');
+  await page.getByRole('textbox', { name: 'Телефон', exact: true }).fill('+7 900 111-22-33');
+  await openDeclarationPart(page, 'Заявка/Документы');
+  await page.getByRole('textbox', { name: 'Номер договора уполномоченного лица', exact: true }).fill('ДУ-18');
+  await page.getByRole('button', { name: 'Обновить поля в других макетах', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Обновить поля в других макетах', exact: true });
+  const fields = dialog.getByRole('combobox', { name: 'Поля для обновления', exact: true });
+  const targets = dialog.getByRole('combobox', { name: 'Макеты для обновления', exact: true });
+  const submit = dialog.getByRole('button', { name: 'Обновить выбранные макеты', exact: true });
+  await expect(submit).toBeDisabled();
+  await fields.fill('Телефон');
+  await page.getByRole('option', { name: 'Заявитель — Телефон', exact: true }).click();
+  await fields.fill('Номер договора');
+  await page.getByRole('option', { name: 'Заявка и договор — Номер договора уполномоченного лица', exact: true }).click();
+  await expect(dialog.getByText('+7 900 111-22-33', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('ДУ-18', { exact: true })).toBeVisible();
+
+  await targets.fill(locked.reference);
+  await expect(page.getByText('Редактируемые макеты не найдены', { exact: true })).toBeVisible();
+  async function chooseTarget(reference: string) {
+    await targets.fill(reference);
+    await page.getByRole('option', { name: new RegExp(reference) }).click();
+  }
+  await chooseTarget(first.reference);
+  await chooseTarget(second.reference);
+  await submit.click();
+  await expect(dialog.getByRole('alert')).toContainText('Один из макетов изменился');
+  await dialog.getByRole('button', { name: 'Обновить список', exact: true }).click();
+  await expect(submit).toBeDisabled();
+  await chooseTarget(first.reference);
+  await chooseTarget(second.reference);
+  await submit.click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('Обновлено 2 из 2 выбранных макетов', { exact: true })).toBeVisible();
+
+  const transfer = (revision: number) => ({ revision: sourceRevision + 1,
+    items: [{ id: first.id, revision }, { id: second.id, revision: second.revision }],
+    fields: ['applicant.phone', 'application.authorizedRepresentativeAgreementNumber'],
+  });
+  expect(requests).toEqual([transfer(firstRevision), transfer(firstRevision + 1)]);
 });

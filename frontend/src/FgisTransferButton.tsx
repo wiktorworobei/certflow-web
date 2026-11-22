@@ -3,39 +3,67 @@ import { useFormContext } from 'react-hook-form';
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField, Typography } from '@mui/material';
 import { OpenInNewRounded, SendOutlined } from '@mui/icons-material';
 import { api } from './store';
-import { useWorkspace } from './common';
-import type { Declaration, SaveDeclaration } from './types';
-import { fgisPayload, requestFgis, type FgisTab, type FgisTransferResult } from './fgisTransfer';
+import { useNotify, useWorkspace } from './common';
+import { fgisApi } from './fgisApi';
+import { errorMessage, type Declaration, type SaveDeclaration } from './types';
+import { fgisCabinetCardUrl, fgisPayload, requestFgis, type FgisInspection, type FgisTab, type FgisTransferResult } from './fgisTransfer';
 
-export function FgisTransferButton({ document, disabled = false }: { document: Declaration; disabled?: boolean }) {
+export function FgisTransferButton({ document, disabled = false, onUseRegistration }: {
+  document: Declaration;
+  disabled?: boolean;
+  onUseRegistration?: (registrationNumber: string) => void;
+}) {
   const { firmId, canEdit } = useWorkspace();
+  const notify = useNotify();
   const { formState: { isDirty } } = useFormContext<SaveDeclaration>();
   const [fetchDeclaration] = api.useLazyDeclarationQuery();
+  const [recordDraft] = fgisApi.useRecordFgisDraftMutation();
   const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false);
   const [connected, setConnected] = useState(false); const [tabs, setTabs] = useState<FgisTab[]>([]); const [tabId, setTabId] = useState('');
   const [error, setError] = useState(''); const [result, setResult] = useState<FgisTransferResult>(); const [mapping, setMapping] = useState(false);
+  const [inspection, setInspection] = useState<FgisInspection>();
+  const [supportsEaeuGroups, setSupportsEaeuGroups] = useState(false);
   const unavailable = disabled || isDirty || !canEdit || !['Draft', 'InReview', 'Ready'].includes(document.status);
   const current = useRef({ unavailable, revision: document.revision }); current.current = { unavailable, revision: document.revision };
   const mounted = useRef(true); useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   async function check() {
-    setBusy(true); setError(''); setConnected(false); setTabs([]); setTabId(''); setResult(undefined); setMapping(false);
+    setBusy(true); setError(''); setConnected(false); setTabs([]); setTabId(''); setResult(undefined); setMapping(false); setInspection(undefined); setSupportsEaeuGroups(false);
     try {
       const response = await requestFgis('status');
       if (!mounted.current) return;
-      setConnected(true); setTabs(response.tabs ?? []);
+      setConnected(true); setTabs(response.tabs ?? []); setSupportsEaeuGroups(response.supportsEaeuGroups === true);
       if (response.tabs?.length === 1) setTabId(String(response.tabs[0].id));
     } catch (e) { if (mounted.current) setError((e as Error).message); }
     finally { if (mounted.current) setBusy(false); }
   }
+  async function inspect() {
+    if (!tabId || busy) return;
+    setBusy(true); setError(''); setInspection(undefined); setResult(undefined); setMapping(false);
+    try {
+      const response = await requestFgis('inspect', { tabId: Number(tabId) });
+      if (!response.inspection) throw new Error('Обновите расширение «ZNAQ → ФГИС», чтобы проверить карточку.');
+      if (mounted.current) setInspection(response.inspection);
+    } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : 'Не удалось прочитать карточку ФГИС.'); }
+    finally { if (mounted.current) setBusy(false); }
+  }
+  async function linkDraft(draft: FgisInspection) {
+    if (busy || unavailable || !draft.documentId) return;
+    setBusy(true); setError('');
+    try {
+      await recordDraft({ firmId, id: document.id, revision: document.revision, documentId: draft.documentId, assignedNumber: draft.registrationNumber ?? '' }).unwrap();
+      if (mounted.current) { setOpen(false); notify('Черновик ФГИС связан с декларацией'); }
+    } catch (e) { if (mounted.current) setError(errorMessage(e)); }
+    finally { if (mounted.current) setBusy(false); }
+  }
   async function transfer(action: 'fill' | 'map') {
     if (!tabId || unavailable || busy) return;
-    setBusy(true); setError(''); setResult(undefined); setMapping(false);
+    setBusy(true); setError(''); setResult(undefined); setMapping(false); setInspection(undefined);
     try {
       const fresh = await fetchDeclaration({ firmId, id: document.id }, false).unwrap();
       if (!mounted.current) return;
       if (current.current.unavailable || fresh.revision !== document.revision || current.current.revision !== document.revision || !['Draft', 'InReview', 'Ready'].includes(fresh.status))
         throw new Error('Декларация изменилась. Сохраните изменения и откройте перенос заново.');
-      const response = await requestFgis(action, { tabId: Number(tabId), payload: fgisPayload(fresh) });
+      const response = await requestFgis(action, { tabId: Number(tabId), payload: fgisPayload(fresh, supportsEaeuGroups) });
       if (mounted.current) { setResult(response.result); setMapping(!!response.mapping); }
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : 'Не удалось получить актуальные данные декларации. Обновите карточку.'); }
     finally { if (mounted.current) setBusy(false); }
@@ -43,6 +71,16 @@ export function FgisTransferButton({ document, disabled = false }: { document: D
   const filled = result?.fields.filter(f => f.status === 'filled').length ?? 0;
   const unchanged = result?.fields.filter(f => f.status === 'unchanged').length ?? 0;
   const remaining = result?.fields.filter(f => !['filled', 'unchanged'].includes(f.status)) ?? [];
+  const cardUrl = fgisCabinetCardUrl(inspection?.documentId);
+  const expectedInn = document.applicant.inn.trim();
+  const checkedInn = inspection?.applicantInn;
+  const wrongApplicant = !!expectedInn && !!checkedInn && expectedInn !== checkedInn;
+  const savedDraftId = document.workspace?.fgisDraft?.documentId;
+  const wrongDraft = !!savedDraftId && !!inspection?.documentId && savedDraftId !== inspection.documentId;
+  const matchesDeclaration = savedDraftId ? savedDraftId === inspection?.documentId : !!expectedInn && expectedInn === checkedInn;
+  const confirmedNumber = inspection?.page === 'view' && inspection.status === 'Действует'
+    && matchesDeclaration && !wrongApplicant ? inspection.registrationNumber : undefined;
+  const canLinkDraft = !!cardUrl && !savedDraftId && !wrongApplicant && !unavailable && inspection?.page === 'view' && inspection.status === 'Черновик';
   return <>
     <Button variant="outlined" startIcon={<SendOutlined/>} disabled={unavailable} onClick={() => { setOpen(true); void check(); }}>Перенести в ФГИС</Button>
     <Dialog open={open} onClose={() => !busy && setOpen(false)} maxWidth="md" fullWidth>
@@ -60,20 +98,42 @@ export function FgisTransferButton({ document, disabled = false }: { document: D
           <Button onClick={() => void check()} disabled={busy}>Проверить подключение</Button>
         </div>}
         {connected && !tabs.length && <Alert severity="warning" sx={{ mb: 2 }}>Открытых вкладок srd.fsa.gov.ru не найдено. Откройте кабинет в том же браузере и профиле, войдите и откройте черновик декларации.</Alert>}
-        {connected && tabs.length > 0 && <TextField select label="Вкладка кабинета ФГИС" value={tabId} disabled={busy} onChange={e => { setTabId(e.target.value); setResult(undefined); setMapping(false); }} sx={{ my: 2 }}>{tabs.map(tab => <MenuItem key={tab.id} value={String(tab.id)}>{tab.title} · вкладка {tab.id}</MenuItem>)}</TextField>}
+        {connected && tabs.length > 0 && <TextField select label="Вкладка кабинета ФГИС" value={tabId} disabled={busy} onChange={e => { setTabId(e.target.value); setResult(undefined); setMapping(false); setInspection(undefined); setError(''); }} sx={{ my: 2 }}>{tabs.map(tab => <MenuItem key={tab.id} value={String(tab.id)}>{tab.title} · вкладка {tab.id}</MenuItem>)}</TextField>}
         {connected && <Button onClick={() => void check()} disabled={busy}>Обновить список вкладок</Button>}
+        {connected && !supportsEaeuGroups && !!document.workspace?.productGroups?.length && <Alert severity="info" sx={{ mt: 2 }}>Обновите расширение, чтобы добавить группы продукции ЕАЭС к переносу.</Alert>}
         {unavailable && <Alert severity="warning" sx={{ mt: 2 }}>Для переноса сохраните декларацию. Доступны статусы «Черновик», «На проверке», «Готова к регистрации» и права редактирования.</Alert>}
         {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+        {inspection && <Alert severity={wrongApplicant || wrongDraft ? 'error' : 'info'} sx={{ mt: 2 }}>
+          {inspection.page === 'list' && 'В кабинете открыт список. Найдите декларацию по номеру и откройте её карточку.'}
+          {inspection.page === 'unknown' && 'Откройте карточку декларации в кабинете ФГИС и повторите проверку.'}
+          {inspection.page === 'edit' && 'Открыто редактирование. Для проверки статуса откройте просмотр карточки.'}
+          {inspection.page === 'signer' && 'Открыт сервис подписания. После подписи вернитесь в карточку ФГИС и проверьте результат публикации.'}
+          {inspection.page === 'view' && <>
+            <Typography variant="body2">Статус в ФГИС: {inspection.status || 'не удалось прочитать'}</Typography>
+            {inspection.registrationNumber && <Typography variant="body2">Номер: {inspection.registrationNumber}</Typography>}
+            {checkedInn && <Typography variant="body2">ИНН в ФГИС: {checkedInn}</Typography>}
+            {wrongApplicant && <Typography variant="body2">ИНН заявителя отличается от ИНН в декларации ZNAQ.</Typography>}
+            {wrongDraft && <Typography variant="body2">Открыта другая карточка ФГИС. Сверьте ID с черновиком, указанным в деле декларации.</Typography>}
+            {!wrongApplicant && inspection.status === 'Черновик' && <Typography variant="body2">Присвоенный номер у черновика не подтверждает регистрацию. Завершите подписание и публикацию в ФГИС.</Typography>}
+            {canLinkDraft && <Typography variant="body2">Перед привязкой сверьте заявителя и продукцию в открытой карточке ФГИС.</Typography>}
+            {confirmedNumber && !savedDraftId && <Typography variant="body2">ИНН совпадает. Сверьте продукцию и номер в ФГИС перед учётом регистрации.</Typography>}
+            {inspection.status === 'Действует' && !confirmedNumber && !wrongApplicant && !wrongDraft && <Typography variant="body2">Сверьте номер и заявителя в ФГИС перед учётом регистрации.</Typography>}
+          </>}
+          {cardUrl && <Button component="a" href={cardUrl} target="_blank" rel="noopener noreferrer" endIcon={<OpenInNewRounded/>}>Открыть карточку в ФГИС</Button>}
+          {canLinkDraft && <Button disabled={busy} onClick={() => void linkDraft(inspection)}>Связать черновик с декларацией</Button>}
+          {confirmedNumber && onUseRegistration && document.status === 'Ready' && !unavailable && <Button onClick={() => { setOpen(false); onUseRegistration(confirmedNumber); }}>Учесть регистрацию</Button>}
+        </Alert>}
         {mapping && <Alert severity="info" sx={{ mt: 2 }}>В кабинете ФГИС открыта панель сопоставления. Выберите реквизит, затем нажмите на его поле в форме. После настройки нажмите здесь «Заполнить открытый раздел».</Alert>}
         {result && <div role="status" aria-live="polite">
           <Alert severity={remaining.length ? 'warning' : 'success'} sx={{ mt: 2 }}>Заполнено: {filled}. Уже совпадало: {unchanged}. Требуют внимания или другого раздела: {remaining.length}. Проверьте данные в кабинете.</Alert>
           {!!remaining.length && <details style={{ marginTop: 16 }}><summary>Поля, которые нужно проверить</summary><ul>{remaining.map(field => <li key={field.key}><strong>{field.label}</strong>: {field.message}</li>)}</ul></details>}
         </div>}
-        <details style={{ marginTop: 16 }}><summary>Передаваемые сведения · версия {document.revision}</summary><dl>{fgisPayload(document).fields.map(field => <div key={field.key} style={{ marginBottom: 12 }}><dt><strong>{field.group} · {field.label}</strong></dt><dd style={{ marginLeft: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{field.value}</dd></div>)}</dl></details>
+        <details style={{ marginTop: 16 }}><summary>Передаваемые сведения · версия {document.revision}</summary><dl>{fgisPayload(document, supportsEaeuGroups).fields.map(field => <div key={field.key} style={{ marginBottom: 12 }}><dt><strong>{field.group} · {field.label}</strong></dt><dd style={{ marginLeft: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{field.value}</dd></div>)}</dl></details>
       </DialogContent>
       <DialogActions sx={{ p: 2, flexWrap: 'wrap', gap: 1 }}>
         <Button onClick={() => setOpen(false)} disabled={busy}>Закрыть</Button>
         <Button component="a" href="https://srd.fsa.gov.ru/srd" target="_blank" rel="noopener noreferrer" endIcon={<OpenInNewRounded/>}>Открыть кабинет</Button>
+        <Button disabled={!connected || !tabId || busy} onClick={() => void inspect()}>Проверить карточку ФГИС</Button>
         <Button disabled={!connected || !tabId || busy || unavailable} onClick={() => void transfer('map')}>Сопоставить поля</Button>
         <Button variant="contained" disabled={!connected || !tabId || busy || unavailable} onClick={() => void transfer('fill')}>{busy ? 'Проверяем…' : 'Заполнить открытый раздел'}</Button>
       </DialogActions>

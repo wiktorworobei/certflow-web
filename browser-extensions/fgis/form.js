@@ -64,15 +64,19 @@ globalThis.ZnaqFgisForm = (() => {
     } catch { return []; }
   }
   function choices(element, field) {
-    const values = element.multiple ? field.value.split('\n').filter(Boolean) : [field.value];
-    if (!element.multiple && field.value.includes('\n')) return null;
+    const separator = field.key === 'product.tnVed' ? /,\s*|\n/ : /\n/;
+    if (!element.multiple && separator.test(field.value)) return null;
+    const values = field.value.split(separator).filter(Boolean);
+    if (!values.length) return null;
     const options = [...element.options]; const found = [];
     for (const value of values) {
-      const matches = options.filter(option => !option.disabled && (option.value === value || normalize(option.textContent) === normalize(value)));
+      const matches = options.filter(option => !option.disabled && (field.key === 'product.eaeuGroups'
+        ? option.textContent.replace(/\s+/g, ' ').trim() === value
+        : option.value === value || normalize(option.textContent) === normalize(value)));
       if (matches.length !== 1) return null;
       found.push(matches[0]);
     }
-    return found;
+    return new Set(found).size === values.length ? found : null;
   }
   function dateValue(element, value) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('Проверьте формат даты.');
@@ -82,11 +86,13 @@ globalThis.ZnaqFgisForm = (() => {
   function valueOf(element) { return element instanceof HTMLSelectElement && element.multiple ? [...element.selectedOptions].map(option => option.value).join('\n') : element.value; }
   function write(element, field) {
     if (!available(element)) return { status: 'missing', message: 'Поле недоступно в открытом разделе.' };
+    if (field.key === 'product.eaeuGroups' && !(element instanceof HTMLSelectElement && element.multiple))
+      return { status: 'manual', message: 'Выберите группы продукции в справочнике ФГИС.' };
     const current = valueOf(element);
     if (element instanceof HTMLSelectElement) {
       const selected = choices(element, field);
       if (!selected) return { status: 'manual', message: 'Выберите значение в справочнике: точного однозначного совпадения нет.' };
-      const expected = selected.map(option => option.value).join('\n');
+      const expected = [...element.options].filter(option => selected.includes(option)).map(option => option.value).join('\n');
       if (current === expected) return { status: 'unchanged', message: 'Значение уже совпадает.' };
       if (current.trim()) return { status: 'conflict', message: 'В кабинете уже есть другое значение. Проверьте его вручную.' };
       for (const option of element.options) option.selected = selected.includes(option);
@@ -94,6 +100,8 @@ globalThis.ZnaqFgisForm = (() => {
       return { status: 'filled', message: 'Выбрано существующее значение справочника.', expected };
     }
     const value = field.kind === 'date' ? dateValue(element, field.value) : field.value;
+    if (field.key === 'product.tnVed' && /[,\n]/.test(value) && !(element instanceof HTMLTextAreaElement))
+      return { status: 'manual', message: 'Поле допускает только одно значение. Внесите список вручную.' };
     if (current.trim() === value.trim()) return { status: 'unchanged', message: 'Значение уже совпадает.' };
     if (current.trim()) return { status: 'conflict', message: 'В кабинете уже есть другое значение. Проверьте его вручную.' };
     if (element.getAttribute('role') === 'combobox' || element.hasAttribute('list') || element.hasAttribute('aria-autocomplete') || element.hasAttribute('matAutocomplete') || element.closest('ng-select,mat-select,[role="combobox"]'))
@@ -112,6 +120,7 @@ globalThis.ZnaqFgisForm = (() => {
     const written = [];
     const fields = payload.fields.map((field, index) => {
       const found = candidates[index]; const base = { key: field.key, label: `${field.group} · ${field.label}` };
+      if (!found.length && field.key === 'product.eaeuGroups') return { ...base, status: 'manual', message: 'Выберите группы продукции в справочнике ФГИС.' };
       if (!found.length) return { ...base, status: 'missing', message: bindings[field.key] ? 'Сопоставленное поле отсутствует или изменилось. Откройте нужный раздел или сопоставьте заново.' : 'Откройте нужный раздел или сопоставьте поле вручную.' };
       if (found.length !== 1 || owners.get(found[0]) !== 1) return { ...base, status: 'manual', message: 'Неоднозначное поле. Укажите его через «Сопоставить поля».' };
       try {

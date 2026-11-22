@@ -6,6 +6,7 @@ import { DeclarationField as Field } from './DeclarationFields';
 import { EvidencePanel } from './EvidencePanel';
 import { FilesPanel, HistoryPanel, InventoryPanel, WorkspaceSectionPanel } from './DeclarationWorkspacePanel';
 import { FgisPublicationPanel } from './FgisPublicationPanel';
+import { formatShippingDocuments } from './declarationBatchFormatting';
 import type { Declaration, SaveDeclaration } from './types';
 
 const caseGroups = [
@@ -21,11 +22,17 @@ export function openDeclarationCase(id: string) {
   window.dispatchEvent(new CustomEvent(openEvent, { detail: id }));
 }
 
-export function DeclarationCaseWorkspace({ document: saved, readOnly, disabled }: { document?: Declaration; readOnly: boolean; disabled: boolean }) {
+export function DeclarationCaseWorkspace({ document: saved, readOnly, disabled, onUseRegistration }: {
+  document?: Declaration;
+  readOnly: boolean;
+  disabled: boolean;
+  onUseRegistration?: (registrationNumber: string) => void;
+}) {
   const form = useFormContext<SaveDeclaration>();
   const overrides = useWatch({ control: form.control, name: 'workspace.printOverrides' }) ?? {};
   const reports = useWatch({ control: form.control, name: 'reports' }) ?? [];
   const sections = useWatch({ control: form.control, name: 'workspace.sections' });
+  const shippingDocuments = formatShippingDocuments(useWatch({ control: form.control, name: 'product.shippingDocuments' }));
   const [group, setGroup] = useState<CaseGroup>('details');
   const [opened, setOpened] = useState<Record<string, boolean>>({ main: true, testing: true, scans: true, fgis: true });
   useEffect(() => {
@@ -50,7 +57,14 @@ export function DeclarationCaseWorkspace({ document: saved, readOnly, disabled }
     <Tabs className="builder-case-tabs" value={group} onChange={(_, value: CaseGroup) => setGroup(value)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile aria-label="Блоки дела декларации">{caseGroups.map(item => <Tab key={item.id} id={`case-tab-${item.id}`} aria-controls={`case-panel-${item.id}`} aria-label={item.title} value={item.id} icon={item.icon} iconPosition="start" label={<span><strong>{item.title}</strong><small>{item.description}</small></span>}/>)}</Tabs>
     <div id="case-panel-details" role="tabpanel" aria-labelledby="case-tab-details" hidden={group !== 'details'}>
       {block('main', 'Организация работы', 'Название в реестре, вид документа и схема декларирования.', <div className="builder-case-fields"><div className="builder-field-group"><Typography component="h3">Карточка документа</Typography><Field name="title" label="Название декларации" required disabled={locked}/><p>По этому названию вы найдёте декларацию в рабочем реестре.</p></div><div className="builder-field-group"><Typography component="h3">Вид и схема</Typography><Controller control={form.control} name="kind" render={({ field }) => <TextField {...field} label="Вид документа" select disabled={locked}>{['Декларация ТР ЕАЭС', 'Декларация ГОСТ Р', 'Декларация ТР РФ'].map(value => <MenuItem key={value} value={value}>{value}</MenuItem>)}</TextField>}/><Field name="scheme" label="Схема декларирования" required disabled={locked}/></div></div>)}
-      {block('application', 'Заявка и договор', 'Реквизиты заявки, договор и сведения о прилагаемых документах.', <WorkspaceSectionPanel embedded section="application" title="Заявка и документы" contentLabel="Сведения о заявке, договоре и прилагаемых документах" numbered readOnly={locked}/>, sections?.application?.number || undefined)}
+      {block('application', 'Заявка и договор', 'Реквизиты заявки, договор и сведения о прилагаемых документах.', <>
+        <WorkspaceSectionPanel embedded section="application" title="Заявка и документы" contentLabel="Сведения о заявке, договоре и прилагаемых документах" numbered readOnly={locked}/>
+        <Field name="workspace.authorizedRepresentativeAgreementNumber" label="Номер договора уполномоченного лица" disabled={locked} inputProps={{ maxLength: 150 }}/>
+        {shippingDocuments && <div className="builder-field-group">
+          <Typography component="h3" variant="subtitle2">Товаросопроводительные документы</Typography>
+          <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{shippingDocuments}</Typography>
+        </div>}
+      </>, sections?.application?.number || undefined)}
       {block('foreign', 'Иностранные документы', 'Переводы и дополнительные сведения по иностранным документам.', <WorkspaceSectionPanel embedded section="foreign" title="Иностранные документы" contentLabel="Сведения об иностранных документах и переводах" readOnly={locked}/>)}
       {block('history', 'История изменений', 'Сохранение, изменения статуса и другие события документа.', <HistoryPanel document={saved}/>)}
       {Object.keys(overrides).length > 0 && block('wording', 'Ручные формулировки на листе', 'Просмотр текстов, заданных вручную, и восстановление из реквизитов.', <>{Object.entries(overrides).map(([key, text]) => <div className="builder-override" key={key}><strong>{key}</strong><p>{text || '(пустой текст)'}</p><Button disabled={locked} onClick={() => resetOverride(key)}>Восстановить из реквизитов</Button></div>)}</>, `${Object.keys(overrides).length}`)}
@@ -64,7 +78,7 @@ export function DeclarationCaseWorkspace({ document: saved, readOnly, disabled }
       {block('closure', 'Опись и закрытие дела', 'Проверьте состав файлов и зафиксируйте завершение работы.', <><InventoryPanel document={saved} onFiles={() => openDeclarationCase('scans')}/><WorkspaceSectionPanel embedded section="closure" title="Закрытие дела" contentLabel="Результаты и сведения о закрытии дела" readOnly={locked}/></>)}
     </div>
     <div id="case-panel-publication" role="tabpanel" aria-labelledby="case-tab-publication" hidden={group !== 'publication'}>
-      {block('fgis', 'Подготовка к публикации ФГИС', 'Соберите комплект, перенесите сведения и проверьте зарегистрированный документ.', <FgisPublicationPanel document={saved} onFiles={() => openDeclarationCase('scans')}/>)}
+      {block('fgis', 'Подготовка к публикации ФГИС', 'Соберите комплект, перенесите сведения и проверьте зарегистрированный документ.', <FgisPublicationPanel document={saved} onFiles={() => openDeclarationCase('scans')} onUseRegistration={onUseRegistration}/>)}
     </div>
   </section>;
 }

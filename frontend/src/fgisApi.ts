@@ -5,4 +5,8 @@ import type { FgisReview } from './workspaceTypes';
 export const fgisApi = api.injectEndpoints({ endpoints: b => ({
   fgisReview: b.query<FgisReview, { firmId: string; id: string }>({ query: ({ firmId, id }) => `/firms/${firmId}/declarations/${id}/fgis`, providesTags: ['Declarations'] }),
   prepareFgis: b.mutation<Declaration, { firmId: string; id: string; revision: number }>({ query: ({ firmId, id, revision }) => ({ url: `/firms/${firmId}/declarations/${id}/fgis/prepare`, method: 'POST', body: { revision } }), invalidatesTags: ['Declarations'] }),
+  recordFgisDraft: b.mutation<Declaration, { firmId: string; id: string; revision: number; documentId: string; assignedNumber: string }>({
+    query: ({ firmId, id, ...body }) => ({ url: `/firms/${firmId}/declarations/${id}/fgis/draft`, method: 'PUT', body }),
+    invalidatesTags: (_result, error) => error ? [] : ['Declarations'],
+  }),
 }) });

@@ -1,6 +1,7 @@
 import { useMarkingDeclaration } from '@marking/DeclarationContext';
 import { captureMarkingScope, assertMarkingScope } from '@marking/lib/workspace-scope';
 import { TnVedPicker } from '../../../TnVedPicker';
+import { declarationTnVedCodes } from '../../../declarationTnVedCodes';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Loader2, Save } from "lucide-react";
@@ -85,6 +86,8 @@ export function CatalogCardForm({
 }) {
     const { t } = useTranslation();
     const declaration = useMarkingDeclaration();
+    const declarationCodes = declarationTnVedCodes(declaration?.product.tnVed);
+    const singleDeclarationCode = declarationCodes.length === 1 ? declarationCodes[0] : '';
     const idPrefix = submissionId ? `catalog-edit-${submissionId}` : "catalog";
     const [categoryId, setCategoryId] = useState(initialCard?.categoryId ?? 0);
     const [lookupTnved, setLookupTnved] = useState(initialCard?.tnved ?? "");
@@ -154,7 +157,7 @@ export function CatalogCardForm({
         shouldFocusError: false,
         defaultValues: initialCard
             ? catalogFormFromCard(initialCard)
-            : { ...emptyCatalogForm, name: declaration?.product.name ?? '', gtin: declaration?.product.gtin ?? '', tnved: declaration?.product.tnVed ?? '' },
+            : { ...emptyCatalogForm, name: declaration?.product.name ?? '', gtin: declaration?.product.gtin ?? '', tnved: singleDeclarationCode },
         resolver: (input, context, options) =>
             zodResolver(
                 createCatalogFormSchema(model, (key) =>
@@ -367,11 +370,12 @@ export function CatalogCardForm({
                 <p>Декларация {declaration.reference}: {declaration.registrationNumber || 'регистрационный номер не указан'}.</p>
                 <Button type="button" variant="outline" disabled={locked} onClick={() => {
                     form.setValue('name', declaration.product.name, { shouldDirty: true });
-                    form.setValue('tnved', declaration.product.tnVed, { shouldDirty: true });
+                    if (singleDeclarationCode) form.setValue('tnved', singleDeclarationCode, { shouldDirty: true });
                     if (declaration.product.gtin) form.setValue('gtin', declaration.product.gtin, { shouldDirty: true });
                     const permit = model.find(attribute => attribute.id === 23557);
                     if (permit && declaration.registrationNumber && declaration.adoptedAt) form.setValue(`attributes.attr_${permit.id}`, [{ value: `${declaration.registrationNumber}:::${declaration.adoptedAt}`, valueType: '' }], { shouldDirty: true });
                 }}>Подставить данные декларации</Button>
+                {declarationCodes.length > 1 && <p className="break-words">Коды ТН ВЭД в декларации — {declarationCodes.join(', ')}. Укажите один код для этой карточки.</p>}
             </Notice>}
             {!initialCard && (
                 <>

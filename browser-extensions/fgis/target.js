@@ -53,9 +53,13 @@
     section.append(title, hint, select, preview, row, feedback); shadow.append(style, section); document.documentElement.append(panel); refresh();
   }
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (sender.id !== chrome.runtime.id || !['fill', 'map'].includes(message.action)) return;
+    if (sender.id !== chrome.runtime.id || !['inspect', 'fill', 'map'].includes(message.action)) return;
     (async () => {
       if (busy) throw new Error('Предыдущий перенос ещё выполняется.');
+      if (message.action === 'inspect') {
+        if (location.href !== message.expectedUrl) throw new Error('Выбранная вкладка ФГИС изменилась. Проверьте её снова.');
+        return { inspection: ZnaqFgisSrd.inspect(location.href) };
+      }
       busy = true;
       try {
         const payload = ZnaqFgisProtocol.validatePayload(message.payload); checkForm(); stopPicking();

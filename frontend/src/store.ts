@@ -239,6 +239,23 @@ export const api = createApi({
       }),
       invalidatesTags: ['Declarations'],
     }),
+    applyDeclarationFields: b.mutation<
+      { count: number },
+      {
+        firmId: string;
+        id: string;
+        revision: number;
+        items: { id: string; revision: number }[];
+        fields: string[];
+      }
+    >({
+      query: ({ firmId, id, ...body }) => ({
+        url: firmUrl(firmId, `/declarations/${id}/apply-fields`),
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (result) => (result ? ['Declarations'] : []),
+    }),
     changeStatus: b.mutation<
       Declaration,
       {

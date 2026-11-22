@@ -8,7 +8,8 @@ export interface Firm { id: string; name: string; inn: string; role: Role }
 export interface Profile { id: string; userName: string; displayName: string; email: string; firms: Firm[] }
 export interface AuthResponse { accessToken: string; expiresAt: string; user: Profile }
 export interface Party { name: string; inn: string; ogrn: string; kpp: string; country: string; address: string; email: string; phone: string; signatory: string; position: string; shortName: string; legalForm: string; registrationDate: string | null; registrationAuthority: string; managerName: string; managerPosition: string }
-export interface Product { name: string; identification: string; tnVed: string; okpd2: string; gtin: string; productionType: 'Serial' | 'Batch' | 'Single'; batchDetails: string; storageConditions: string }
+export interface ShippingDocument { name: string; number: string; date: string | null }
+export interface Product { name: string; identification: string; tnVed: string; okpd2: string; gtin: string; productionType: 'Serial' | 'Batch' | 'Single'; batchDetails: string; batchQuantity: string; batchUnit: string; batchIdentifier: string; shippingDocuments: ShippingDocument[]; storageConditions: string }
 export interface Report { number: string; date: string | null; laboratoryName: string; accreditationNumber: string; id?: string; details?: ReportDetails }
 export interface Attachment { id: string; fileName: string; contentType: string; length: number; createdAt: string }
 export interface DocumentEvent { occurredAt: string; actor: string; description: string }
@@ -46,7 +47,7 @@ export interface ImportMarkingBatch { id: string; declarationId: string; title: 
 export const statusLabels: Record<Status, string> = { Draft: 'Черновик', InReview: 'На проверке', Ready: 'Готова к регистрации', Registered: 'Зарегистрирована', Suspended: 'Приостановлена', Revoked: 'Прекращена', Archived: 'В архиве' };
 export const roleLabels: Record<Role, string> = { Admin: 'Администратор', Manager: 'Специалист', Viewer: 'Наблюдатель' };
 export const emptyParty = (): Party => ({ shortName: '', legalForm: '', registrationDate: null, registrationAuthority: '', managerName: '', managerPosition: '', name: '', inn: '', ogrn: '', kpp: '', country: 'Россия', address: '', email: '', phone: '', signatory: '', position: '' });
-export const emptyDeclaration = (): SaveDeclaration => ({ title: '', kind: 'Декларация ТР ЕАЭС', scheme: '1д', applicant: emptyParty(), manufacturer: emptyParty(), product: { name: '', identification: '', tnVed: '', okpd2: '', gtin: '', productionType: 'Serial', batchDetails: '', storageConditions: '' }, regulations: [], additionalInfo: '', adoptedAt: null, validUntil: null, reports: [], revision: 0, evidence: emptyEvidence() });
+export const emptyDeclaration = (): SaveDeclaration => ({ title: '', kind: 'Декларация ТР ЕАЭС', scheme: '1д', applicant: emptyParty(), manufacturer: emptyParty(), product: { name: '', identification: '', tnVed: '', okpd2: '', gtin: '', productionType: 'Serial', batchDetails: '', batchQuantity: '', batchUnit: '', batchIdentifier: '', shippingDocuments: [], storageConditions: '' }, regulations: [], additionalInfo: '', adoptedAt: null, validUntil: null, reports: [], revision: 0, evidence: emptyEvidence() });
 export const date = (value?: string | null) => value ? new Date(value.length === 10 ? `${value}T12:00:00` : value).toLocaleDateString('ru-RU') : '—';
 export const dateTime = (value: string) => new Date(/(Z|[+-]\d{2}:\d{2})$/.test(value) ? value : value + 'Z').toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 export function errorMessage(error: unknown): string {

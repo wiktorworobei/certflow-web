@@ -10,8 +10,8 @@ const url = (firmId: string, path: string) => `/firms/${firmId}/classifiers/tnve
 export const tnvedApi = api.injectEndpoints({
   endpoints: b => ({
     tnVedSettings: b.query<TnVedSettings, string>({ query: id => url(id, 'settings') }),
-    tnVedSearch: b.query<TnVedResult, { firmId: string; query: string; page: number }>({
-      query: ({ firmId, query, page }) => ({ url: url(firmId, 'search'), params: { query, page, pageSize: 25 } }), keepUnusedDataFor: 60,
+    tnVedSearch: b.query<TnVedResult, { firmId: string; query: string; page: number; pageSize?: number }>({
+      query: ({ firmId, query, page, pageSize = 25 }) => ({ url: url(firmId, 'search'), params: { query, page, pageSize } }), keepUnusedDataFor: 60,
     }),
   }),
 });

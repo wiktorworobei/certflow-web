@@ -5,23 +5,25 @@ import { date, errorMessage } from './types';
 import { tnvedApi, type TnVedCode } from './tnvedApi';
 
 interface Props {
-  firmId: string; value: string; productName?: string; disabled?: boolean;
+  firmId: string; value: string; productName?: string; disabled?: boolean; append?: boolean;
   onSelect: (code: TnVedCode) => void;
 }
 const formatCode = (code: string) => [code.slice(0, 4), code.slice(4, 6), code.slice(6, 9), code.slice(9)].filter(Boolean).join(' ');
 
-export function TnVedPicker({ firmId, value, productName = '', disabled = false, onSelect }: Props) {
+export function TnVedPicker({ firmId, value, productName = '', disabled = false, append = false, onSelect }: Props) {
   const [open, setOpen] = useState(false);
   useEffect(() => { setOpen(false); }, [firmId, disabled]);
   return <>
     <Button type="button" size="small" variant="outlined" startIcon={<MenuBookOutlined/>} disabled={disabled} onClick={() => setOpen(true)}>Подобрать код ТН ВЭД</Button>
-    {open && <TnVedDialog key={firmId} firmId={firmId} value={value} productName={productName} onClose={() => setOpen(false)} onSelect={code => { if (!disabled) onSelect(code); setOpen(false); }}/>}
+    {open && <TnVedDialog key={firmId} firmId={firmId} value={value} productName={productName} append={append} onClose={() => setOpen(false)} onSelect={code => { if (!disabled) onSelect(code); setOpen(false); }}/>}
   </>;
 }
 
-function TnVedDialog({ firmId, value, productName, onClose, onSelect }: Omit<Props, 'disabled'> & { onClose: () => void }) {
+function TnVedDialog({ firmId, value, productName, append, onClose, onSelect }: Omit<Props, 'disabled'> & { onClose: () => void }) {
   const titleId = useId(); const theme = useTheme(); const mobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const [query, setQuery] = useState(value.trim()); const [debounced, setDebounced] = useState(value.trim());
+  const initialQuery = append ? '' : value.trim();
+  const [query, setQuery] = useState(initialQuery); const [debounced, setDebounced] = useState(initialQuery);
+  const applyLabel = append ? 'Добавить код' : 'Подставить код';
   const [page, setPage] = useState(1); const [selected, setSelected] = useState<TnVedCode | null>(null);
   const settings = tnvedApi.useTnVedSettingsQuery(firmId, { refetchOnMountOrArgChange: true });
   const available = settings.currentData?.isConfigured === true;
@@ -79,7 +81,7 @@ function TnVedDialog({ firmId, value, productName, onClose, onSelect }: Omit<Pro
             <Typography variant="h5" sx={{ mt: 1, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>{formatCode(selected.code)}</Typography>
             <Chip size="small" color="primary" variant="outlined" label="Полный код · 10 цифр" sx={{ my: 1.5 }}/>
             <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selected.text}</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Нажмите «Подставить код», чтобы заполнить поле ТН ВЭД.</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Нажмите «{applyLabel}», чтобы {append ? 'добавить код в декларацию.' : 'заполнить поле ТН ВЭД.'}</Typography>
           </> : <>
             <Typography variant="subtitle1" sx={{ mt: 1 }}>Выберите код из списка</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Поиск находит начало кода и слова в наименовании. Пробелы в номере кода допускаются.</Typography>
@@ -91,7 +93,7 @@ function TnVedDialog({ firmId, value, productName, onClose, onSelect }: Omit<Pro
     </DialogContent>
     <DialogActions sx={{ px: 3, py: 2, flexWrap: 'wrap', gap: 1 }}>
       <Button type="button" onClick={onClose}>Отмена</Button>
-      <Button type="button" variant="contained" disabled={!selected || loading} onClick={() => { if (selected) onSelect(selected); }}>Подставить код</Button>
+      <Button type="button" variant="contained" disabled={!selected || loading} onClick={() => { if (selected) onSelect(selected); }}>{applyLabel}</Button>
     </DialogActions>
   </Dialog>;
 }

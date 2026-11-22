@@ -34,14 +34,26 @@ async function appFixture(page: Page, document = documentFixture(), role = 'Admi
     if (p === '/api/auth/refresh') return route.fulfill({ json: auth });
     if (p.endsWith('/declarations/preview')) return route.fulfill({ json: printLayoutFixture(request.postDataJSON()) });
     if (p.endsWith(`/declarations/${id}`)) { gets++; return route.fulfill({ json: document }); }
+    if (p.endsWith('/fgis/draft') && request.method() === 'PUT') {
+      const { revision, documentId, assignedNumber } = request.postDataJSON();
+      if (revision !== document.revision) return route.fulfill({ status: 409, json: { detail: 'Декларация изменилась.' } });
+      const workspace = document.workspace ??= { sections: {}, files: [] };
+      workspace.fgisDraft = {
+        documentId, assignedNumber, recordedAtUtc: '2026-11-20T00:00:00Z', recordedBy: 'Tester',
+        cabinetUrl: `https://srd.fsa.gov.ru/srd/view/${documentId}/srd/common`,
+        registryUrl: `https://pub.fsa.gov.ru/rds/declaration/view/${documentId}/common`,
+      };
+      document.revision += 1;
+      return route.fulfill({ json: document });
+    }
     if (p.endsWith('/fgis')) return route.fulfill({ json: { revision: 3, missingRequirements: [], preparationIsCurrent: false, selectedFiles: 0 } });
     if (p.endsWith('/print-fields')) return route.fulfill({ json: [] });
     if (p.endsWith('/dadata')) return route.fulfill({ json: { enabled: false, isConfigured: false, source: 'None' } });
     if (p.includes('/document-fonts/')) return route.fulfill({ status: 204 });
     return route.fulfill({ json: [] });
   });
-  await page.goto(`http://127.0.0.1:5176/#/declarations/${id}`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(document.title);
+  await page.goto(`/#/declarations/${id}`);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(document.title, { timeout: 30_000 });
   return { gets: () => gets, writes, document };
 }
 
@@ -55,6 +67,32 @@ test('payload carries structured data without credentials or registration and ke
   expect(JSON.stringify(data)).not.toMatch(/PRIVATE-REGISTRATION|example.invalid|Ручной текст|accessToken/);
 });
 
+test('records the FGIS draft and copies both links without changing local registration', async ({ page }) => {
+  test.setTimeout(120_000);
+  const { document, writes } = await appFixture(page);
+  await page.getByRole('tab', { name: /^Публикация/ }).click();
+  await page.getByRole('button', { name: 'Указать черновик ФГИС' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Сведения о черновике ФГИС' });
+  const save = dialog.getByRole('button', { name: 'Сохранить сведения' });
+  await dialog.getByLabel('ФГИС ID документа').fill('внешняя ссылка');
+  await expect(save).toBeDisabled();
+  await dialog.getByLabel('ФГИС ID документа').fill('12345678');
+  await dialog.getByLabel('Номер, присвоенный в ФГИС').fill('ТЕСТ-1');
+  await save.click();
+  await expect(page.getByRole('link', { name: 'Открыть черновик' })).toHaveAttribute('href', 'https://srd.fsa.gov.ru/srd/view/12345678/srd/common', { timeout: 20_000 });
+  await expect(page.getByRole('link', { name: 'Открыть карточку реестра' })).toHaveAttribute('href', 'https://pub.fsa.gov.ru/rds/declaration/view/12345678/common');
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (value: string) => sessionStorage.setItem('copied-draft', value),
+    } });
+  });
+  await page.getByRole('button', { name: 'Скопировать сведения' }).click();
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('copied-draft'))).toContain('Номер, присвоенный в ФГИС: ТЕСТ-1');
+  expect(document.status).toBe('Draft');
+  expect(document.registrationNumber).toBe('');
+  expect(writes.filter(path => path.includes('/fgis/'))).toEqual([`/api/firms/${id}/declarations/${id}/fgis/draft`]);
+});
+
 test('fills scoped party fields and dates, emits input changes and repeats without duplicate writes', async ({ page }) => {
   await adapter(page, `<form onsubmit="window.submitted=true;return false"><fieldset><legend>Заявитель</legend><label>ИНН<input id="a"></label></fieldset><fieldset><legend>Изготовитель</legend><label>ИНН<input id="m"></label></fieldset><label>Дата принятия декларации<input type="date" id="date"></label><button>Подписать и зарегистрировать</button></form>`);
   await page.evaluate(() => { (window as any).changes = 0; document.addEventListener('input', () => (window as any).changes++); });
@@ -63,6 +101,37 @@ test('fills scoped party fields and dates, emits input changes and repeats witho
   await expect(page.locator('#a')).toHaveValue('7701234567'); await expect(page.locator('#m')).toHaveValue('7709876543'); await expect(page.locator('#date')).toHaveValue('2026-11-10');
   expect((await fill(page, data)).fields.every(f => f.status === 'unchanged')).toBe(true);
   expect(await page.evaluate(() => ({ changes: (window as any).changes, submitted: !!(window as any).submitted }))).toEqual({ changes: 3, submitted: false });
+});
+
+test('fills all TN VED codes in a native multi-select and leaves a single-value field for manual entry', async ({ page }) => {
+  const data = payload([field('product.tnVed', 'Код ТН ВЭД ЕАЭС', '6202, 6201', 'Продукция', 'choice')]);
+  await adapter(page, '<label>Код ТН ВЭД ЕАЭС<select id="codes" multiple><option>6201</option><option>6202</option></select></label>');
+  expect((await fill(page, data)).fields[0]?.status).toBe('filled');
+  await expect(page.locator('#codes')).toHaveValues(['6201', '6202']);
+  expect((await fill(page, data)).fields[0]?.status).toBe('unchanged');
+  await adapter(page, '<label>Код ТН ВЭД ЕАЭС<input id="code"></label>');
+  expect((await fill(page, data)).fields[0]?.status).toBe('manual');
+  await expect(page.locator('#code')).toHaveValue('');
+});
+
+test('transfers only current EAEU groups through exact native multi-select matches', async ({ page }) => {
+  const document = documentFixture();
+  document.regulations = ['ТР ТС 017/2011'];
+  document.workspace = { sections: {}, files: [], productGroups: [
+    { regulation: 'ТР ТС 017/2011', code: '017.002.08', name: 'Изделия костюмные' },
+    { regulation: 'ТР ТС 017/2011', code: '017.002.09', name: 'Изделия плательные' },
+    { regulation: 'ТР ТС 007/2011', code: '', name: 'Устаревшая группа' },
+  ] };
+  expect(fgisPayload(document).fields.some(item => item.key === 'product.eaeuGroups')).toBe(false);
+  const groups = fgisPayload(document, true).fields.find(item => item.key === 'product.eaeuGroups')!;
+  expect(groups.value).toBe('Изделия костюмные\nИзделия плательные');
+  const data = payload([groups]);
+  await adapter(page, '<label>Группа продукции ЕАЭС<select id="groups" multiple><option value="8">Изделия костюмные</option><option value="9">Изделия плательные</option></select></label>');
+  expect((await fill(page, data)).fields[0]?.status).toBe('filled');
+  await expect(page.locator('#groups')).toHaveValues(['8', '9']);
+  await adapter(page, '<label>Группа продукции ЕАЭС<input id="groups"></label>');
+  expect((await fill(page, data)).fields[0]?.status).toBe('manual');
+  await expect(page.locator('#groups')).toHaveValue('');
 });
 
 test('preserves existing values, skips hidden and disabled fields and prevents ambiguous report matches', async ({ page }) => {
@@ -141,6 +210,81 @@ for (const fixture of [{ role: 'Viewer', status: 'Draft' }, { role: 'Admin', sta
   });
 }
 
+test('only a published SRD card for the matching applicant can prefill registration', async ({ page }) => {
+  const document = documentFixture();
+  document.status = 'Ready';
+  const fixture = await appFixture(page, document);
+  const registrationNumber = 'ЕАЭС N RU Д-DE.PA10.B.12345/26';
+  await page.evaluate(({ registrationNumber, applicantInn }) => {
+    const cards = [
+      { status: 'Черновик', applicantInn },
+      { status: 'Действует', applicantInn: '7700000002' },
+      { status: 'Действует', applicantInn },
+    ];
+    window.addEventListener('message', event => {
+      const data = event.data;
+      if (data?.channel !== 'znaq-fgis-request') return;
+      const response = data.action === 'status' ? { tabs: [{ id: 10, title: 'Кабинет ФГИС' }] }
+        : { inspection: { page: 'view', documentId: '12345678', registrationNumber, ...cards.shift() } };
+      window.postMessage({ channel: 'znaq-fgis-response', requestId: data.requestId, response: { version: 1, ...response } }, location.origin);
+    });
+  }, { registrationNumber, applicantInn: document.applicant.inn });
+
+  await page.getByRole('button', { name: 'Перенести в ФГИС', exact: true }).first().click();
+  const dialog = page.getByRole('dialog', { name: /^Перенести в ФГИС/ });
+  const inspect = dialog.getByRole('button', { name: 'Проверить карточку ФГИС' });
+  const recordRegistration = dialog.getByRole('button', { name: 'Учесть регистрацию', exact: true });
+  await inspect.click();
+  await expect(dialog).toContainText('Статус в ФГИС: Черновик');
+  await expect(dialog).toContainText('Присвоенный номер у черновика не подтверждает регистрацию');
+  await expect(dialog.getByRole('link', { name: 'Открыть карточку в ФГИС' })).toHaveAttribute('href', 'https://srd.fsa.gov.ru/srd/view/12345678');
+  await expect(dialog.getByRole('button', { name: 'Связать черновик с декларацией' })).toBeEnabled();
+  expect(fixture.writes.some(url => url.endsWith('/fgis/draft'))).toBe(false);
+  await expect(recordRegistration).toHaveCount(0);
+
+  await inspect.click();
+  await expect(dialog).toContainText('Статус в ФГИС: Действует');
+  await expect(dialog.getByRole('alert').filter({ hasText: /ИНН.*отличается|ИНН.*не совпадает/ })).toBeVisible();
+  await expect(recordRegistration).toHaveCount(0);
+
+  await inspect.click();
+  await recordRegistration.click();
+  const statusDialog = page.getByRole('dialog', { name: 'Учесть регистрацию документа' });
+  await expect(statusDialog.getByLabel('Регистрационный номер')).toHaveValue(registrationNumber);
+  expect(fixture.writes.some(url => /fgis\/send|\/status$/.test(url))).toBe(false);
+});
+
+test('publication shows the payments portal and the applicant identity', async ({ page }) => {
+  const { document } = await appFixture(page);
+  await page.getByRole('tab', { name: /^Публикация/ }).click();
+  const panel = page.getByRole('heading', { name: 'Оплата регистрации декларации' }).locator('..');
+  await expect(panel).toContainText(document.applicant.name);
+  await expect(panel).toContainText(`ИНН ${document.applicant.inn}`);
+  await expect(panel).toContainText(/Создать сч[её]т/);
+  await expect(panel.getByRole('link', { name: 'Открыть кабинет «Платежи»' })).toHaveAttribute('href', 'https://pay.niakk.ru/');
+});
+
+test('a saved SRD draft ID rejects another declaration from the same applicant', async ({ page }) => {
+  const document = documentFixture();
+  document.status = 'Ready';
+  document.workspace = { sections: {}, files: [], fgisDraft: { applicationId: '', documentId: '12345678', assignedNumber: '' } };
+  await appFixture(page, document);
+  await page.evaluate(applicantInn => {
+    window.addEventListener('message', event => {
+      const data = event.data;
+      if (data?.channel !== 'znaq-fgis-request') return;
+      const response = data.action === 'status' ? { tabs: [{ id: 10, title: 'Кабинет ФГИС' }] }
+        : { inspection: { page: 'view', documentId: '12345679', registrationNumber: 'ЕАЭС N RU Д-DE.PA10.B.12345/26', status: 'Действует', applicantInn } };
+      window.postMessage({ channel: 'znaq-fgis-response', requestId: data.requestId, response: { version: 1, ...response } }, location.origin);
+    });
+  }, document.applicant.inn);
+  await page.getByRole('button', { name: 'Перенести в ФГИС', exact: true }).first().click();
+  const dialog = page.getByRole('dialog', { name: /^Перенести в ФГИС/ });
+  await dialog.getByRole('button', { name: 'Проверить карточку ФГИС' }).click();
+  await expect(dialog).toContainText('Открыта другая карточка ФГИС.');
+  await expect(dialog.getByRole('button', { name: 'Учесть регистрацию', exact: true })).toHaveCount(0);
+});
+
 test('real extension connects the app to an existing tab, fills a draft and rejects an unpaired source', async () => {
   test.setTimeout(90000);
   const folder = await mkdtemp(path.join(tmpdir(), 'znaq-fgis-test-')); const copy = path.join(folder, 'extension'); await cp(extension, copy, { recursive: true });
@@ -159,7 +303,22 @@ test('real extension connects the app to an existing tab, fills a draft and reje
     const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
     // No request reaches the real registry; the target is an explicit HTML fixture.
     const html = '<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Черновик декларации — тест</title></head><body><form onsubmit="window.submitted=true;return false"><label>Наименование продукции<textarea id="product"></textarea></label><button type="submit">Подписать и зарегистрировать</button></form></body></html>';
-    await context.route('https://srd.fsa.gov.ru/**', route => route.fulfill({ contentType: 'text/html', body: html }));
+    const number = 'ЕАЭС N RU Д-DE.PA10.B.12345/26';
+    await context.route('https://srd.fsa.gov.ru/**', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body:
+      new URL(route.request().url()).pathname === '/srd/view/12345678/srd/common'
+        ? `<h1>${number} от 17.11.2026 действует до 16.11.2031</h1><span>Статус: Черновик</span><span>ИНН заявителя: 7701234567</span>`
+        : html,
+    }));
+    await context.route('https://pay.niakk.ru/**', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `
+      <meta charset="utf-8"><title>Кабинет «Платежи»</title>
+      <header><span>16 000,50 ₽</span><div><span>ООО «Заявитель»</span><span>ИНН 7701234567</span></div></header>
+      <main><h1>Создать счет</h1><form>
+        <section><h2>Регистрация декларации о соответствии</h2>
+          <button type="button">−</button><input aria-label="Количество в НИА" type="number" min="1" value="1"><button type="button">+</button>
+          <p>1500 ₽ за единицу</p>
+        </section>
+        <p>Итого: 1500 ₽</p><button type="submit">Сформировать</button>
+      </form></main>` }));
     const target = await context.newPage(); await target.goto('https://srd.fsa.gov.ru/srd/draft/test');
     const source = await context.newPage(); const fixture = await appFixture(source);
     await worker.evaluate(async () => {
@@ -177,11 +336,54 @@ test('real extension connects the app to an existing tab, fills a draft and reje
     expect(await target.evaluate(() => !!(window as any).submitted)).toBe(false);
     await fillButton.click(); await expect(dialog).toContainText('Уже совпадало: 1.');
     await source.screenshot({ path: path.resolve('../artifacts/fgis-qa/transferred.png') });
+
+    await target.goto('https://srd.fsa.gov.ru/srd/view/12345678/srd/common');
+    await dialog.getByRole('button', { name: 'Проверить карточку ФГИС' }).click();
+    await expect(dialog).toContainText('Статус в ФГИС: Черновик');
+    await expect(dialog).toContainText(number);
+
+    const payment = await context.newPage();
+    await payment.goto('https://pay.niakk.ru/ru/main/documents/new');
+    await payment.evaluate(() => {
+      document.addEventListener('submit', event => {
+        event.preventDefault();
+        document.body.dataset.submitted = 'yes';
+      });
+      document.querySelector('input')?.addEventListener('change', () => { document.body.dataset.quantityChanged = 'yes'; });
+    });
+    await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await source.getByRole('tab', { name: /^Публикация/ }).click();
+    const paymentPanel = source.getByRole('heading', { name: 'Оплата регистрации декларации' }).locator('..');
+    await paymentPanel.getByRole('button', { name: 'Найти вкладки «Платежи»' }).click();
+    await paymentPanel.getByRole('combobox', { name: 'Вкладка кабинета «Платежи»' }).click();
+    await source.getByRole('option', { name: /Кабинет «Платежи»/ }).click();
+    await paymentPanel.getByRole('button', { name: 'Прочитать баланс' }).click();
+    await expect(paymentPanel).toContainText(/16\s000,50\s*₽/);
+    await expect(paymentPanel).toContainText('ИНН плательщика совпадает с ИНН заявителя.');
+    await paymentPanel.getByLabel('Количество деклараций').fill('3');
+    await paymentPanel.getByRole('button', { name: 'Заполнить счёт в кабинете' }).click();
+    await expect(paymentPanel).toContainText('Количество заполнено.');
+    await expect(payment.getByLabel('Количество в НИА')).toHaveValue('3');
+    await expect(payment.locator('body')).toHaveAttribute('data-quantity-changed', 'yes');
+    await expect(payment.locator('body')).not.toHaveAttribute('data-submitted', 'yes');
+
+    await source.getByRole('button', { name: 'Перенести в ФГИС', exact: true }).first().click();
     // A same-host sibling on another port must not inherit the paired origin's access.
     await context.route('http://127.0.0.1:5177/**', route => route.fulfill({ body: '<!doctype html><title>Unpaired source</title>' }));
     const unpaired = await context.newPage(); await unpaired.goto('http://127.0.0.1:5177/');
-    const denied = await unpaired.evaluate(() => new Promise<string>(resolve => {
-      window.addEventListener('message', event => { if (event.data?.channel === 'znaq-fgis-response') resolve(event.data.error); });
+    await worker.evaluate(async () => {
+      const chrome = (globalThis as any).chrome;
+      const tabs = await chrome.tabs.query({ url: 'http://127.0.0.1/*' });
+      const unpairedTab = tabs.find((tab: { url: string }) => new URL(tab.url).origin === 'http://127.0.0.1:5177');
+      await chrome.scripting.executeScript({ target: { tabId: unpairedTab.id }, files: ['bridge.js'] });
+    });
+    const denied = await unpaired.evaluate(() => new Promise<string>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('No denial from the extension.')), 5000);
+      window.addEventListener('message', event => {
+        if (event.data?.channel !== 'znaq-fgis-response' || event.data.requestId !== 'unpaired-test') return;
+        window.clearTimeout(timer);
+        resolve(event.data.error);
+      });
       window.postMessage({ channel: 'znaq-fgis-request', action: 'status', requestId: 'unpaired-test' }, location.origin);
     }));
     expect(denied).toContain('Подключите эту вкладку ZNAQ');

@@ -125,7 +125,7 @@ test('builder uses real directory records, INN lookup, inline edits and saves th
   const directory=page.getByRole('combobox',{name:'Подставить из справочника'});
   await directory.fill('7707083893'); await page.getByRole('option',{name:/Заявитель конструктора/}).click();
   await expect(page.locator('.builder-sheet').first()).toContainText('Заявитель конструктора'); await expect(page.locator('.builder-sheet').first()).toContainText('Подписант конструктора');
-  await fragment(page,'Изготовитель'); await page.getByRole('button',{name:'По ИНН',exact:true}).click();
+  await fragment(page,'Изготовитель'); await page.getByRole('button',{name:'Реестр DaData',exact:true}).click();
   const lookup=page.getByRole('region',{name:'Поиск реквизитов в DaData'});
   await lookup.getByLabel('ИНН или ОГРН / ОГРНИП').fill('5406792731'); await lookup.getByRole('button',{name:'Найти организацию',exact:true}).click();
   await lookup.getByRole('button',{name:'Подставить реквизиты',exact:true}).click(); await expect(lookup).toBeHidden(); expect(lookups).toBe(1);

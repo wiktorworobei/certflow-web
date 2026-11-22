@@ -3,7 +3,7 @@ const button = document.getElementById('connect'); const status = document.getEl
 (async () => {
   [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   currentUrl = new URL(currentTab.url);
-  if (!(currentUrl.protocol === 'https:' || currentUrl.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(currentUrl.hostname)) || currentUrl.hostname === 'srd.fsa.gov.ru')
+  if (!(currentUrl.protocol === 'https:' || currentUrl.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(currentUrl.hostname)) || ['srd.fsa.gov.ru', 'pay.niakk.ru'].includes(currentUrl.hostname))
     throw new Error('Откройте вкладку программы ZNAQ и нажмите значок расширения в ней.');
   const [result] = await chrome.scripting.executeScript({ target: { tabId: currentTab.id }, func: () => document.querySelector('meta[name="application-name"]')?.content === 'ZNAQ' });
   if (!result.result) throw new Error('Эта вкладка не распознана как ZNAQ. Откройте программу.');

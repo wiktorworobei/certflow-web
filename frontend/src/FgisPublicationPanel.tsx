@@ -1,6 +1,8 @@
 import { Alert, Button, Divider, Step, StepLabel, Stepper, Typography } from '@mui/material';
 import { FileDownloadOutlined, Inventory2Outlined, OpenInNewRounded } from '@mui/icons-material';
 import { FgisTransferButton } from './FgisTransferButton';
+import { FgisPaymentPanel } from './FgisPaymentPanel';
+import { FgisDraftReferencePanel } from './FgisDraftReferencePanel';
 import { DeclarationRegistryCheck } from './RegistryVerification';
 import { RegistryWatchPanel } from './RegistryMonitoring';
 import { useFormContext } from 'react-hook-form';
@@ -10,7 +12,11 @@ import { download } from './store';
 import { ErrorState, Loading, Section, useNotify, useWorkspace } from './common';
 import { dateTime, errorMessage, type Declaration, type SaveDeclaration } from './types';
 
-export function FgisPublicationPanel({ document, onFiles }: { document?: Declaration; onFiles: () => void }) {
+export function FgisPublicationPanel({ document, onFiles, onUseRegistration }: {
+  document?: Declaration;
+  onFiles: () => void;
+  onUseRegistration?: (registrationNumber: string) => void;
+}) {
   const { firmId, canEdit } = useWorkspace(); const notify = useNotify();
   const { formState: { isDirty } } = useFormContext<SaveDeclaration>();
   const { data, isLoading, error, refetch } = fgisApi.useFgisReviewQuery({ firmId, id: document?.id ?? '' }, { skip: !document });
@@ -20,7 +26,7 @@ export function FgisPublicationPanel({ document, onFiles }: { document?: Declara
   if (error) return <ErrorState error={error} retry={refetch}/>;
   const current = data?.preparationIsCurrent && !isDirty;
   return <Section title="Публикация ФГИС" subtitle="Подготовка комплекта для передачи черновика в кабинет заявителя. Подписание и регистрация — отдельные действия.">
-    <Stepper activeStep={current ? 1 : 0} alternativeLabel sx={{ mb: 3 }}><Step completed={!!current}><StepLabel>Подготовить комплект</StepLabel></Step><Step><StepLabel>Передать черновик</StepLabel></Step><Step><StepLabel>Подписать в кабинете</StepLabel></Step></Stepper>
+    <Stepper activeStep={document.workspace?.fgisDraft ? 2 : current ? 1 : 0} alternativeLabel sx={{ mb: 3 }}><Step completed={!!current}><StepLabel>Подготовить комплект</StepLabel></Step><Step completed={!!document.workspace?.fgisDraft}><StepLabel>Передать черновик</StepLabel></Step><Step><StepLabel>Подписать в кабинете</StepLabel></Step></Stepper>
     <Alert severity="info" sx={{ mb: 2 }}>Для заполнения открытого кабинета используйте «Перенести в ФГИС» и расширение браузера. Подготовка ZIP доступна отдельно для работы с файлами.</Alert>
     {isDirty && <Alert severity="warning" sx={{ mb: 2 }}>Сохраните изменения перед проверкой и подготовкой комплекта.</Alert>}
     {!!data?.missingRequirements.length && <Alert severity="warning" sx={{ mb: 2 }}>Нужно дополнить:<ul>{data.missingRequirements.map(item => <li key={item}>{item}</li>)}</ul></Alert>}
@@ -30,14 +36,18 @@ export function FgisPublicationPanel({ document, onFiles }: { document?: Declara
       <Button variant="outlined" onClick={onFiles}>Выбрать документы</Button>
       <Button variant="contained" startIcon={<Inventory2Outlined/>} disabled={!canEdit || isDirty || preparing || !data || !!data.missingRequirements.length} onClick={async () => { try { await prepare({ firmId, id: document.id, revision: document.revision }).unwrap(); notify('Комплект подготовлен. Отправка в ФГИС не выполнялась.'); } catch (e) { notify(errorMessage(e), 'error'); } }}>{preparing ? 'Проверяем файлы…' : 'Подготовить комплект'}</Button>
       <Button variant="outlined" startIcon={<FileDownloadOutlined/>} disabled={!current} onClick={async () => { try { await download(`/firms/${firmId}/declarations/${document.id}/fgis/package?revision=${document.revision}`, `${document.reference}-fgis-review.zip`); } catch (e) { notify(errorMessage(e), 'error'); } }}>Скачать комплект</Button>
-      <FgisTransferButton document={document} disabled={preparing}/>
+      <FgisTransferButton document={document} disabled={preparing} onUseRegistration={onUseRegistration}/>
     </div>
     <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>ZIP содержит данные декларации, разделы, выбранные файлы, опись SHA-256 и макеты. Это комплект для проверки и ручной работы; его формат не подтверждён как формат импорта ФГИС.</Typography>
     <Divider sx={{ my: 3 }}/>
     <Typography variant="h6" sx={{ mb: 1 }}>Следующий шаг после подготовки</Typography>
-    <Typography color="text.secondary">Перенесите сведения и приложите документы в кабинете заявителя, проверьте черновик и подпишите его своей электронной подписью. Скачанный архив не означает отправку или регистрацию.</Typography>
+    <Typography color="text.secondary">Проверьте сведения и вложения в черновике. После подписания вернитесь из сервиса подписи, подтвердите публикацию в кабинете и проверьте статус карточки.</Typography>
     <Button component="a" href="https://srd.fsa.gov.ru/srd" target="_blank" rel="noopener noreferrer" endIcon={<OpenInNewRounded/>} sx={{ mt: 2 }}>Открыть кабинет заявителя</Button>
     <Button component={RouterLink} to="/development-plan?module=fgis" sx={{ mt: 2 }}>План подключения ФГИС</Button>
+    <Divider sx={{ my: 3 }}/>
+    <FgisDraftReferencePanel document={document} disabled={isDirty || preparing}/>
+    <Divider sx={{ my: 3 }}/>
+    <FgisPaymentPanel key={`payment-${firmId}-${document.id}`} applicant={document.applicant}/>
     <Divider sx={{ my: 3 }}/>
     <DeclarationRegistryCheck key={`${firmId}-${document.id}`} document={document} disabled={isDirty}/>
     <RegistryWatchPanel key={`watch-${firmId}-${document.id}`} id={document.id}/>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { Alert, Button, CircularProgress, LinearProgress, MenuItem, TextField, Typography } from '@mui/material';
 import { ArrowForwardRounded, CheckCircleOutlineRounded, EditOutlined, RestartAltRounded } from '@mui/icons-material';
@@ -6,17 +6,22 @@ import { api } from './store';
 import { apiUrl } from './apiUrl';
 import { useWorkspace } from './common';
 import { errorMessage, type Declaration, type DeclarationPrintLayout, type SaveDeclaration } from './types';
-import { DeclarationField as Field, DeclarationParty } from './DeclarationFields';
+import { applicantAddressPrintKey, DeclarationField as Field, DeclarationParty } from './DeclarationFields';
 import { DeclarationProductCatalog } from './DeclarationProductCatalog';
+import { DeclarationBatchFields } from './DeclarationBatchFields';
 import { DeclarationTnVedField } from './DeclarationTnVedField';
 import { DeclarationOkpd2Field } from './DeclarationOkpd2Field';
 import { NormativeDocumentsField } from './NormativeDocumentsField';
+import { DeclarationProductGroups } from './DeclarationProductGroups';
+import { DeclarationPartyImport } from './DeclarationPartyImport';
+import { copyDeclarationParty } from './declarationPartyCopy';
+import { canRecordOpenValidity, DeclarationValidityFields } from './DeclarationValidityFields';
 import { DeclarationCaseWorkspace, openDeclarationCase } from './DeclarationCaseWorkspace';
 import './declarationBuilder.css';
 
 type Group = 'applicant' | 'manufacturer' | 'product' | 'regulations' | 'evidence' | 'dates' | 'additional' | 'scheme' | 'appendices';
 const groups: Record<Group, { title: string; keys: string[] }> = {
-  applicant: { title: 'Заявитель', keys: ['Заявитель','Место нахождения и адрес места осуществления деятельности','Основной государственный регистрационный номер','Контактные сведения','в лице','Подпись заявителя'] },
+  applicant: { title: 'Заявитель', keys: ['Заявитель',applicantAddressPrintKey,'Основной государственный регистрационный номер','Контактные сведения','в лице','Подпись заявителя'] },
   manufacturer: { title: 'Изготовитель', keys: ['Изготовитель','Место нахождения и адрес места осуществления деятельности по изготовлению продукции'] },
   product: { title: 'Продукция', keys: ['заявляет, что','Код (коды) ТН ВЭД ЕАЭС','production'] },
   regulations: { title: 'Технические регламенты', keys: ['соответствует требованиям'] },
@@ -27,8 +32,15 @@ const groups: Record<Group, { title: string; keys: string[] }> = {
   appendices: { title: 'Приложения', keys: ['appendix-products','appendix-addresses','appendix-standards','appendix-free'] },
 };
 const groupForKey = (key: string) => (Object.keys(groups) as Group[]).find(group => groups[group].keys.includes(key));
+const applicantAddressSources = ['applicant', 'applicant.address', 'applicant.country', 'applicant.inn', 'applicant.ogrn', 'applicant.kpp'];
 
-export function DeclarationBuilder({ document: saved, readOnly, disabled, onPreviewState }: { document?: Declaration; readOnly: boolean; disabled: boolean; onPreviewState: (ready: boolean) => void }) {
+export function DeclarationBuilder({ document: saved, readOnly, disabled, onPreviewState, onUseRegistration }: {
+  document?: Declaration;
+  readOnly: boolean;
+  disabled: boolean;
+  onPreviewState: (ready: boolean) => void;
+  onUseRegistration?: (registrationNumber: string) => void;
+}) {
   const form = useFormContext<SaveDeclaration>(); const { firmId } = useWorkspace();
   const values = useWatch({ control: form.control }) as SaveDeclaration;
   const [loadPreview] = api.useDeclarationPreviewMutation();
@@ -41,7 +53,8 @@ export function DeclarationBuilder({ document: saved, readOnly, disabled, onPrev
     previousId.current = saved?.id;
   }, [saved?.id]);
   const signature = JSON.stringify({ title: values.title, kind: values.kind, scheme: values.scheme, applicant: values.applicant, manufacturer: values.manufacturer, product: values.product, regulations: values.regulations, reports: values.reports, additionalInfo: values.additionalInfo, adoptedAt: values.adoptedAt, validUntil: values.validUntil, evidence: values.evidence, workspace: values.workspace, revision: values.revision });
-  const checks = [!!values.applicant?.name && !!values.applicant?.address, !!values.manufacturer?.name && !!values.manufacturer?.address, !!values.product?.name && !!values.product?.tnVed, !!values.regulations?.length, !!values.reports?.length && values.reports.every(r => r.number && r.date && r.laboratoryName), !!values.adoptedAt && !!values.validUntil];
+  const validityNotEstablished = canRecordOpenValidity(values.kind, values.product?.productionType) && values.workspace?.validityNotEstablished === true;
+  const checks = [!!values.applicant?.name && !!values.applicant?.address, !!values.manufacturer?.name && !!values.manufacturer?.address, !!values.product?.name && !!values.product?.tnVed, !!values.regulations?.length, !!values.reports?.length && values.reports.every(r => r.number && r.date && r.laboratoryName), !!values.adoptedAt && (!!values.validUntil || validityNotEstablished)];
   const count = checks.filter(Boolean).length;
   useEffect(() => {
     let active = true; let request: ReturnType<typeof loadPreview> | undefined;
@@ -56,11 +69,21 @@ export function DeclarationBuilder({ document: saved, readOnly, disabled, onPrev
     // Source edits explicitly replace only the dependent print overrides; unrelated edits survive.
     const subscription = form.watch((_, { name }) => {
       if (!name || name.startsWith('workspace.printOverrides')) return;
-      const group: Group | undefined = name.startsWith('applicant') ? 'applicant' : name.startsWith('manufacturer') ? 'manufacturer' : name.startsWith('product.storageConditions') || name === 'additionalInfo' || name.startsWith('workspace.sections.declaration.content') ? 'additional' : name.startsWith('product') ? 'product' : name.startsWith('regulations') ? 'regulations' : name.startsWith('reports') || name.startsWith('evidence') ? 'evidence' : name === 'adoptedAt' || name === 'validUntil' ? 'dates' : name === 'scheme' ? 'scheme' : undefined;
+      if (form.getValues('workspace.validityNotEstablished')) {
+        const eligibilityChanged = name === 'kind' || name === 'product' || name === 'product.productionType';
+        if ((name === 'validUntil' && form.getValues('validUntil')) ||
+            (eligibilityChanged && !canRecordOpenValidity(form.getValues('kind'), form.getValues('product.productionType')))) {
+          form.setValue('workspace.validityNotEstablished', false, { shouldDirty: true });
+        }
+      }
+      const group: Group | undefined = name.startsWith('applicant') ? 'applicant' : name.startsWith('manufacturer') || name.startsWith('workspace.manufacturerSites') ? 'manufacturer' : name.startsWith('product.storageConditions') || name === 'additionalInfo' || name.startsWith('workspace.sections.declaration.content') ? 'additional' : name.startsWith('product') ? 'product' : name.startsWith('regulations') ? 'regulations' : name.startsWith('reports') || name.startsWith('evidence') ? 'evidence' : name === 'adoptedAt' || name === 'validUntil' || name === 'workspace.validityNotEstablished' ? 'dates' : name === 'scheme' ? 'scheme' : undefined;
       const appendix = name.match(/^workspace\.sections\.(appendix-(?:products|addresses|standards|free))\.content$/)?.[1];
       const keys = appendix ? [appendix] : group ? groups[group].keys : [];
-      const overrides = form.getValues('workspace.printOverrides'); if (!overrides || !keys.some(key => key in overrides)) return;
-      const next = { ...overrides }; keys.forEach(key => delete next[key]); form.setValue('workspace.printOverrides', next, { shouldDirty: true });
+      const dependentKeys = group === 'applicant' && !applicantAddressSources.includes(name)
+        ? keys.filter(key => key !== applicantAddressPrintKey)
+        : keys;
+      const overrides = form.getValues('workspace.printOverrides'); if (!overrides || !dependentKeys.some(key => key in overrides)) return;
+      const next = { ...overrides }; dependentKeys.forEach(key => delete next[key]); form.setValue('workspace.printOverrides', next, { shouldDirty: true });
     }); return () => subscription.unsubscribe();
   }, [form]);
   function choose(group: Group, key = groups[group].keys[0]) {
@@ -115,10 +138,24 @@ export function DeclarationBuilder({ document: saved, readOnly, disabled, onPrev
         {hasOverride && <Alert severity="info">У этого фрагмента ручная формулировка. Изменение связанных реквизитов заменит её автоматически.</Alert>}
         {editing && !preview?.pages.some(page => page.lines.some(line => line.key === editing.key)) && <div className="builder-field-stack"><TextField label={`Текст фрагмента: ${selectedField?.label}`} value={editing.text} multiline minRows={3} autoFocus disabled={readOnly || disabled} onChange={event => changeText(event.target.value)} inputProps={{ maxLength: 20000 }}/><Button onClick={() => setEditing(undefined)}>Готово</Button></div>}
         <fieldset disabled={disabled} className="builder-context-fields">
-          {(selected === 'applicant' || selected === 'manufacturer') && <DeclarationParty key={selected} side={selected} readOnly={readOnly}/>}
-          {selected === 'product' && <div className="builder-field-stack"><DeclarationProductCatalog key={`${firmId}:${saved?.id ?? 'new'}`} readOnly={readOnly}/><Field name="product.name" label="Наименование продукции" multiline disabled={readOnly}/><Field name="product.identification" label="Модель, марка, артикул и другие признаки" multiline disabled={readOnly}/><DeclarationTnVedField readOnly={readOnly}/><DeclarationOkpd2Field readOnly={readOnly}/><Field name="product.gtin" label="GTIN" disabled={readOnly}/><Controller control={form.control} name="product.productionType" render={({field}) => <TextField {...field} select label="Объект декларирования" disabled={readOnly}><MenuItem value="Serial">Серийный выпуск</MenuItem><MenuItem value="Batch">Партия</MenuItem><MenuItem value="Single">Единичное изделие</MenuItem></TextField>}/><Field name="product.batchDetails" label="Сведения о партии / изделии" disabled={readOnly}/><Field name="product.storageConditions" label="Условия хранения и эксплуатации" multiline disabled={readOnly}/></div>}
-          {selected === 'regulations' && <Controller control={form.control} name="regulations" render={({field}) => <NormativeDocumentsField firmId={firmId} value={field.value} disabled={readOnly} onChange={field.onChange}/>}/>}
-          {selected === 'dates' && <div className="builder-field-stack"><Field name="adoptedAt" label="Дата принятия" type="date" disabled={readOnly}/><Field name="validUntil" label="Действует до" type="date" disabled={readOnly}/></div>}
+          {(selected === 'applicant' || selected === 'manufacturer') && <Fragment key={selected}>
+            {!readOnly && <div className="builder-print-actions"><DeclarationPartyImport side={selected} declarationId={saved?.id} disabled={disabled}
+              onCopy={source => copyDeclarationParty(form, selected, source, groups[selected].keys)}/></div>}
+            <DeclarationParty side={selected} readOnly={readOnly || disabled}/>
+          </Fragment>}
+          {selected === 'product' && <div className="builder-field-stack">
+            <DeclarationProductCatalog key={`${firmId}:${saved?.id ?? 'new'}`} readOnly={readOnly}/>
+            <Field name="product.name" label="Наименование продукции" multiline disabled={readOnly}/>
+            <Field name="product.identification" label="Модель, марка, артикул и другие признаки" multiline disabled={readOnly}/>
+            <DeclarationTnVedField readOnly={readOnly}/><DeclarationOkpd2Field readOnly={readOnly}/>
+            <Field name="product.gtin" label="GTIN" disabled={readOnly}/>
+            <Controller control={form.control} name="product.productionType" render={({field}) => <TextField {...field} select label="Объект декларирования" disabled={readOnly}><MenuItem value="Serial">Серийный выпуск</MenuItem><MenuItem value="Batch">Партия</MenuItem><MenuItem value="Single">Единичное изделие</MenuItem></TextField>}/>
+            <DeclarationBatchFields readOnly={readOnly || disabled}/>
+            <Field name="product.batchDetails" label="Сведения о партии / изделии" disabled={readOnly}/>
+            <Field name="product.storageConditions" label="Условия хранения и эксплуатации" multiline disabled={readOnly}/>
+          </div>}
+          {selected === 'regulations' && <div className="builder-field-stack"><Controller control={form.control} name="regulations" render={({field}) => <NormativeDocumentsField firmId={firmId} value={field.value} disabled={readOnly} onChange={field.onChange}/>}/><DeclarationProductGroups readOnly={readOnly || disabled}/></div>}
+          {selected === 'dates' && <DeclarationValidityFields readOnly={readOnly}/>}
           {selected === 'additional' && <div className="builder-field-stack"><div className="builder-field-group"><Typography component="h3">Сведения о продукции</Typography><p>Дополнительные характеристики и пояснения к декларации.</p><Field name="additionalInfo" label="Дополнительные сведения" multiline disabled={readOnly}/></div><div className="builder-field-group"><Typography component="h3">Хранение и эксплуатация</Typography><p>Условия обращения продукции, которые войдут в документ.</p><Field name="product.storageConditions" label="Условия хранения и эксплуатации" multiline disabled={readOnly}/></div><div className="builder-field-group"><Typography component="h3">Дополнение печатного текста</Typography><p>Свободная формулировка в разделе дополнительной информации.</p><Field name="workspace.sections.declaration.content" label="Дополнительный текст к декларации" multiline disabled={readOnly}/></div></div>}
           {selected === 'scheme' && <div className="builder-field-stack"><Controller control={form.control} name="kind" render={({field}) => <TextField {...field} label="Вид документа" select disabled={readOnly}>{['Декларация ТР ЕАЭС','Декларация ГОСТ Р','Декларация ТР РФ'].map(v => <MenuItem key={v} value={v}>{v}</MenuItem>)}</TextField>}/><Field name="scheme" label="Схема декларирования" required disabled={readOnly}/></div>}
           {selected === 'evidence' && <><p className="builder-context-note">Протоколы, лаборатории и доказательные документы находятся в деле под листом. Их реквизиты заполняют этот фрагмент.</p><Button onClick={() => openDeclarationCase('testing')}>Открыть основания и испытания</Button></>}
@@ -127,6 +164,6 @@ export function DeclarationBuilder({ document: saved, readOnly, disabled, onPrev
         <p className="builder-context-note">Изменения сразу попадают в документ. Сохраните декларацию, чтобы записать их в реестр.</p>
       </aside>
     </div>
-    <DeclarationCaseWorkspace key={saved?.id ?? 'new'} document={saved} readOnly={readOnly} disabled={disabled}/>
+    <DeclarationCaseWorkspace key={saved?.id ?? 'new'} document={saved} readOnly={readOnly} disabled={disabled} onUseRegistration={onUseRegistration}/>
   </div>;
 }

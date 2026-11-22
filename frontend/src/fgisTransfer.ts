@@ -7,11 +7,33 @@ export interface FgisPayload {
   version: 1; declarationId: string; reference: string; revision: number; createdAt: string; fields: FgisField[];
 }
 export interface FgisTab { id: number; title: string }
+export interface FgisInspection {
+  page: 'list' | 'view' | 'edit' | 'signer' | 'unknown';
+  documentId?: string;
+  status?: string;
+  registrationNumber?: string;
+  applicantInn?: string;
+}
+export interface FgisPaymentBalance { organizationName: string; payerInn?: string; balanceKopeks: number }
 export interface FgisFieldResult { key: string; label: string; status: 'filled' | 'unchanged' | 'missing' | 'conflict' | 'manual' | 'error'; message: string }
 export interface FgisTransferResult { fields: FgisFieldResult[]; reference: string }
-export interface FgisBridgeResponse { version: number; tabs?: FgisTab[]; result?: FgisTransferResult; mapping?: boolean }
+export interface FgisBridgeResponse {
+  supportsEaeuGroups?: boolean;
+  version: number;
+  tabs?: FgisTab[];
+  result?: FgisTransferResult;
+  mapping?: boolean;
+  inspection?: FgisInspection;
+  paymentTabs?: FgisTab[];
+  paymentBalance?: FgisPaymentBalance;
+  invoiceFilled?: boolean;
+}
 
-export function fgisPayload(document: Declaration): FgisPayload {
+export function fgisCabinetCardUrl(id: string | undefined) {
+  return id && /^[1-9]\d{0,19}$/.test(id) ? `https://srd.fsa.gov.ru/srd/view/${id}` : undefined;
+}
+
+export function fgisPayload(document: Declaration, supportsEaeuGroups = false): FgisPayload {
   const fields: FgisField[] = [];
   const add = (key: string, label: string, group: string, value: string | null | undefined, aliases: string[] = [], kind: FgisField['kind'] = 'text') => {
     if (value?.trim()) fields.push({ key, label, group, value: value.trim(), aliases, kind });
@@ -39,6 +61,12 @@ export function fgisPayload(document: Declaration): FgisPayload {
   add('product.productionType', 'Тип выпуска продукции', 'Продукция', { Serial: 'Серийный выпуск', Batch: 'Партия', Single: 'Единичное изделие' }[document.product.productionType], ['Тип объекта декларирования'], 'choice');
   add('product.batchDetails', 'Сведения о партии', 'Продукция', document.product.batchDetails);
   add('product.storageConditions', 'Условия хранения', 'Продукция', document.product.storageConditions);
+  if (supportsEaeuGroups) {
+    const regulations = new Set(document.regulations.map(value => value.trim()));
+    const groupNames = (document.workspace?.productGroups ?? []).filter(group => regulations.has(group.regulation.trim()))
+      .map(group => group.name.replace(/\s+/g, ' ').trim());
+    add('product.eaeuGroups', 'Группы продукции ЕАЭС', 'Продукция', groupNames.join('\n'), ['Группа продукции ЕАЭС', 'Группа продукции', 'Группы продукции'], 'choice');
+  }
   add('regulations', 'Технические регламенты', 'Декларация', document.regulations.join('\n'), ['Технический регламент'], 'choice');
   add('adoptedAt', 'Дата принятия декларации', 'Декларация', document.adoptedAt, ['Дата принятия декларации о соответствии'], 'date');
   add('validUntil', 'Дата окончания действия декларации', 'Декларация', document.validUntil, ['Срок действия до', 'Дата окончания срока действия'], 'date');
@@ -56,12 +84,18 @@ export function fgisPayload(document: Declaration): FgisPayload {
   return { version: 1, declarationId: document.id, reference: document.reference, revision: document.revision, createdAt: new Date().toISOString(), fields };
 }
 
-export function requestFgis(action: 'status' | 'fill' | 'map', args: { tabId?: number; payload?: FgisPayload } = {}): Promise<FgisBridgeResponse> {
+type FgisAction = 'status' | 'fill' | 'map' | 'inspect' | 'payment-status' | 'payment-balance' | 'payment-invoice';
+
+export function requestFgis(action: FgisAction, args: { tabId?: number; payload?: FgisPayload; quantity?: number } = {}): Promise<FgisBridgeResponse> {
   const requestId = crypto.randomUUID();
+  const checksConnection = action === 'status' || action === 'payment-status';
+  const checksPage = action === 'inspect' || action === 'payment-balance' || action === 'payment-invoice';
+  const timeoutMessage = checksConnection
+    ? 'Расширение не подключено. Установите «ZNAQ → ФГИС» и подключите эту вкладку ZNAQ через его значок.'
+    : checksPage ? 'Расширение не ответило. Обновите расширение, вкладки ZNAQ и кабинета и повторите действие.'
+    : 'Ответ расширения не получен. Проверьте кабинет ФГИС перед повтором: часть полей могла заполниться.';
   return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => { cleanup(); reject(new Error(action === 'status'
-      ? 'Расширение не подключено. Установите «ZNAQ → ФГИС» и подключите эту вкладку ZNAQ через его значок.'
-      : 'Ответ расширения не получен. Проверьте кабинет ФГИС перед повтором: часть полей могла заполниться.')); }, action === 'status' ? 1800 : 30000);
+    const timer = window.setTimeout(() => { cleanup(); reject(new Error(timeoutMessage)); }, checksConnection ? 1800 : checksPage ? 5000 : 30000);
     const cleanup = () => { window.clearTimeout(timer); window.removeEventListener('message', receive); };
     function receive(event: MessageEvent) {
       if (event.source !== window || event.origin !== location.origin || event.data?.channel !== 'znaq-fgis-response' || event.data.requestId !== requestId) return;

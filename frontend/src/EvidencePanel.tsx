@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { Alert, Button, Checkbox, FormControlLabel, Grid, MenuItem, TextField, Typography } from '@mui/material';
 import { AddRounded, DeleteOutlineRounded, FileDownloadOutlined } from '@mui/icons-material';
@@ -7,27 +8,47 @@ import { errorMessage, type Attachment, type Declaration, type Report, type Save
 import { emptyDirection, emptyEvidence, emptyEvidenceDocument, emptyLaboratoryDetails, emptyReportDetails, type EvidenceDocument, type EvidenceWorkflow, type LaboratoryDirection, type ReportDetails } from './evidenceTypes';
 import { LaboratoryFields } from './LaboratoryFields';
 import { LaboratoryPicker } from './LaboratoryPicker';
+import { ProtocolBatchDialog } from './ProtocolBatchDialog';
 
 function FileField({ value, files, disabled, label, onChange }: { value?: string | null; files: Attachment[]; disabled: boolean; label: string; onChange: (value: string | null) => void }) {
   return <TextField select label={label} value={value ?? ''} disabled={disabled} onChange={e => onChange(e.target.value || null)} helperText="Прикрепите файл в блоке «Файлы и приложения»."><MenuItem value="">Не выбран</MenuItem>{files.map(f => <MenuItem key={f.id} value={f.id}>{f.fileName}</MenuItem>)}</TextField>;
 }
 
+const missingCustomsDocumentKind = 'Missing';
+
 function Documents({ values, onChange, files, readOnly, customs = false }: { values: EvidenceDocument[]; onChange: (value: EvidenceDocument[]) => void; files: Attachment[]; readOnly: boolean; customs?: boolean }) {
   const patch = (i: number, value: Partial<EvidenceDocument>) => onChange(values.map((d, n) => i === n ? { ...d, ...value } : d));
-  return <><Typography variant="h6" sx={{ my: 2 }}>{customs ? 'Таможенное оформление образцов' : 'Другие доказательные документы'}</Typography>{values.map((d,i) => <div className="report-form" key={d.id}><Grid container spacing={2}>
-    <Grid item xs={12} sm={6}><TextField label="Тип документа" select value={d.kind} disabled={readOnly} onChange={e => patch(i,{ kind: e.target.value })}>{(customs ? [['GTD','ДТ / ГТД'],['Other','Другой документ ввоза']] : [['TypeCertificate','Сертификат на тип продукции'],['ManagementCertificate','Сертификат системы менеджмента'],['TechnicalDocument','Технический документ'],['Other','Другой документ']]).map(([k,v]) => <MenuItem key={k} value={k}>{v}</MenuItem>)}</TextField></Grid>
-    <Grid item xs={12} sm={6}><TextField label="Номер доказательного документа" value={d.number} disabled={readOnly} onChange={e => patch(i,{ number: e.target.value })}/></Grid>
-    <Grid item xs={12} sm={6}><TextField type="date" InputLabelProps={{ shrink: true }} label="Дата доказательного документа" value={d.date ?? ''} disabled={readOnly} onChange={e => patch(i,{ date: e.target.value || null })}/></Grid>
-    <Grid item xs={12} sm={6}><TextField label="Выдавший орган / организация" value={d.issuer} disabled={readOnly} onChange={e => patch(i,{ issuer: e.target.value })}/></Grid>
-    <Grid item xs={12}><TextField label="Описание документа" value={d.description} multiline disabled={readOnly} onChange={e => patch(i,{ description: e.target.value })}/></Grid>
-    <Grid item xs={12}><FileField label="Файл доказательного документа" value={d.attachmentId} files={files} disabled={readOnly} onChange={attachmentId => patch(i,{ attachmentId })}/></Grid>
-    {!readOnly && <Grid item xs={12}><Button color="error" startIcon={<DeleteOutlineRounded/>} onClick={() => onChange(values.filter((_,n) => n !== i))}>Убрать документ</Button></Grid>}
-  </Grid></div>)}{!readOnly && <Button startIcon={<AddRounded/>} onClick={() => onChange([...values,{ ...emptyEvidenceDocument(), kind: customs ? 'GTD' : 'Other' }])}>{customs ? 'Добавить таможенный документ' : 'Добавить доказательный документ'}</Button>}</>;
+  const kinds = customs
+    ? [['GTD', 'ДТ / ГТД'], ['Other', 'Другой документ ввоза'], [missingCustomsDocumentKind, 'Нет документа']]
+    : [['TypeCertificate', 'Сертификат на тип продукции'], ['ManagementCertificate', 'Сертификат системы менеджмента'], ['TechnicalDocument', 'Технический документ'], ['Other', 'Другой документ']];
+  return <>
+    <Typography variant="h6" sx={{ my: 2 }}>{customs ? 'Таможенное оформление образцов' : 'Другие доказательные документы'}</Typography>
+    {values.map((d, i) => {
+      const missing = customs && d.kind === missingCustomsDocumentKind;
+      function changeKind(kind: string) {
+        if (kind === missingCustomsDocumentKind) patch(i, { kind, number: '', date: null, issuer: '', description: '', attachmentId: null });
+        else patch(i, missing ? { kind, description: '' } : { kind });
+      }
+      return <div className="report-form" key={d.id}><Grid container spacing={2}>
+        <Grid item xs={12} sm={6}><TextField label="Тип документа" select value={d.kind} disabled={readOnly} onChange={e => changeKind(e.target.value)}>{kinds.map(([key, name]) => <MenuItem key={key} value={key}>{name}</MenuItem>)}</TextField></Grid>
+        {missing ? <Grid item xs={12}><TextField label="Причина отсутствия таможенного документа" value={d.description} multiline minRows={2} required disabled={readOnly} onChange={e => patch(i, { description: e.target.value })}/></Grid> : <>
+          <Grid item xs={12} sm={6}><TextField label="Номер доказательного документа" value={d.number} disabled={readOnly} onChange={e => patch(i,{ number: e.target.value })}/></Grid>
+          <Grid item xs={12} sm={6}><TextField type="date" InputLabelProps={{ shrink: true }} label="Дата доказательного документа" value={d.date ?? ''} disabled={readOnly} onChange={e => patch(i,{ date: e.target.value || null })}/></Grid>
+          <Grid item xs={12} sm={6}><TextField label="Выдавший орган / организация" value={d.issuer} disabled={readOnly} onChange={e => patch(i,{ issuer: e.target.value })}/></Grid>
+          <Grid item xs={12}><TextField label="Описание документа" value={d.description} multiline disabled={readOnly} onChange={e => patch(i,{ description: e.target.value })}/></Grid>
+          <Grid item xs={12}><FileField label="Файл доказательного документа" value={d.attachmentId} files={files} disabled={readOnly} onChange={attachmentId => patch(i,{ attachmentId })}/></Grid>
+        </>}
+        {!readOnly && <Grid item xs={12}><Button color="error" startIcon={<DeleteOutlineRounded/>} onClick={() => onChange(values.filter((_,n) => n !== i))}>{missing ? 'Убрать запись' : 'Убрать документ'}</Button></Grid>}
+      </Grid></div>;
+    })}
+    {!readOnly && <Button startIcon={<AddRounded/>} onClick={() => onChange([...values,{ ...emptyEvidenceDocument(), kind: customs ? 'GTD' : 'Other' }])}>{customs ? 'Добавить таможенный документ' : 'Добавить доказательный документ'}</Button>}
+  </>;
 }
 
 export function EvidencePanel({ readOnly, document, onFiles }: { readOnly: boolean; document?: Declaration; onFiles: () => void }) {
   const { firmId } = useWorkspace(); const notify = useNotify();
-  const { control, setValue, formState: { isDirty } } = useFormContext<SaveDeclaration>();
+  const { control, getValues, setValue, formState: { isDirty } } = useFormContext<SaveDeclaration>();
+  const [batchDirectionId, setBatchDirectionId] = useState<string | null>(null);
   const values = useWatch({ control }); const reports = (values.reports ?? []) as Report[];
   const evidence: EvidenceWorkflow = { ...emptyEvidence(), requireScans: false, ...(values.evidence as EvidenceWorkflow | undefined) };
   const files = document?.attachments ?? [];
@@ -74,12 +95,16 @@ export function EvidencePanel({ readOnly, document, onFiles }: { readOnly: boole
         {!readOnly && <Grid item xs={12}><Button color="error" onClick={() => direction(i,{ samples:d.samples.filter((_,k)=>k!==n) })}>Убрать образец {n+1}</Button></Grid>}</Grid>)}
         {!readOnly && <Button startIcon={<AddRounded/>} onClick={() => direction(i,{ samples:[...d.samples,{ id:crypto.randomUUID(),name:'',identification:'',quantity:1,unit:'шт.',manufacturedAt:null }] })}>Добавить образец</Button>}
         <Documents values={d.customsDocuments} onChange={customsDocuments => direction(i,{ customsDocuments })} files={files} readOnly={readOnly} customs/>
-        <div style={{ display:'flex',gap:12,flexWrap:'wrap',marginTop:16 }}>{document && <Button disabled={isDirty} startIcon={<FileDownloadOutlined/>} onClick={async()=>{try{await download(`/firms/${firmId}/declarations/${document.id}/directions/${d.id}/export`,`${d.number || 'direction'}.docx`);}catch(e){notify(errorMessage(e),'error');}}}>Скачать направление</Button>}
+        <div style={{ display:'flex',gap:12,flexWrap:'wrap',marginTop:16 }}>{!readOnly && <Button type="button" startIcon={<AddRounded/>} onClick={() => setBatchDirectionId(d.id)}>Внести протоколы по направлению</Button>}
+        {document && <Button disabled={isDirty} startIcon={<FileDownloadOutlined/>} onClick={async()=>{try{await download(`/firms/${firmId}/declarations/${document.id}/directions/${d.id}/export`,`${d.number || 'direction'}.docx`);}catch(e){notify(errorMessage(e),'error');}}}>Скачать направление</Button>}
         {!readOnly && <Button color="error" disabled={reports.some(r=>r.details?.directionId===d.id)} onClick={() => update({ directions:evidence.directions.filter((_,n)=>n!==i) })}>Удалить направление</Button>}</div>
         {reports.some(r=>r.details?.directionId===d.id) && <Typography variant="body2" color="text.secondary">Перед удалением снимите связь направления с протоколами.</Typography>}
       </div>)}
     </Section>
-    <Section title="Протоколы испытаний" actions={!readOnly && <Button startIcon={<AddRounded/>} onClick={() => setValue('reports',[...reports,{number:'',date:null,laboratoryName:'',accreditationNumber:'',details:emptyReportDetails()}],{shouldDirty:true})}>Добавить протокол</Button>}>
+    <Section title="Протоколы испытаний" actions={!readOnly && <>
+      <Button startIcon={<AddRounded/>} onClick={() => setValue('reports',[...reports,{number:'',date:null,laboratoryName:'',accreditationNumber:'',details:emptyReportDetails()}],{shouldDirty:true})}>Добавить протокол</Button>
+      <Button type="button" startIcon={<AddRounded/>} onClick={() => setBatchDirectionId('')}>Внести протоколы списком</Button>
+    </>}>
       {!reports.length && <Typography color="text.secondary">Протоколы пока не добавлены.</Typography>}
       {reports.map((r,i) => {const v={...emptyReportDetails(),...r.details}; return <div className="report-form" key={r.id ?? i}><Typography variant="h6" sx={{mb:2}}>Протокол {i+1}</Typography><Grid container spacing={2}>
         <Grid item xs={12} sm={6}><TextField label="Номер протокола" value={r.number} disabled={readOnly} onChange={e=>report(i,{number:e.target.value})}/></Grid>
@@ -96,5 +121,13 @@ export function EvidencePanel({ readOnly, document, onFiles }: { readOnly: boole
       </Grid>{!readOnly && <Button color="error" sx={{mt:2}} onClick={()=>setValue('reports',reports.filter((_,n)=>n!==i),{shouldDirty:true})}>Удалить протокол {i+1}</Button>}</div>;})}
       <Documents values={evidence.documents} onChange={documents=>update({documents})} files={files} readOnly={readOnly}/>
     </Section>
+    {batchDirectionId !== null && <ProtocolBatchDialog
+      directionId={batchDirectionId} directions={evidence.directions} reports={reports} disabled={readOnly}
+      onClose={() => setBatchDirectionId(null)}
+      onAdd={added => {
+        setValue('reports', [...getValues('reports'), ...added], { shouldDirty: true });
+        setBatchDirectionId(null);
+      }}
+    />}
   </>;
 }
