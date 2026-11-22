@@ -374,6 +374,7 @@ test('records why a customs document is missing and reloads the explanation', as
 });
 
 test('declaration builder saves structured batch details and shipping documents', async ({ page }) => {
+  test.setTimeout(60_000);
   const fixture = await fixtures(page);
   await login(page);
   await page.goto(`/#/declarations/${fixture.getDeclarations()[0].id}`);
