@@ -29,7 +29,6 @@
     "@reduxjs/toolkit": "^2.9.0",
     "@tanstack/react-query": "^5.90.2",
     "axios": "^1.19.0",
-    "cadesplugin_api.js": "2.3.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",

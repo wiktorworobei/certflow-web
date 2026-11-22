@@ -6,8 +6,8 @@ const firmId = '11111111-1111-4111-8111-111111111111';
 const thumbprint = 'A'.repeat(40);
 const submissionId = '44444444-4444-4444-8444-444444444444';
 const draft = { requestId: submissionId, categoryId: 100, gtin: '05011846021161', name: 'Масло моторное 5W-30, 4 л', brand: 'Тестовый бренд', tnved: '2710198200', productGroupCode: 43, sendToModeration: false, attributes: [], photoUrl: null };
-export async function crptFixtures(page: Page) {
-  await installCertificatePluginFixture(page);
+export async function crptFixtures(page: Page, hasHonestSignSession = true) {
+  if (hasHonestSignSession) await installCertificatePluginFixture(page);
   const firm = { id: firmId, name: 'Тестовая компания CRPT', role: 'Admin' };
   const auth = { accessToken: 'synthetic-crpt-token', expiresAt: '2099-01-01T00:00:00Z', user: { id: '22222222-2222-4222-8222-222222222222', userName: 'test', displayName: 'Тест CRPT', email: '', firms: [firm] } };
   const requests: string[] = []; const writes: unknown[] = [];
@@ -16,7 +16,7 @@ export async function crptFixtures(page: Page) {
     const json = (value: unknown) => route.fulfill({ json: value });
     if (path.startsWith('/api/auth/')) return json(auth);
     if (path.endsWith('/registry-monitoring/notifications')) return json({ items: [], total: 0, unreadCount: 0 });
-    if (path.endsWith('/session')) return json({ isAuthenticated: true, hasHonestSignSession: true, certificateThumbprint: thumbprint, honestSignSessionExpiresAtUtc: '2099-01-01T00:00:00Z' });
+    if (path.endsWith('/session')) return json({ isAuthenticated: true, hasHonestSignSession, certificateThumbprint: hasHonestSignSession ? thumbprint : null, honestSignSessionExpiresAtUtc: hasHonestSignSession ? '2099-01-01T00:00:00Z' : null });
     if (path.endsWith('/settings')) return json({ profile: path.includes('/production/') ? 'Production' : 'Sandbox', omsId: '33333333-3333-4333-8333-333333333333', connectionId: '33333333-3333-4333-8333-333333333333', participantInn: '7707083893' });
     if (path.endsWith('/product-groups')) return json([{ code: 43, name: 'Моторные масла' }]);
     if (path.endsWith('/categories')) return json([{ id: 100, name: 'Моторные масла', parentId: 0, level: 1, isActive: true, productGroupCodes: [43] }]);
@@ -36,6 +36,66 @@ export async function crptFixtures(page: Page) {
   });
   return { requests, writes };
 }
+
+test('CRPT finds a certificate when only the CryptoPro Manifest V3 extension is available', async ({ page }) => {
+  await crptFixtures(page, false);
+  const manifestV3Url = 'chrome-extension://pfhgbfnnjiafkhfdkmpiflachepdcjod/nmcades_plugin_api.js';
+  await page.addInitScript(({ manifestV3Url }) => {
+    const bridge = window as unknown as {
+      cadesplugin?: { set(plugin: { CreateObjectAsync(name: string): Promise<unknown> }): void };
+      cpcsp_chrome_nmcades?: { check_chrome_plugin(loaded: () => void): void };
+    };
+    const certificate = {
+      HasPrivateKey: true,
+      SubjectName: 'CN=Сертификат Manifest V3',
+      IssuerName: 'CN=Тестовый УЦ',
+      Thumbprint: 'A'.repeat(40),
+      ValidFromDate: '2026-01-01',
+      ValidToDate: '2099-01-01',
+    };
+    const certificates = { Count: 1, Find: async () => certificates, Item: async () => certificate };
+    const appendChild = HTMLHeadElement.prototype.appendChild;
+
+    // Intercept the extension resource only. ZNAQ still runs the real CryptoPro loader.
+    HTMLHeadElement.prototype.appendChild = function <T extends Node>(this: HTMLHeadElement, node: T): T {
+      if (!(node instanceof HTMLScriptElement) || !node.src.startsWith('chrome-extension://') || !node.src.endsWith('/nmcades_plugin_api.js')) {
+        return appendChild.call(this, node) as T;
+      }
+      queueMicrotask(() => {
+        if (node.src !== manifestV3Url) {
+          node.dispatchEvent(new Event('error'));
+          return;
+        }
+        bridge.cpcsp_chrome_nmcades = {
+          check_chrome_plugin(loaded) {
+            bridge.cadesplugin!.set({
+              async CreateObjectAsync(name) {
+                if (name !== 'CAdESCOM.Store') throw new Error(`Unexpected CryptoPro object: ${name}`);
+                return { Certificates: certificates, Open: async () => {}, Close: async () => {} };
+              },
+            });
+            loaded();
+          },
+        };
+        function respondToEcho(event: MessageEvent) {
+          if (event.source !== window || event.data !== 'cadesplugin_echo_request') return;
+          window.removeEventListener('message', respondToEcho);
+          window.postMessage('cadesplugin_loaded', location.origin);
+        }
+        window.addEventListener('message', respondToEcho);
+        node.dispatchEvent(new Event('load'));
+      });
+      return node;
+    };
+  }, { manifestV3Url });
+
+  await page.goto('/#/crpt');
+  await expect(page.getByText('Подключение к Честному знаку', { exact: true })).toBeVisible();
+  const certificate = page.getByRole('combobox', { name: 'Сертификат', exact: true });
+  await expect(certificate.getByRole('option', { name: /Сертификат Manifest V3/ })).toHaveAttribute('value', thumbprint);
+  await certificate.selectOption(thumbprint);
+  await expect(page.getByRole('button', { name: 'Войти по сертификату', exact: true })).toBeEnabled();
+});
 
 test('CRPT keeps sandbox and production requests separate and renders desktop, mobile and dark theme', async ({ page }) => {
   const fixture = await crptFixtures(page); await page.goto('/#/crpt');

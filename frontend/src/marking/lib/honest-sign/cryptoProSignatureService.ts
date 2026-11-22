@@ -1,4 +1,6 @@
-import cadesPluginScriptUrl from "cadesplugin_api.js/dist/cadesplugin_api.js?url";
+// Official CryptoPro loader 2.4.5 with Manifest V3 support.
+// https://cryptopro.ru/sites/default/files/products/cades/cadesplugin_api.js
+import cadesPluginScriptUrl from "./vendor/cadesplugin_api.js?url";
 import i18n from "@marking/src/i18n";
 import { captureMarkingScope, assertMarkingScope } from '../workspace-scope';
 
