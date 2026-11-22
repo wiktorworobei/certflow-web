@@ -386,7 +386,10 @@ test('DaData without a key keeps manual organization entry available', async ({ 
 });
 
 test('declaration GTIN and confirmed code batch persist through the real marking API', async ({ page }) => {
-  await login(page); await page.locator('a[href="#/declarations/new"]').click(); await createDeclarationDraft(page);
+  await login(page);
+  const companyPicker = page.getByRole('combobox', { name: 'Компания', exact: true });
+  await companyPicker.selectOption({ label: 'Вектор Импорт' });
+  await page.locator('a[href="#/declarations/new"]').click(); await createDeclarationDraft(page);
   await page.getByRole('textbox', { name: 'Название декларации', exact: true }).fill(`Масло E2E ${Date.now()}`);
   await openDeclarationPart(page, 'Продукция');
   await page.getByLabel('Наименование продукции', { exact: true }).fill('Моторное масло 5W-30');
@@ -413,7 +416,7 @@ test('declaration GTIN and confirmed code batch persist through the real marking
   await page.getByRole('tab', { name: 'Связи с декларациями' }).click();
   await expect(page.getByText('Привязан состав кодов', { exact: true })).toBeVisible();
   await page.reload(); await expect(page.getByText('Привязан состав кодов', { exact: true })).toBeVisible();
-  await page.getByRole('combobox', { name: 'Компания', exact: true }).selectOption('22222222-2222-4222-8222-222222222222');
+  await companyPicker.selectOption({ label: 'Моя компания' });
   await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click();
   await expect(page.getByText('Привязан состав кодов', { exact: true })).toHaveCount(0);
 });

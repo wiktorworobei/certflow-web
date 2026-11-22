@@ -6,6 +6,7 @@
 .profile-button > div:not(.MuiAvatar-root) { min-width: 0; }
 .profile-button strong { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-avatar, .topbar-left > .MuiIconButton-root { flex-shrink: 0; }
+.editor-title { flex-wrap: wrap; }
 .editor-title > div:first-child { flex: 1 1 280px; }
 .editor-title-meta { flex-wrap: wrap; }
 .document-name > * { min-width: 0; }
