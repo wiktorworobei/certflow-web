@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
 import { Toaster } from 'sonner';
@@ -14,7 +14,8 @@ import i18n from '../marking/src/i18n';
 import '../marking/marking.css';
 
 export function Catalog() {
-  const { firmId, canEdit } = useWorkspace(); const { mode } = useAppearance();
+  const { firmId, canEdit, isAdmin } = useWorkspace(); const { mode } = useAppearance();
+  const navigate = useNavigate();
   const settings = api.useMarkingSettingsQuery(firmId);
   const [query] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } }));
   useEffect(() => () => query.clear(), [query, firmId]);
@@ -29,7 +30,11 @@ export function Catalog() {
         <Alert severity={settings.data?.profile === 'Production' ? 'warning' : 'info'} sx={{ mb: 2 }}>Честный знак · {settings.data?.profile === 'Production' ? 'рабочий контур' : 'песочница'}. Существующую карточку можно открыть из списка. Для новой заполните товарную группу и характеристики; GTIN можно выбрать из доступных кодов НК или указать самостоятельно. Сохранение локального черновика, отправка, модерация и публикация выполняются отдельными действиями.</Alert>
         <div className={`marking-surface ${mode === 'dark' ? 'dark' : ''}`}>
           <QueryClientProvider client={query}><I18nextProvider i18n={i18n}><MarkingDeclarationContext.Provider value={null}>
-            <HonestSignApp companyId={firmId} catalogOnly/>
+            <HonestSignApp
+              companyId={firmId}
+              catalogOnly
+              onConfigureConnection={isAdmin ? () => navigate('/settings?tab=integrations#marking-connection') : undefined}
+            />
             <div id="marking-portals"/><Toaster theme={mode} position="bottom-right" richColors/>
           </MarkingDeclarationContext.Provider></I18nextProvider></QueryClientProvider>
         </div>

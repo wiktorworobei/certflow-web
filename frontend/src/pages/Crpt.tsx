@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useDispatch } from 'react-redux';
 import { useSearchParams } from 'react-router-dom';
 import {
   QueryClient,
@@ -6,6 +7,7 @@ import {
   useIsMutating,
   useMutation,
   useQuery,
+  useQueryClient,
 } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
 import { Toaster } from 'sonner';
@@ -41,6 +43,8 @@ import i18n from '../marking/src/i18n';
 import { activateCrptEnvironment, type CrptEnvironment } from '../crpt/environment';
 import { CrptCatalogWorkspace } from '../crpt/CrptCatalogWorkspace';
 import { CrptSuzWorkspace } from '../crpt/CrptSuzWorkspace';
+import { api } from '../store';
+import type { MarkingSettings } from '../types';
 import '../marking/marking.css';
 import '../crpt/crpt.css';
 
@@ -49,7 +53,8 @@ export function Crpt() {
   const environment: CrptEnvironment =
     params.get('environment') === 'production' ? 'production' : 'sandbox';
   const service = params.get('service') === 'suz' ? 'suz' : 'catalog';
-  const { firmId, canEdit } = useWorkspace();
+  const connection = params.get('view') === 'connection';
+  const { firmId, canEdit, isAdmin } = useWorkspace();
   const { mode } = useAppearance();
   const parent = useTheme();
   const theme = createTheme(parent, {
@@ -60,19 +65,20 @@ export function Crpt() {
       },
     },
   });
-  const [connection, setConnection] = useState(false);
   const [busy, setBusy] = useState(false);
   const [unsaved, setUnsaved] = useState(false);
   const [pending, setPending] = useState<CrptEnvironment | 'connection' | 'suz' | 'catalog' | null>(
     null,
   );
   const navigate = (target: CrptEnvironment | 'connection' | 'suz' | 'catalog') => {
-    if (target === 'connection') setConnection((value) => !value);
-    else {
-      const next = new URLSearchParams(params);
+    const next = new URLSearchParams(params);
+    if (target === 'connection') {
+      if (connection) next.delete('view');
+      else next.set('view', 'connection');
+    } else {
       next.set(target === 'suz' || target === 'catalog' ? 'service' : 'environment', target);
-      setParams(next);
     }
+    setParams(next);
     setPending(null);
     setUnsaved(false);
   };
@@ -96,7 +102,7 @@ export function Crpt() {
           <Button
             variant="outlined"
             startIcon={<SettingsOutlined />}
-            disabled={busy}
+            disabled={busy || !canEdit}
             onClick={() => requestNavigation('connection')}
           >
             {connection ? 'Вернуться к работе' : 'Подключение'}
@@ -176,11 +182,16 @@ export function Crpt() {
             onActivityChange={setBusy}
           >
             {connection ? (
-              <CrptConnection environment={environment} onBack={() => setConnection(false)} />
+              <CrptConnection
+                environment={environment}
+                onBack={() => requestNavigation('connection')}
+                onUnsavedChange={setUnsaved}
+              />
             ) : (
               <HonestSignApp
                 companyId={firmId}
                 catalogOnly
+                onConfigureConnection={isAdmin ? () => requestNavigation('connection') : undefined}
                 workspaceTitle={service === 'suz' ? 'СУЗ · управление заказами' : undefined}
                 workspaceDescription={
                   service === 'suz' ? 'Заказ, получение и архив кодов маркировки.' : undefined
@@ -207,11 +218,14 @@ export function Crpt() {
           </CrptScope>
         )}
         <Dialog open={!!pending} onClose={() => setPending(null)}>
-          <DialogTitle>Закрыть подготовленные данные?</DialogTitle>
+          <DialogTitle>
+            {connection ? 'Закрыть настройки подключения?' : 'Закрыть подготовленные данные?'}
+          </DialogTitle>
           <DialogContent>
             <DialogContentText>
-              Несохранённые изменения и текущий список пакетного импорта будут закрыты. Сохранённые
-              на сервере черновики доступны в журнале выбранного контура.
+              {connection
+                ? 'Введённые реквизиты ещё не сохранены.'
+                : 'Несохранённые изменения и текущий список пакетного импорта будут закрыты. Сохранённые на сервере черновики доступны в журнале выбранного контура.'}
             </DialogContentText>
           </DialogContent>
           <DialogActions>
@@ -277,96 +291,120 @@ function CrptActivity({ onChange }: { onChange: (busy: boolean) => void }) {
   return null;
 }
 
-type Connection = { profile: string; omsId: string; connectionId: string; participantInn: string };
+const connectionFields = {
+  omsId: 'OMS ID',
+  connectionId: 'Connection ID',
+  participantInn: 'ИНН участника',
+};
+type ConnectionFields = Pick<MarkingSettings, keyof typeof connectionFields>;
+const connectionKeys = Object.keys(connectionFields) as (keyof ConnectionFields)[];
+
 function CrptConnection({
   environment,
   onBack,
+  onUnsavedChange,
 }: {
   environment: CrptEnvironment;
   onBack: () => void;
+  onUnsavedChange: (unsaved: boolean) => void;
 }) {
-  const { firmId, isAdmin } = useWorkspace();
+  const { firmId, firm, isAdmin } = useWorkspace();
+  const dispatch = useDispatch();
+  const queryClient = useQueryClient();
+  const heading = useRef<HTMLHeadingElement>(null);
   const url = `/api/firms/${firmId}/crpt/${environment}/settings`;
+  const queryKey = ['crpt-connection', firmId, environment];
   const query = useQuery({
-    queryKey: ['crpt-connection', firmId, environment],
-    queryFn: async ({ signal }) => (await apiClient.get<Connection>(url, { signal })).data,
+    queryKey,
+    queryFn: async ({ signal }) => (await apiClient.get<MarkingSettings>(url, { signal })).data,
   });
-  const [fields, setFields] = useState({ omsId: '', connectionId: '', participantInn: '' });
+  const [draft, setDraft] = useState<ConnectionFields | null>(null);
+  const fields = draft ?? query.data;
+  const unsaved = !!draft && connectionKeys.some((key) => draft[key] !== query.data?.[key]);
+  useEffect(() => heading.current?.focus(), []);
   useEffect(() => {
-    if (query.data)
-      setFields({
-        omsId: query.data.omsId,
-        connectionId: query.data.connectionId,
-        participantInn: query.data.participantInn,
-      });
-  }, [query.data]);
+    onUnsavedChange(unsaved);
+    return () => onUnsavedChange(false);
+  }, [onUnsavedChange, unsaved]);
   const save = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ omsId, connectionId, participantInn }: ConnectionFields) => {
       try {
-        return (await apiClient.put<Connection>(url, fields)).data;
+        const body = {
+          omsId: omsId.trim(),
+          connectionId: connectionId.trim(),
+          participantInn: participantInn.trim(),
+        };
+        return (await apiClient.put<MarkingSettings>(url, body)).data;
       } catch (e) {
         throw toHttpError('Не удалось сохранить подключение.', e);
       }
     },
-    onSuccess: () => {
-      void query.refetch();
+    onSuccess: (settings) => {
+      queryClient.setQueryData(queryKey, settings);
+      dispatch(api.util.invalidateTags(['Marking', 'Integrations']));
+      setDraft(null);
     },
   });
   return (
     <Paper className="crpt-connection">
-      <Button startIcon={<ArrowBackRounded />} onClick={onBack}>
-        В каталог
+      <Button startIcon={<ArrowBackRounded />} onClick={onBack} disabled={save.isPending}>
+        Назад
       </Button>
-      <h2>Подключение · {environment === 'sandbox' ? 'песочница ЧЗ' : 'рабочий контур'}</h2>
+      <h2 ref={heading} tabIndex={-1}>
+        Подключение · {environment === 'sandbox' ? 'песочница ЧЗ' : 'рабочий контур'}
+      </h2>
       <p>
-        Укажите реквизиты станции управления заказами этого контура, затем подключитесь с помощью
-        сертификата УКЭП.
+        Реквизиты сохраняются для компании «{firm?.name}» в выбранном контуре. OMS ID и Connection
+        ID доступны в разделе «Устройства» СУЗ.
       </p>
-      {query.isPending ? (
-        <Loading />
+      {fields ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (isAdmin && unsaved && !save.isPending) save.mutate(fields);
+          }}
+        >
+          {connectionKeys.map((key) => (
+            <TextField
+              key={key}
+              required
+              fullWidth
+              size="small"
+              label={connectionFields[key]}
+              value={fields[key]}
+              disabled={!isAdmin || save.isPending}
+              onChange={(e) => {
+                save.reset();
+                setDraft({ ...fields, [key]: e.target.value });
+              }}
+              inputProps={
+                key === 'participantInn'
+                  ? { inputMode: 'numeric', maxLength: 16 }
+                  : { maxLength: 64 }
+              }
+            />
+          ))}
+          {save.isError && <Alert severity="error">{save.error.message}</Alert>}
+          {save.isSuccess && (
+            <Alert severity="success">
+              Подключение сохранено. Вернитесь к работе и войдите по УКЭП.
+            </Alert>
+          )}
+          {isAdmin ? (
+            <Button type="submit" variant="contained" disabled={!unsaved || save.isPending}>
+              {save.isPending ? 'Сохраняем…' : 'Сохранить подключение'}
+            </Button>
+          ) : (
+            <Alert severity="info">Реквизиты подключения изменяет администратор компании.</Alert>
+          )}
+        </form>
       ) : query.isError ? (
         <Alert severity="error">
           Не удалось загрузить подключение.{' '}
           <Button onClick={() => void query.refetch()}>Повторить</Button>
         </Alert>
       ) : (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            save.mutate();
-          }}
-        >
-          {(['omsId', 'connectionId', 'participantInn'] as const).map((key) => (
-            <TextField
-              key={key}
-              required
-              fullWidth
-              size="small"
-              label={
-                { omsId: 'OMS ID', connectionId: 'Connection ID', participantInn: 'ИНН участника' }[
-                  key
-                ]
-              }
-              value={fields[key]}
-              disabled={!isAdmin || save.isPending}
-              onChange={(e) => setFields((value) => ({ ...value, [key]: e.target.value }))}
-              inputProps={{ maxLength: key === 'participantInn' ? 12 : 36 }}
-            />
-          ))}
-          {save.isError && <Alert severity="error">{save.error.message}</Alert>}
-          {save.isSuccess && (
-            <Alert severity="success">
-              Подключение сохранено. Выполните вход по УКЭП в каталоге.
-            </Alert>
-          )}
-          {isAdmin ? (
-            <Button type="submit" variant="contained" disabled={save.isPending}>
-              Сохранить подключение
-            </Button>
-          ) : (
-            <Alert severity="info">Реквизиты подключения изменяет администратор компании.</Alert>
-          )}
-        </form>
+        <Loading />
       )}
     </Paper>
   );

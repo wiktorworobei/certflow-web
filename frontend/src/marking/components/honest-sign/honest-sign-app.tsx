@@ -20,6 +20,7 @@ type HonestSignAppProps = {
     catalogWorkspace?: (selectedThumbprint: string) => ReactNode;
     workspaceTitle?: string;
     workspaceDescription?: string;
+    onConfigureConnection?: () => void;
 };
 
 export function HonestSignApp(props: HonestSignAppProps) {
@@ -31,7 +32,7 @@ export function HonestSignApp(props: HonestSignAppProps) {
     );
 }
 
-function HonestSignWorkspace({ companyId, catalogOnly = false, catalogWorkspace, workspaceTitle, workspaceDescription }: HonestSignAppProps) {
+function HonestSignWorkspace({ companyId, catalogOnly = false, catalogWorkspace, workspaceTitle, workspaceDescription, onConfigureConnection }: HonestSignAppProps) {
     const { t } = useTranslation();
     const app = useMarkingApp(companyId, catalogOnly);
     const connectivity = useHonestSignConnectivity(companyId, app.isAuthorized && !catalogOnly);
@@ -57,6 +58,7 @@ function HonestSignWorkspace({ companyId, catalogOnly = false, catalogWorkspace,
                 onCertificateChange={app.handleSelectedThumbprintChange}
                 onReload={app.handleReloadCertificates}
                 onConnect={() => void app.onConnectHonestSign()}
+                onConfigureConnection={onConfigureConnection}
             />
         );
     }

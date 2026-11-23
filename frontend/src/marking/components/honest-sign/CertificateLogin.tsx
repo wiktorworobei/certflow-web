@@ -1,4 +1,4 @@
-import { BadgeCheck, KeyRound, RefreshCw } from "lucide-react";
+import { BadgeCheck, KeyRound, RefreshCw, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Notice } from "@marking/components/honest-sign/ui/notice";
 import { Select } from "@marking/components/honest-sign/ui/select";
@@ -29,6 +29,7 @@ type CertificateLoginProps = {
     onCertificateChange: (thumbprint: string) => void;
     onReload: () => void;
     onConnect: () => void;
+    onConfigureConnection?: () => void;
 };
 
 export function CertificateLogin({
@@ -41,6 +42,7 @@ export function CertificateLogin({
     onCertificateChange,
     onReload,
     onConnect,
+    onConfigureConnection,
 }: CertificateLoginProps) {
     const { t } = useTranslation();
     const hasCertificates = certificates.length > 0;
@@ -142,6 +144,17 @@ export function CertificateLogin({
                             {statusMessage}
                         </Notice>
                     ) : null}
+                    {onConfigureConnection && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={onConfigureConnection}
+                            disabled={connecting}
+                        >
+                            <Settings2 className="size-4" aria-hidden="true" />
+                            {t("honestSign.certificateLogin.configureConnection")}
+                        </Button>
+                    )}
                 </CardContent>
             </Card>
         </div>

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Link as RouterLink, useSearchParams } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
 import { Toaster } from 'sonner';
@@ -19,7 +19,8 @@ const HonestSignApp = lazy(() => import('../marking/components/honest-sign/hones
 const DmKodEnvironmentWorkspace = lazy(() => import('../marking/components/dmkod/dmkod-environment-workspace').then(module => ({ default: module.DmKodEnvironmentWorkspace })));
 
 export function Marking() {
-  const { firmId, canEdit } = useWorkspace(); const { mode } = useAppearance();
+  const { firmId, canEdit, isAdmin } = useWorkspace(); const { mode } = useAppearance();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams(); const value = params.get('tab');
   const tab = value === 'chz' || value === 'dmkod' || value === 'documents' ? value : 'links';
   const [query] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } }));
@@ -33,7 +34,13 @@ export function Marking() {
     <div className={`marking-surface ${mode === 'dark' ? 'dark' : ''}`}><QueryClientProvider client={query}><I18nextProvider i18n={i18n}><MarkingDeclarationContext.Provider value={declaration.data ?? null}><Suspense fallback={<Loading/>}>
       {tab === 'links' && <DeclarationLinks selectedId={selectedId} onSelect={id => { const updated = new URLSearchParams(params); if (id) updated.set('declarationId', id); else updated.delete('declarationId'); setParams(updated, { replace: true }); }}/>} 
       {(tab === 'chz' || tab === 'dmkod') && !canEdit && <Alert severity="warning">Внешние операции доступны специалисту или администратору компании.</Alert>}
-      {tab === 'chz' && canEdit && <><Alert severity={settings.data?.profile === 'Production' ? 'warning' : 'info'} sx={{ mb: 2 }}>Честный знак · {settings.data?.profile === 'Production' ? 'рабочий контур' : 'песочница'}. {selectedId && declaration.data ? `Выбрана декларация ${declaration.data.reference}. В каталоге можно подставить её сведения.` : 'Чтобы использовать реквизиты документа, сначала выберите декларацию во вкладке «Связи с декларациями».'}</Alert><HonestSignApp companyId={firmId}/></>}
+      {tab === 'chz' && canEdit && <>
+        <Alert severity={settings.data?.profile === 'Production' ? 'warning' : 'info'} sx={{ mb: 2 }}>Честный знак · {settings.data?.profile === 'Production' ? 'рабочий контур' : 'песочница'}. {selectedId && declaration.data ? `Выбрана декларация ${declaration.data.reference}. В каталоге можно подставить её сведения.` : 'Чтобы использовать реквизиты документа, сначала выберите декларацию во вкладке «Связи с декларациями».'}</Alert>
+        <HonestSignApp
+          companyId={firmId}
+          onConfigureConnection={isAdmin ? () => navigate('/settings?tab=integrations#marking-connection') : undefined}
+        />
+      </>}
       {tab === 'dmkod' && canEdit && <DmKodEnvironmentWorkspace companyId={firmId} environment={environment} onEnvironmentChange={setEnvironment}/>}
       {tab === 'documents' && <MarkingBatches selectedId={selectedId} onSelect={id => { const updated = new URLSearchParams(params); if (id) updated.set('declarationId', id); else updated.delete('declarationId'); setParams(updated, { replace: true }); }}/>}
       </Suspense><div id="marking-portals"/>

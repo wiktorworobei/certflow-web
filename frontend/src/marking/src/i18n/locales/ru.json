@@ -1541,7 +1541,8 @@
             "noCertificates": "Сертификаты не найдены",
             "reload": "Проверить CryptoPro",
             "connecting": "Подключаемся…",
-            "submit": "Войти по сертификату"
+            "submit": "Войти по сертификату",
+            "configureConnection": "Настроить подключение"
         },
         "productGroups": {
             "milk": "Молочная продукция",
