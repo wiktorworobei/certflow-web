@@ -27,12 +27,15 @@ const navigation = [
   { to: '/crpt', label: 'ZNAQ.CRPT', icon: <QrCode2Rounded/> },
   { to: '/marking', label: 'ЧЗ и Наша марка', icon: <QrCode2Rounded/> },
 ];
+const hiddenNavigationPaths = new Set(['/catalog', '/marking']);
+
 export function Layout() {
   const { user, firm, firmId, isAdmin, canEdit } = useWorkspace();
   const dispatch = useDispatch(); const navigate = useNavigate(); const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false); const [profileMenu, setProfileMenu] = useState<HTMLElement | null>(null);
   async function logout() { try { await authRequest('logout'); } finally { dispatch(signedOut()); dispatch(api.util.resetApiState()); } }
   const links = [...navigation, ...(isAdmin ? [{ to: '/team', label: 'Команда', icon: <GroupOutlined/> }] : [])];
+  const visibleLinks = links.filter(link => !hiddenNavigationPaths.has(link.to));
   const page = location.pathname.startsWith('/development-plan') ? 'План разработки' : location.pathname === '/settings' ? 'Настройки' : links.find(l => l.to !== '/' && location.pathname.startsWith(l.to))?.label ?? 'Обзор';
   useEffect(() => { document.title = `${page} — ZNAQ`; }, [page]);
   const navClass = ({ isActive }: { isActive: boolean }) => isActive ? 'nav-item active' : 'nav-item';
@@ -41,7 +44,7 @@ export function Layout() {
     <div className="workspace-label"><span className="workspace-label-icon"><CorporateFareOutlined/></span><div><strong>{firm?.name || 'Рабочее пространство'}</strong><span>Управление сертификацией</span></div></div>
     {canEdit && <Button className="sidebar-create" variant="contained" startIcon={<AddRounded/>} onClick={() => { navigate('/declarations/new'); setMobileOpen(false); }}>Создать декларацию</Button>}
     <div className="sidebar-caption">УПРАВЛЕНИЕ</div>
-    <nav className="sidebar-nav" aria-label="Основное меню">{links.map(link => <NavLink key={link.to} to={link.to} end={link.to === '/'} onClick={() => setMobileOpen(false)} className={navClass}>{link.icon}<span>{link.label}</span><span className="nav-active-mark"/></NavLink>)}</nav>
+    <nav className="sidebar-nav" aria-label="Основное меню">{visibleLinks.map(link => <NavLink key={link.to} to={link.to} end={link.to === '/'} onClick={() => setMobileOpen(false)} className={navClass}>{link.icon}<span>{link.label}</span><span className="nav-active-mark"/></NavLink>)}</nav>
     <div className="sidebar-bottom"><div className="sidebar-caption">ПРОЕКТ</div><nav aria-label="Меню проекта"><NavLink to="/development-plan" className={navClass} onClick={() => setMobileOpen(false)}><RouteOutlined/><span>План разработки</span></NavLink><NavLink to="/settings" className={navClass} onClick={() => setMobileOpen(false)}><SettingsOutlined/><span>Настройки</span></NavLink></nav>
       <div className="sidebar-workspace"><span className="sidebar-workspace-logo"><BrandMark/></span><div><strong>Точность имеет знак.</strong><span>Платформа соответствия</span></div></div>
     </div>

@@ -1299,7 +1299,7 @@ test('standalone NK card creation needs no declaration and does not save or link
     if (p.endsWith('/card')) return route.fulfill({ json: { submissionId: '88888888-8888-4888-8888-888888888888', gtin: '05011846021161', goodId: 0, status: 'draft', detailedStatuses: ['draft'], isSigned: false, canOrderCodes: false, canIntroduce: false, canEdit: true, canModerate: false, canSign: false, draft: externalCard, blockingOperation: null } });
     return route.fulfill({ status: 404, json: { message: 'Unconfigured catalog test route' } });
   });
-  await login(page); await page.getByRole('link', { name: 'Карточки ЧЗ', exact: true }).click();
+  await login(page); await page.goto('/#/catalog');
   await expect(page.getByRole('heading', { name: 'Карточки ЧЗ', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Включить тёмную тему' }).click();
   await page.getByRole('button', { name: 'Добавить новый товар', exact: true }).first().click();
@@ -1335,14 +1335,14 @@ test('declaration has no NK creation even through an old URL and separate catalo
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Выбрать товар из ЧЗ', exact: true })).toBeVisible();
   expect(state.getSaved()?.product).toMatchObject({ name: '', gtin: '' });
-  await page.getByRole('link', { name: 'Карточки ЧЗ', exact: true }).click();
+  await page.goto('/#/catalog');
   await expect(page.locator('#honest-sign-certificate')).toBeVisible();
   expect(state.getSaved()?.product).toMatchObject({ name: '', gtin: '' });
 });
 
 test('viewer cannot create cards in the separate ChZ catalog', async ({ page }) => {
   await fixtures(page, false, {}, 'Viewer'); await login(page);
-  await page.getByRole('link', { name: 'Карточки ЧЗ', exact: true }).click();
+  await page.goto('/#/catalog');
   await expect(page.getByRole('alert')).toContainText('доступны специалисту или администратору');
   await expect(page.locator('#catalog-name')).toHaveCount(0);
   await expect(page.locator('#honest-sign-certificate')).toHaveCount(0);
@@ -1357,7 +1357,7 @@ test('registered declaration cannot import or create an NK product', async ({ pa
 });
 
 test('marking links connect a declaration to a GTIN and batch', async ({ page }) => {
-  await fixtures(page); await login(page); await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click();
+  await fixtures(page); await login(page); await page.goto('/#/marking');
   await page.getByRole('combobox', { name: 'Декларация для товара' }).click();
   await page.getByRole('option', { name: /CF-26-100/ }).click();
   await page.getByLabel('GTIN товара').fill('05011846021161');
@@ -1384,7 +1384,7 @@ test('marking settings show active external sessions and save company identifier
 test('code batch import preserves GS and requires physical confirmation', async ({ page }) => {
   await fixtures(page); let imported: Record<string, unknown> | undefined;
   await page.route('**/marking/batches', route => { if (route.request().method() === 'POST') imported = route.request().postDataJSON(); return route.fallback(); });
-  await login(page); await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click();
+  await login(page); await page.goto('/#/marking');
   await page.getByRole('tab', { name: 'Партии и коды' }).click();
   await page.getByRole('combobox', { name: 'Декларация партии' }).click(); await page.getByRole('option', { name: /CF-26-100/ }).click();
   await expect(page).toHaveURL(/declarationId=44444444-4444-4444-8444-000000000000/);
@@ -1400,7 +1400,7 @@ test('code batch import preserves GS and requires physical confirmation', async 
 });
 
 async function fillBatch(page: Page) {
-  await login(page); await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click(); await page.getByRole('tab', { name: 'Партии и коды' }).click();
+  await login(page); await page.goto('/#/marking'); await page.getByRole('tab', { name: 'Партии и коды' }).click();
   await page.getByRole('combobox', { name: 'Декларация партии' }).click(); await page.getByRole('option', { name: /CF-26-100/ }).click();
   await expect(page).toHaveURL(/declarationId=44444444-4444-4444-8444-000000000000/);
   await expect(page.getByRole('combobox', { name: 'Декларация партии' })).toContainText('CF-26-100');
@@ -1451,7 +1451,7 @@ test('viewer sees batch journal but cannot import or request raw codes', async (
   const row = { id: '77777777-7777-4777-8777-777777777777', title: 'Партия для наблюдателя', uploadedAtUtc: '2026-10-20T10:00:00Z', compositionConfirmed: true, codes: 10, boxes: 0, pallets: 0, declarations: [] };
   await page.route('**/marking/batches*', route => route.fulfill({ json: { items: [row], total: 1, page: 1, pageSize: 10 } }));
   await page.route('**/marking/batches/**', route => { if (route.request().url().endsWith('/codes')) rawRequests++; return route.fulfill({ json: row }); });
-  await login(page); await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click(); await page.getByRole('tab', { name: 'Партии и коды' }).click();
+  await login(page); await page.goto('/#/marking'); await page.getByRole('tab', { name: 'Партии и коды' }).click();
   await expect(page.getByLabel('Полные коды Data Matrix')).toHaveCount(0); await page.getByRole('button', { name: 'Открыть партию' }).click();
   await expect(page.getByText('Просмотр полных кодов и скачивание доступны специалисту или администратору компании.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Скачать полные коды TXT' })).toHaveCount(0); expect(rawRequests).toBe(0);
@@ -1460,7 +1460,7 @@ test('viewer sees batch journal but cannot import or request raw codes', async (
 test('DMkod login uses the company API and TEST context without retaining password', async ({ page }) => {
   await fixtures(page); let sent: { body: unknown; headers: Record<string, string>; url: string } | undefined;
   await page.route('**/marking/dmkod/auth/sign-in', route => { const r = route.request(); sent = { body: r.postDataJSON(), headers: r.headers(), url: r.url() }; return route.fulfill({ status: 400, json: { message: 'Тестовый ответ: неверный пароль DMkod.' } }); });
-  await login(page); await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click(); await page.getByRole('tab', { name: 'Наша марка', exact: true }).click();
+  await login(page); await page.goto('/#/marking'); await page.getByRole('tab', { name: 'Наша марка', exact: true }).click();
   await page.getByLabel('Имя пользователя', { exact: true }).fill('synthetic-operator'); await page.getByLabel('Пароль', { exact: true }).fill('synthetic-secret');
   await page.getByRole('button', { name: 'Войти в DMkod', exact: true }).click();
   await expect(page.getByText('Тестовый ответ: неверный пароль DMkod.')).toBeVisible();
@@ -1490,7 +1490,7 @@ test('company switch during certificate signing prevents authentication submissi
   });
   await page.route('**/marking/honest-sign/auth/challenge', route => route.fulfill({ json: { uuid: 'test-challenge', data: 'test-data' } }));
   await page.route('**/marking/honest-sign/auth/sign-in', route => { submissions++; return route.fulfill({ json: {} }); });
-  await login(page); await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click(); await page.getByRole('tab', { name: 'Честный знак', exact: true }).click();
+  await login(page); await page.goto('/#/marking'); await page.getByRole('tab', { name: 'Честный знак', exact: true }).click();
   await page.getByRole('combobox', { name: 'Сертификат', exact: true }).selectOption('A'.repeat(40));
   await page.getByRole('button', { name: 'Войти по сертификату', exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, unknown>).testSigningStarted)).toBe(true);
@@ -1519,7 +1519,7 @@ test('NK permit lookup preserves pending registry status and supports owner GTIN
     }
     return json({});
   });
-  await login(page); await page.getByRole('link', { name: 'Карточки ЧЗ', exact: true }).click();
+  await login(page); await page.goto('/#/catalog');
   await page.getByRole('tab', { name: 'Разрешительные документы', exact: true }).click();
   expect(searches).toHaveLength(0);
   await page.getByLabel('Номер документа', { exact: true }).fill('ЕАЭС TEST');
@@ -1560,7 +1560,7 @@ test('motor oil catalog prefills product and declaration permit using loaded cat
     if (p.endsWith('/attributes')) return json([{ id: 23557, name: 'Декларация о соответствии', groupName: 'Разрешительные документы', fieldType: 'string', requirement: 'o', isMultiple: false, multiplicityType: null, presetOnly: false, options: [], valueTypes: [], dependencies: [], isFirstLayer: true, isSecondLayer: false, hasUnsupportedDictionary: false }]);
     return json({});
   });
-  await login(page); await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click();
+  await login(page); await page.goto('/#/marking');
   await page.getByRole('combobox', { name: 'Декларация для товара' }).click(); await page.getByRole('option', { name: /CF-26-100/ }).click();
   await page.getByRole('tab', { name: 'Честный знак', exact: true }).click(); await page.getByRole('button', { name: 'Национальный каталог', exact: true }).click();
   await page.getByRole('button', { name: 'Добавить новый товар', exact: true }).first().click();

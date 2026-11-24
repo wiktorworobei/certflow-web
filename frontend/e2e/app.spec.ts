@@ -126,7 +126,7 @@ test('manual declaration product persists independently of the standalone NK cat
   await expect(page.getByLabel('Наименование продукции', { exact: true })).toHaveValue('Масло моторное Premium 5W-30');
   await expect(page.getByLabel('Модель, марка, артикул и другие признаки')).toHaveValue('Oil Brand, канистра 4 л');
   await expect(page.getByLabel('GTIN', { exact: true })).toHaveValue('05011846021161');
-  await page.getByRole('link', { name: 'Карточки ЧЗ', exact: true }).click();
+  await page.goto('/#/catalog');
   await expect(page.getByRole('heading', { name: 'Карточки ЧЗ', exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.locator('#honest-sign-certificate')).toBeVisible();
 });
@@ -417,7 +417,7 @@ test('declaration GTIN and confirmed code batch persist through the real marking
   await expect(page.getByText('Привязан состав кодов', { exact: true })).toBeVisible();
   await page.reload(); await expect(page.getByText('Привязан состав кодов', { exact: true })).toBeVisible();
   await companyPicker.selectOption({ label: 'Моя компания' });
-  await page.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true }).click();
+  await page.goto('/#/marking');
   await expect(page.getByText('Привязан состав кодов', { exact: true })).toHaveCount(0);
 });
 
@@ -426,6 +426,10 @@ test('desktop and mobile layouts', async ({ page }) => {
   await page.goto('/'); await expect(page.getByRole('heading', { name: 'С возвращением' })).toBeVisible();
   await page.screenshot({ path: path.join(screenshotDir, 'login.png'), fullPage: true });
   await login(page); await page.screenshot({ path: path.join(screenshotDir, 'overview.png'), fullPage: true });
+  const desktopMenu = page.getByRole('navigation', { name: 'Основное меню', exact: true });
+  await expect(desktopMenu.getByRole('link', { name: 'ZNAQ.CRPT', exact: true })).toBeVisible();
+  await expect(desktopMenu.getByRole('link', { name: 'Карточки ЧЗ', exact: true })).toHaveCount(0);
+  await expect(desktopMenu.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true })).toHaveCount(0);
   await page.getByRole('link', { name: 'Декларации', exact: true }).click(); await expect(page.getByRole('table')).toBeVisible();
   await page.screenshot({ path: path.join(screenshotDir, 'registry.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 }); await page.reload();
@@ -433,6 +437,11 @@ test('desktop and mobile layouts', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Открыть меню' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: path.join(screenshotDir, 'mobile.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Открыть меню' }).click();
+  const mobileMenu = page.locator('#mobile-navigation').getByRole('navigation', { name: 'Основное меню', exact: true });
+  await expect(mobileMenu.getByRole('link', { name: 'ZNAQ.CRPT', exact: true })).toBeVisible();
+  await expect(mobileMenu.getByRole('link', { name: 'Карточки ЧЗ', exact: true })).toHaveCount(0);
+  await expect(mobileMenu.getByRole('link', { name: 'ЧЗ и Наша марка', exact: true })).toHaveCount(0);
 });
 
 test('bulk archive, restore and permanent cleanup of selected declarations', async ({ page }) => {
