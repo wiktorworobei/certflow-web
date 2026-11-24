@@ -51,13 +51,13 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   function setPreference(value: ThemePreference) { setValue(value); save(storageKey, value); }
   function setColorTheme(value: ColorTheme) { setColorValue(value); save(colorKey, value); }
   const theme = useMemo(() => {
-    const t = tokens; const primary = t.accent;
+    const t = tokens; const primary = t.action;
     return createTheme({
       palette: {
         mode, primary: { main: primary, contrastText: t.onAccent }, secondary: { main: t.muted },
         background: { default: t.canvas, paper: t.surface }, text: { primary: t.text, secondary: t.muted }, divider: t.border,
         success: { main: t.success }, warning: { main: t.warning }, error: { main: t.danger }, info: { main: t.info },
-        action: { hover: alpha(primary, .055), selected: alpha(primary, .09) },
+        action: { hover: t.surfaceHover, selected: t.accentSoft },
       },
       typography: {
         fontFamily: 'Inter, Arial, sans-serif',
@@ -71,6 +71,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       components: {
         MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: {
           root: { borderRadius: 10, padding: '11px 18px', minHeight: 44, letterSpacing: '-.015em', transition: 'background-color .16s, box-shadow .16s, border-color .16s', '&.Mui-focusVisible': { outline: `3px solid ${primary}`, outlineOffset: 3 } },
+          containedPrimary: { '&:hover': { backgroundColor: t.actionHover } },
           contained: { '&:hover': { boxShadow: `0 3px 10px ${alpha(primary, .2)}` } },
           outlined: { borderColor: t.border, color: t.text, backgroundColor: t.surface, '&:hover': { borderColor: primary, backgroundColor: alpha(primary, .06) } },
           sizeSmall: { minHeight: 36, padding: '6px 12px', fontSize: 12, '@media (hover: none) and (pointer: coarse)': { minHeight: 44 } },
@@ -80,7 +81,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
         MuiTextField: { defaultProps: { size: 'small', fullWidth: true } },
         MuiOutlinedInput: { styleOverrides: {
           root: { backgroundColor: t.surface, fontSize: 14, minHeight: 46, borderRadius: 10, transition: 'box-shadow .16s', '&.Mui-focused': { boxShadow: `0 0 0 3px ${alpha(primary, .12)}` } },
-          notchedOutline: { borderColor: t.border }, input: { paddingBlock: 12, '@media (max-width: 620px), (hover: none) and (pointer: coarse)': { fontSize: 16 } },
+          notchedOutline: { borderColor: t.controlBorder }, input: { paddingBlock: 12, '@media (max-width: 620px), (hover: none) and (pointer: coarse)': { fontSize: 16 } },
         } },
         MuiInputLabel: { styleOverrides: { root: { fontSize: 14 } } },
         MuiFormHelperText: { styleOverrides: { root: { fontSize: 12, lineHeight: 1.6, marginLeft: 0 } } },
@@ -103,7 +104,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
         } },
         MuiChip: { styleOverrides: { root: { borderRadius: 7, fontWeight: 500 }, sizeSmall: { fontSize: 11 } } },
         MuiMenu: { styleOverrides: { paper: { border: `1px solid ${t.border}`, borderRadius: 12, marginTop: 6, boxShadow: '0 12px 35px #00000018' } } },
-        MuiMenuItem: { styleOverrides: { root: { fontSize: 13, minHeight: 44, borderRadius: 6, margin: '3px 6px' } } },
+        MuiMenuItem: { styleOverrides: { root: { fontSize: 13, minHeight: 44, borderRadius: 6, margin: '3px 6px', '&.Mui-selected': { backgroundColor: t.accentSoft, color: t.accentText }, '&.Mui-selected:hover, &.Mui-selected.Mui-focusVisible': { backgroundColor: t.surfaceHover } } } },
         MuiTooltip: { defaultProps: { arrow: true }, styleOverrides: { tooltip: { fontSize: 12, padding: '8px 12px' } } },
         MuiLinearProgress: { styleOverrides: { root: { backgroundColor: alpha(primary, .12) } } },
       },

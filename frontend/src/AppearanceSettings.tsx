@@ -22,10 +22,21 @@ export function AppearanceSettings() {
     <div className="appearance-heading appearance-colors-heading"><div><Typography component="h2" variant="h6">Цветовая тема</Typography><Typography variant="body2" color="text.secondary">Выберите свою палитру. Каждая тема работает в светлом и тёмном режиме.</Typography></div><PaletteOutlined sx={{ color: 'text.secondary' }}/></div>
     <div className="color-theme-grid" role="group" aria-label="Цветовая тема">{colorThemes.map(option => {
       const t = getDesignTokens(option.id, mode);
-      const previewStyle = { '--preview-canvas': t.canvas, '--preview-surface': t.surface, '--preview-accent': t.accent, '--preview-sidebar': t.sidebar, '--preview-line': t.border, '--preview-soft': t.accentSoft } as CSSProperties;
+      const previewStyle = {
+        '--preview-canvas': t.canvas,
+        '--preview-surface': t.surface,
+        '--preview-topbar': t.topbar,
+        '--preview-text': t.text,
+        '--preview-action': t.action,
+        '--preview-sidebar': t.sidebar,
+        '--preview-sidebar-accent': t.sidebarAccent,
+        '--preview-sidebar-active': t.sidebarActive,
+        '--preview-sidebar-muted': t.sidebarMuted,
+        '--preview-line': t.border,
+      } as CSSProperties;
       return <Button key={option.id} color="inherit" className={`color-theme-option ${colorTheme === option.id ? 'selected' : ''}`} aria-pressed={colorTheme === option.id} aria-label={`Тема ${option.title}`} onClick={() => setColorTheme(option.id)}>
-        <span className="color-theme-preview" data-preview-theme={option.id} style={previewStyle} aria-hidden="true"><span className="color-preview-nav"><i/><b/><b/><b/></span><span className="color-preview-main"><span className="color-preview-bar"/><strong/><span className="color-preview-stats"><i/><i/><i/></span><span className="color-preview-table"><i/><i/><i/></span></span></span>
-        <span className="color-theme-label"><span className="color-theme-dot" style={{ background: option.accent }}/><strong>{option.title}</strong><span className="appearance-check">{colorTheme === option.id && <CheckRounded/>}</span></span><span className="color-theme-description">{option.description}</span>
+        <span className="color-theme-preview" data-preview-theme={option.id} style={previewStyle} aria-hidden="true"><span className="color-preview-nav"><i/><b/><b/><b/></span><span className="color-preview-main"><span className="color-preview-bar"/><span className="color-preview-heading"><i/><b/></span><span className="color-preview-stats"><i/><i/><i/></span><span className="color-preview-table"><i/><i/><i/></span></span></span>
+        <span className="color-theme-label"><span className="color-theme-dot" style={{ background: t.action }}/><strong>{option.title}</strong><span className="appearance-check">{colorTheme === option.id && <CheckRounded/>}</span></span><span className="color-theme-description">{option.description}</span>
       </Button>;
     })}</div>
     <div className="appearance-note"><span className="appearance-note-icon"><CheckRounded/></span><Typography variant="body2" color="text.secondary">{storageError ? 'Тема применена для текущего сеанса.' : 'Выбор сохраняется в этом браузере.'} Палитру и режим можно быстро изменить в верхней панели.</Typography></div>

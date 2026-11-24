@@ -1,4 +1,4 @@
-.editor-tabs.workspace-tabs { padding: 20px; margin-bottom: 24px; border-radius: 16px; background: var(--surface, var(--paper, #fff)); }
+.editor-tabs.workspace-tabs { padding: 20px; margin-bottom: 24px; border-radius: 16px; background: var(--surface); }
 .workspace-navigation-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .workspace-navigation-heading h2.MuiTypography-root { font-size: 16px; font-weight: 700; }
 .workspace-navigation-heading div > span { display: block; color: var(--muted); font-size: 12px; margin-top: 5px; line-height: 1.5; }
@@ -24,7 +24,7 @@
 .workspace-checks-title.MuiTypography-root { font-size: 12px; font-weight: 700; padding-top: 8px; border-top: 1px solid var(--border); }
 .generate-declaration-button.MuiButton-root { box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 18%, transparent); }
 .declaration-preview-caption { display: block; margin-top: 5px; font-size: 12px; font-weight: 400; color: var(--muted); }
-.declaration-pdf-preview { display: block; width: 100%; height: 65vh; min-height: 350px; border: 1px solid var(--border); border-radius: 8px; background: #e8e9ec; }
+.declaration-pdf-preview { display: block; width: 100%; height: 65vh; min-height: 350px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-hover); }
 .declaration-preview-dialog .MuiDialogActions-root { padding: 16px 24px; flex-wrap: wrap; gap: 8px; }
 .workspace-file { border-bottom: 1px solid var(--border); padding: 6px 0 12px; }
 .workspace-file:last-child { border-bottom: 0; }

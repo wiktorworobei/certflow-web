@@ -24,9 +24,6 @@ import {
   Tab,
   Tabs,
   TextField,
-  ThemeProvider,
-  createTheme,
-  useTheme,
 } from '@mui/material';
 import {
   ArrowBackRounded,
@@ -55,16 +52,6 @@ export function Crpt() {
   const service = params.get('service') === 'suz' ? 'suz' : 'catalog';
   const connection = params.get('view') === 'connection';
   const { firmId, canEdit, isAdmin } = useWorkspace();
-  const { mode } = useAppearance();
-  const parent = useTheme();
-  const theme = createTheme(parent, {
-    palette: {
-      primary: {
-        main: mode === 'dark' ? '#c3b4ff' : '#6b4cce',
-        contrastText: mode === 'dark' ? '#21143b' : '#fff',
-      },
-    },
-  });
   const [busy, setBusy] = useState(false);
   const [unsaved, setUnsaved] = useState(false);
   const [pending, setPending] = useState<CrptEnvironment | 'connection' | 'suz' | 'catalog' | null>(
@@ -88,153 +75,151 @@ export function Crpt() {
     else navigate(target);
   };
   return (
-    <ThemeProvider theme={theme}>
-      <div className={`crpt-page ${mode === 'dark' ? 'crpt-dark' : ''}`}>
-        <PageTitle
-          eyebrow="ЭКОСИСТЕМА ZNAQ / МАРКИРОВКА"
-          title="ZNAQ.CRPT"
-          subtitle={
-            service === 'suz'
-              ? 'Станция управления заказами. От заказа КМ до сохранённых кодов.'
-              : 'Национальный каталог. От первой карточки до публикации в Честном знаке.'
-          }
+    <div className="crpt-page">
+      <PageTitle
+        eyebrow="ЭКОСИСТЕМА ZNAQ / МАРКИРОВКА"
+        title="ZNAQ.CRPT"
+        subtitle={
+          service === 'suz'
+            ? 'Станция управления заказами. От заказа КМ до сохранённых кодов.'
+            : 'Национальный каталог. От первой карточки до публикации в Честном знаке.'
+        }
+      >
+        <Button
+          variant="outlined"
+          startIcon={<SettingsOutlined />}
+          disabled={busy || !canEdit}
+          onClick={() => requestNavigation('connection')}
         >
-          <Button
-            variant="outlined"
-            startIcon={<SettingsOutlined />}
-            disabled={busy || !canEdit}
-            onClick={() => requestNavigation('connection')}
-          >
-            {connection ? 'Вернуться к работе' : 'Подключение'}
-          </Button>
-          <Button
-            component="a"
-            href={
-              service === 'suz'
-                ? 'https://docs.crpt.ru/gismt/files/pdf/API_%D0%A1%D0%A3%D0%97_3.0.pdf'
-                : 'https://docs.crpt.ru/gismt/API_%D0%9D%D0%9A/'
-            }
-            target="_blank"
-            rel="noopener noreferrer"
-            endIcon={<OpenInNewRounded />}
-          >
-            Документация
-          </Button>
-        </PageTitle>
-        <div className="crpt-banner">
-          <span className="crpt-banner-symbol">
-            <VerifiedOutlined />
-          </span>
-          <div>
-            <strong>
-              {service === 'suz'
-                ? 'От товара — к коду маркировки.'
-                : 'Один каталог. Весь путь товара.'}
-            </strong>
-            <p>
-              {service === 'suz'
-                ? 'Заказы, блоки кодов и документы — под контролем в каждом контуре.'
-                : 'Единицы, комплекты, наборы и технические карточки — в одном рабочем пространстве.'}
-            </p>
-          </div>
-          <span className="crpt-version">
-            {service === 'suz' ? 'API СУЗ · 3.0.40' : 'API НК · v5.69'}
-          </span>
+          {connection ? 'Вернуться к работе' : 'Подключение'}
+        </Button>
+        <Button
+          component="a"
+          href={
+            service === 'suz'
+              ? 'https://docs.crpt.ru/gismt/files/pdf/API_%D0%A1%D0%A3%D0%97_3.0.pdf'
+              : 'https://docs.crpt.ru/gismt/API_%D0%9D%D0%9A/'
+          }
+          target="_blank"
+          rel="noopener noreferrer"
+          endIcon={<OpenInNewRounded />}
+        >
+          Документация
+        </Button>
+      </PageTitle>
+      <div className="crpt-banner">
+        <span className="crpt-banner-symbol">
+          <VerifiedOutlined />
+        </span>
+        <div>
+          <strong>
+            {service === 'suz'
+              ? 'От товара — к коду маркировки.'
+              : 'Один каталог. Весь путь товара.'}
+          </strong>
+          <p>
+            {service === 'suz'
+              ? 'Заказы, блоки кодов и документы — под контролем в каждом контуре.'
+              : 'Единицы, комплекты, наборы и технические карточки — в одном рабочем пространстве.'}
+          </p>
         </div>
-        <Paper className="crpt-services">
-          <Tabs
-            value={service}
-            onChange={(_, value: 'catalog' | 'suz') => requestNavigation(value)}
-            aria-label="Сервисы ZNAQ.CRPT"
-          >
-            <Tab value="catalog" label="Национальный каталог" disabled={busy} />
-            <Tab value="suz" label="СУЗ · Заказы кодов" disabled={busy} />
-          </Tabs>
-        </Paper>
-        <Paper className="crpt-environments">
-          <Tabs
-            value={environment}
-            onChange={(_, value: CrptEnvironment) => requestNavigation(value)}
-            aria-label="Контур Честного знака"
-          >
-            <Tab value="production" label="Рабочий контур" disabled={busy} />
-            <Tab value="sandbox" label="Песочница ЧЗ" disabled={busy} />
-          </Tabs>
-          <Chip
-            size="small"
-            label={environment === 'sandbox' ? 'Тестовая среда' : 'Промышленная среда'}
-            variant="outlined"
-          />
-        </Paper>
-        <p className="crpt-environment-note">
-          {environment === 'sandbox'
-            ? 'Песочница Честного знака: отдельные подключение, сессия, карточки и история операций.'
-            : 'Рабочий контур Честного знака: отправленные и подписанные сведения поступают в промышленную систему.'}
-        </p>
-        {!canEdit ? (
-          <Alert severity="info">
-            Работа с Честным знаком доступна специалисту и администратору компании.
-          </Alert>
-        ) : (
-          <CrptScope
-            key={`${firmId}:${environment}:${service}`}
-            environment={environment}
-            onActivityChange={setBusy}
-          >
-            {connection ? (
-              <CrptConnection
-                environment={environment}
-                onBack={() => requestNavigation('connection')}
-                onUnsavedChange={setUnsaved}
-              />
-            ) : (
-              <HonestSignApp
-                companyId={firmId}
-                catalogOnly
-                onConfigureConnection={isAdmin ? () => requestNavigation('connection') : undefined}
-                workspaceTitle={service === 'suz' ? 'СУЗ · управление заказами' : undefined}
-                workspaceDescription={
-                  service === 'suz' ? 'Заказ, получение и архив кодов маркировки.' : undefined
-                }
-                catalogWorkspace={(thumbprint) =>
-                  service === 'suz' ? (
-                    <CrptSuzWorkspace
-                      companyId={firmId}
-                      environment={environment}
-                      selectedThumbprint={thumbprint}
-                      onUnsavedChange={setUnsaved}
-                    />
-                  ) : (
-                    <CrptCatalogWorkspace
-                      companyId={firmId}
-                      environment={environment}
-                      selectedThumbprint={thumbprint}
-                      onUnsavedChange={setUnsaved}
-                    />
-                  )
-                }
-              />
-            )}
-          </CrptScope>
-        )}
-        <Dialog open={!!pending} onClose={() => setPending(null)}>
-          <DialogTitle>
-            {connection ? 'Закрыть настройки подключения?' : 'Закрыть подготовленные данные?'}
-          </DialogTitle>
-          <DialogContent>
-            <DialogContentText>
-              {connection
-                ? 'Введённые реквизиты ещё не сохранены.'
-                : 'Несохранённые изменения и текущий список пакетного импорта будут закрыты. Сохранённые на сервере черновики доступны в журнале выбранного контура.'}
-            </DialogContentText>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setPending(null)}>Продолжить работу</Button>
-            <Button onClick={() => pending && navigate(pending)}>Перейти</Button>
-          </DialogActions>
-        </Dialog>
+        <span className="crpt-version">
+          {service === 'suz' ? 'API СУЗ · 3.0.40' : 'API НК · v5.69'}
+        </span>
       </div>
-    </ThemeProvider>
+      <Paper className="crpt-services">
+        <Tabs
+          value={service}
+          onChange={(_, value: 'catalog' | 'suz') => requestNavigation(value)}
+          aria-label="Сервисы ZNAQ.CRPT"
+        >
+          <Tab value="catalog" label="Национальный каталог" disabled={busy} />
+          <Tab value="suz" label="СУЗ · Заказы кодов" disabled={busy} />
+        </Tabs>
+      </Paper>
+      <Paper className="crpt-environments">
+        <Tabs
+          value={environment}
+          onChange={(_, value: CrptEnvironment) => requestNavigation(value)}
+          aria-label="Контур Честного знака"
+        >
+          <Tab value="production" label="Рабочий контур" disabled={busy} />
+          <Tab value="sandbox" label="Песочница ЧЗ" disabled={busy} />
+        </Tabs>
+        <Chip
+          size="small"
+          label={environment === 'sandbox' ? 'Тестовая среда' : 'Промышленная среда'}
+          variant="outlined"
+        />
+      </Paper>
+      <p className="crpt-environment-note">
+        {environment === 'sandbox'
+          ? 'Песочница Честного знака: отдельные подключение, сессия, карточки и история операций.'
+          : 'Рабочий контур Честного знака: отправленные и подписанные сведения поступают в промышленную систему.'}
+      </p>
+      {!canEdit ? (
+        <Alert severity="info">
+          Работа с Честным знаком доступна специалисту и администратору компании.
+        </Alert>
+      ) : (
+        <CrptScope
+          key={`${firmId}:${environment}:${service}`}
+          environment={environment}
+          onActivityChange={setBusy}
+        >
+          {connection ? (
+            <CrptConnection
+              environment={environment}
+              onBack={() => requestNavigation('connection')}
+              onUnsavedChange={setUnsaved}
+            />
+          ) : (
+            <HonestSignApp
+              companyId={firmId}
+              catalogOnly
+              onConfigureConnection={isAdmin ? () => requestNavigation('connection') : undefined}
+              workspaceTitle={service === 'suz' ? 'СУЗ · управление заказами' : undefined}
+              workspaceDescription={
+                service === 'suz' ? 'Заказ, получение и архив кодов маркировки.' : undefined
+              }
+              catalogWorkspace={(thumbprint) =>
+                service === 'suz' ? (
+                  <CrptSuzWorkspace
+                    companyId={firmId}
+                    environment={environment}
+                    selectedThumbprint={thumbprint}
+                    onUnsavedChange={setUnsaved}
+                  />
+                ) : (
+                  <CrptCatalogWorkspace
+                    companyId={firmId}
+                    environment={environment}
+                    selectedThumbprint={thumbprint}
+                    onUnsavedChange={setUnsaved}
+                  />
+                )
+              }
+            />
+          )}
+        </CrptScope>
+      )}
+      <Dialog open={!!pending} onClose={() => setPending(null)}>
+        <DialogTitle>
+          {connection ? 'Закрыть настройки подключения?' : 'Закрыть подготовленные данные?'}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {connection
+              ? 'Введённые реквизиты ещё не сохранены.'
+              : 'Несохранённые изменения и текущий список пакетного импорта будут закрыты. Сохранённые на сервере черновики доступны в журнале выбранного контура.'}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPending(null)}>Продолжить работу</Button>
+          <Button onClick={() => pending && navigate(pending)}>Перейти</Button>
+        </DialogActions>
+      </Dialog>
+    </div>
   );
 }
 

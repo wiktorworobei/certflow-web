@@ -9,6 +9,7 @@ import type { NormativeDocument } from '../src/normativeApi';
 import { emptyDeclaration, type Declaration } from '../src/types';
 import { emptyDirection, emptyEvidence } from '../src/evidenceTypes';
 import { emptyWorkspace } from '../src/workspaceTypes';
+import { colorThemes } from '../src/designTokens';
 
 test('adds a list of test protocols with a shared date and laboratory direction', async ({ page }) => {
   test.setTimeout(120000);
@@ -2367,10 +2368,9 @@ test('connection is successful only after verification and loses success after a
 test('all color themes support both modes with readable tokens and persistent selection', async ({ page }) => {
   await fixtures(page); await login(page);
   await page.goto('/#/settings?tab=appearance');
-  const palettes = [['znaq', 'ZNAQ'], ['sapphire', 'Сапфир'], ['ocean', 'Океан'], ['sage', 'Шалфей'], ['sandstone', 'Песчаник'], ['graphite', 'Графит'], ['dragonfly', 'Стрекозы']] as const;
   for (const mode of ['light', 'dark'] as const) {
     await page.getByRole('group', { name: 'Режим интерфейса' }).getByRole('button', { name: mode === 'light' ? /^Светлая/ : /^Тёмная/ }).click();
-    for (const [id, title] of palettes) {
+    for (const { id, title } of colorThemes) {
       const option = page.getByRole('button', { name: `Тема ${title}`, exact: true });
       await option.click();
       await expect(option).toHaveAttribute('aria-pressed', 'true');
@@ -2383,19 +2383,95 @@ test('all color themes support both modes with readable tokens and persistent se
           return [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4).reduce((sum, c, i) => sum + c * [.2126, .7152, .0722][i], 0);
         };
         const ratio = (text: string, background: string) => { const a = rgb(text), b = rgb(background); return (Math.max(a, b) + .05) / (Math.min(a, b) + .05); };
-        return [ratio('--text', '--canvas'), ratio('--muted', '--surface'), ratio('--faint', '--surface'), ratio('--accent', '--surface'), ratio('--on-accent', '--accent'), ratio('--sidebar-muted', '--sidebar'), ratio('--sidebar-text', '--sidebar')];
+        return {
+          control: ratio('--control-border', '--surface-soft'),
+          'main text': ratio('--text', '--canvas'),
+          'secondary text': ratio('--muted', '--surface'),
+          'tertiary text': ratio('--faint', '--canvas'),
+          'accent text': ratio('--accent', '--accent-soft'),
+          'primary button text': ratio('--on-accent', '--action'),
+          'primary button hover text': ratio('--on-accent', '--action-hover'),
+          'sidebar text': ratio('--sidebar-text', '--sidebar'),
+          'sidebar secondary text': ratio('--sidebar-muted', '--sidebar'),
+          'sidebar accent': ratio('--sidebar-accent', '--sidebar-active'),
+          'sidebar button text': ratio('--sidebar-on-accent', '--sidebar-accent'),
+        };
       });
-      for (const ratio of contrast) expect(ratio, `${title} / ${mode}: text contrast`).toBeGreaterThanOrEqual(4.5);
+      for (const [label, ratio] of Object.entries(contrast)) expect(ratio, `${title} / ${mode}: ${label} contrast`).toBeGreaterThanOrEqual(label === 'control' ? 3 : 4.5);
     }
   }
+  await page.getByRole('button', { name: 'Тема Стрекозы', exact: true }).click();
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'dragonfly');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.getByRole('button', { name: 'Тема Стрекозы', exact: true })).toBeVisible();
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'design-themes-desktop.png'), fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: 'Тема Океан', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'design-themes-mobile.png'), fullPage: true, animations: 'disabled' });
+});
+
+test('personal palettes recolor the whole workspace and the mobile menu in both modes', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+  await fixtures(page);
+  await login(page);
+
+  const picker = page.getByRole('button', { name: 'Выбрать цветовую тему' });
+  const choosePalette = async (title: string) => {
+    await picker.click();
+    await page.getByRole('menuitemradio', { name: title, exact: true }).click();
+    await expect(picker).toHaveAttribute('aria-expanded', 'false');
+  };
+  const readWorkspaceColors = () => page.evaluate(() => {
+    const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+    const create = style('.desktop-sidebar .sidebar-create');
+    const primary = style('.welcome-actions .MuiButton-contained');
+    return {
+      canvas: style('body').backgroundColor,
+      sidebar: style('.desktop-sidebar').backgroundColor,
+      navigationText: style('.desktop-sidebar .nav-item:not(.active)').color,
+      selectedNavigation: style('.desktop-sidebar .nav-item.active').backgroundColor,
+      sidebarButton: create.backgroundColor,
+      sidebarButtonText: create.color,
+      header: style('.topbar').backgroundColor,
+      card: style('.table-card').backgroundColor,
+      bodyText: style('.table-card h2').color,
+      primaryButton: primary.backgroundColor,
+      primaryButtonText: primary.color,
+    };
+  });
+  const heading = page.getByRole('heading', { name: 'Последние документы', exact: true });
+  await expect(heading).toBeVisible();
+
+  for (const mode of ['light', 'dark'] as const) {
+    if (mode === 'dark') await page.getByRole('button', { name: 'Включить тёмную тему' }).click();
+    await choosePalette('ZNAQ');
+    await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'znaq');
+    const original = await readWorkspaceColors();
+    await choosePalette('Ирис');
+    await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'iris');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', mode);
+    const updated = await readWorkspaceColors();
+    for (const property of Object.keys(updated) as Array<keyof typeof updated>) {
+      expect(updated[property], `${mode}: ${property}`).not.toBe(original[property]);
+    }
+  }
+
+  const desktop = await readWorkspaceColors();
+  await page.reload();
+  await expect(heading).toBeVisible();
+  expect(await readWorkspaceColors()).toEqual(desktop);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Открыть меню' }).click();
+  const drawer = page.locator('#mobile-navigation');
+  const menu = drawer.getByRole('navigation', { name: 'Основное меню' });
+  await expect(menu).toBeVisible();
+  await expect(drawer.locator('.MuiDrawer-paper')).toHaveCSS('background-color', desktop.sidebar);
+  await expect(menu.getByRole('link', { name: 'Декларации', exact: true })).toHaveCSS('color', desktop.navigationText);
+  await expect(menu.getByRole('link', { name: 'Обзор', exact: true })).toHaveCSS('background-color', desktop.selectedNavigation);
+  await expect(drawer.getByRole('button', { name: 'Создать декларацию', exact: true })).toHaveCSS('background-color', desktop.sidebarButton);
 });
 
 test('color theme menu is keyboard accessible, syncs tabs and preserves the mode', async ({ page, context }) => {

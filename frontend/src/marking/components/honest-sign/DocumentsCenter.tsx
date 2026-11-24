@@ -220,10 +220,7 @@ export function DocumentsCenter({
                         </div>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button
-                                    type="button"
-                                    className="bg-yellow-300 text-slate-950 hover:bg-yellow-200"
-                                >
+                                <Button type="button">
                                     <CirclePlus aria-hidden="true" />
                                     {t("honestSign.documentsCenter.create")}
                                     <ChevronDown aria-hidden="true" />

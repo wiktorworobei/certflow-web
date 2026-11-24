@@ -13,7 +13,7 @@
 .color-theme-preview[data-preview-theme='dragonfly'] .color-preview-nav { position: relative; }
 .color-theme-preview[data-preview-theme='dragonfly'] .color-preview-nav::after {
   content: ''; position: absolute; inset: auto 0 5px; height: 42px;
-  background: var(--preview-accent); opacity: .8;
+  background: var(--preview-sidebar-accent); opacity: .8;
   mask: url('/themes/dragonfly.svg') center / contain no-repeat;
 }
 @media (max-width: 620px) {

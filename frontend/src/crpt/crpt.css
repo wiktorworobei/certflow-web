@@ -1,34 +1,16 @@
 .crpt-page {
-  --crpt-ink: #382c61;
-  --crpt-accent: #6b4cce;
-  --crpt-soft: #f4f0fc;
-  --crpt-border: #e5def4;
-  --cf-accent: #6b4cce;
-  --cf-accent-solid: #6b4cce;
-  --cf-on-accent: #fff;
-  --cf-accent-soft: #f2edfc;
-  --cf-sidebar-accent: #c8b5ff;
   min-width: 0;
 }
-.crpt-page.crpt-dark {
-  --crpt-ink: #e5dcff;
-  --crpt-accent: #c3b4ff;
-  --crpt-soft: #2a233b;
-  --crpt-border: #483b60;
-  --cf-accent: #c3b4ff;
-  --cf-accent-solid: #6b4cce;
-  --cf-on-accent: #21143b;
-  --cf-accent-soft: #c3b4ff14;
-}
 .crpt-page .page-title .eyebrow {
-  color: var(--crpt-accent);
+  color: var(--cf-accent-text);
 }
 .crpt-banner {
   display: flex;
   align-items: center;
   gap: 18px;
-  background: #302546;
-  color: #f4efff;
+  background: var(--cf-sidebar);
+  color: var(--cf-sidebar-strong);
+  border: 1px solid var(--cf-sidebar-border);
   border-radius: 15px;
   padding: 24px 28px;
   margin-bottom: 24px;
@@ -39,9 +21,9 @@
   width: 46px;
   height: 46px;
   flex-shrink: 0;
-  color: #d3c3ff;
-  border: 1px solid #a489de55;
-  background: #cab3ff0b;
+  color: var(--cf-sidebar-accent);
+  border: 1px solid var(--cf-sidebar-border);
+  background: var(--cf-sidebar-active);
   border-radius: 12px;
 }
 .crpt-banner-symbol svg {
@@ -53,7 +35,7 @@
   letter-spacing: -0.03em;
 }
 .crpt-banner p {
-  color: #c4b7db;
+  color: var(--cf-sidebar-text);
   font-size: 12px;
   margin: 7px 0 0;
   line-height: 1.7;
@@ -62,7 +44,7 @@
   margin-left: auto;
   padding-left: 20px;
   flex-shrink: 0;
-  color: #cfc1ed;
+  color: var(--cf-sidebar-muted);
   font-size: 10px;
   letter-spacing: 0.05em;
 }
@@ -82,9 +64,9 @@
   text-transform: none;
 }
 .crpt-environments .MuiChip-root {
-  color: var(--crpt-accent);
-  border-color: var(--crpt-border);
-  background: var(--crpt-soft);
+  color: var(--cf-accent-text);
+  border-color: var(--cf-border);
+  background: var(--cf-accent-soft);
   font-size: 10px;
 }
 .crpt-environment-note {
@@ -93,22 +75,8 @@
   font-size: 11px;
   line-height: 1.7;
 }
-.crpt-surface {
-  --cf-accent: var(--crpt-accent);
-  --cf-accent-soft: var(--crpt-soft);
-  --cf-on-accent: #fff;
-}
-.crpt-dark .crpt-surface {
-  --cf-on-accent: #21143b;
-}
-.crpt-surface .integration-brand {
-  background: #302546;
-}
 .crpt-surface .integration-theme {
   border-radius: 14px;
-}
-.crpt-surface .integration-brand svg {
-  color: #d3c3ff;
 }
 .crpt-surface .integration-theme > .flex.min-h-\[calc\(100svh-7rem\)\] {
   min-height: 550px;
@@ -155,8 +123,8 @@
 }
 .crpt-catalog-intro > .MuiChip-root {
   margin-top: 4px;
-  color: var(--crpt-accent);
-  border-color: var(--crpt-border);
+  color: var(--cf-accent-text);
+  border-color: var(--cf-border);
   font-size: 10px;
 }
 .crpt-panel {
@@ -273,7 +241,7 @@
   background: var(--cf-surface-soft);
 }
 .crpt-table .crpt-row-selected td {
-  background: var(--crpt-soft);
+  background: var(--cf-accent-soft);
 }
 .crpt-table td > .MuiButton-root {
   font-size: 10px;
@@ -294,10 +262,10 @@
   gap: 14px;
   flex-wrap: wrap;
   padding: 10px 14px;
-  background: var(--crpt-soft);
-  color: var(--crpt-accent);
+  background: var(--cf-accent-soft);
+  color: var(--cf-accent-text);
   font-size: 11px;
-  border: 1px solid var(--crpt-border);
+  border: 1px solid var(--cf-border);
   border-radius: 8px;
   margin-bottom: 16px;
 }
@@ -328,7 +296,7 @@
   color: var(--cf-muted);
 }
 .crpt-empty > svg {
-  color: var(--crpt-accent);
+  color: var(--cf-accent-text);
   font-size: 34px;
   margin-bottom: 14px;
   opacity: 0.6;
@@ -354,7 +322,7 @@
   line-height: 1.8;
 }
 .crpt-catalog-help > svg {
-  color: var(--crpt-accent);
+  color: var(--cf-accent-text);
   font-size: 17px;
   flex-shrink: 0;
   margin-top: 2px;
@@ -415,7 +383,7 @@
 .crpt-account-list summary {
   cursor: pointer;
   font-size: 11px;
-  color: var(--crpt-accent);
+  color: var(--cf-accent-text);
 }
 .crpt-account-list article {
   display: grid;
@@ -430,7 +398,7 @@
 }
 .crpt-account-list article > small {
   font-size: 10px;
-  color: var(--crpt-accent);
+  color: var(--cf-accent-text);
 }
 .crpt-deletion {
   display: grid;
@@ -468,16 +436,6 @@
 .crpt-editor-dialog {
   max-height: 90dvh !important;
   overflow-y: auto;
-}
-.nav-item[href$='/crpt'] svg {
-  color: #c3b4ff;
-}
-.nav-item[href$='/crpt'].active {
-  background: #c3b4ff13;
-  border-color: #c3b4ff44;
-}
-.nav-item[href$='/crpt'].active .nav-active-mark {
-  background: #c3b4ff;
 }
 .crpt-services.MuiPaper-root {
   margin-bottom: 12px;
@@ -523,8 +481,8 @@
 .crpt-suz-icon {
   padding: 12px;
   border-radius: 12px;
-  background: var(--crpt-soft);
-  color: var(--crpt-accent);
+  background: var(--cf-accent-soft);
+  color: var(--cf-accent-text);
   display: flex;
 }
 .crpt-suz .crpt-toolbar > .MuiTextField-root {
@@ -552,7 +510,7 @@
   white-space: nowrap;
 }
 .crpt-suz-order-link {
-  color: var(--crpt-accent);
+  color: var(--cf-accent-text);
   text-align: left;
   font-weight: 650;
   cursor: pointer;
@@ -591,7 +549,7 @@
   margin-top: 16px;
   padding: 18px;
   border-radius: 12px;
-  background: var(--crpt-soft);
+  background: var(--cf-accent-soft);
   font-size: 12px;
 }
 .crpt-suz-catalog-result > strong,
@@ -659,7 +617,7 @@
   font-size: 12px;
 }
 .crpt-suz-status-grid code {
-  color: var(--crpt-accent);
+  color: var(--cf-accent-text);
 }
 .crpt-suz-imports > div {
   display: flex;

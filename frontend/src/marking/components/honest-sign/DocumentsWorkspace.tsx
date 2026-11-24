@@ -682,7 +682,6 @@ function SingleDocumentsWorkspace({
                     t("honestSign.workspace.steps.products"),
                 ]}
                 activeStep={activeStep - 1}
-                tone="honest-sign"
             />
             <div className="flex flex-wrap items-center justify-between gap-2 border-b px-6 py-3 text-sm">
                 <span className="inline-flex items-center gap-2 text-muted-foreground">

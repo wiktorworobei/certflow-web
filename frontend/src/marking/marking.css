@@ -8,6 +8,7 @@
   --color-card: var(--card); --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover); --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--cf-action-hover);
   --color-secondary: var(--secondary); --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground);
@@ -22,7 +23,7 @@
   .marking-surface :where(button:disabled) { cursor: default; }
   .marking-surface :where(table) { border-collapse: collapse; }
 }
-.marking-surface { --background: var(--canvas); --foreground: var(--text); --card: var(--surface); --card-foreground: var(--text); --popover: var(--surface); --popover-foreground: var(--text); --primary: var(--cf-accent); --primary-foreground: var(--cf-on-accent); --secondary: var(--cf-surface-hover); --secondary-foreground: var(--cf-text); --muted: var(--cf-surface-soft); --muted-foreground: var(--cf-muted); --accent: var(--cf-accent-soft); --accent-foreground: var(--cf-text); --input: var(--border); --ring: var(--cf-accent); --destructive: var(--danger); --radius: 12px; font-family: Inter, Arial, sans-serif; min-width: 0; }
+.marking-surface { --background: var(--canvas); --foreground: var(--text); --card: var(--surface); --card-foreground: var(--text); --popover: var(--surface); --popover-foreground: var(--text); --primary: var(--cf-action); --primary-foreground: var(--cf-on-accent); --secondary: var(--cf-surface-hover); --secondary-foreground: var(--cf-text); --muted: var(--cf-surface-soft); --muted-foreground: var(--cf-muted); --accent: var(--cf-accent-soft); --accent-foreground: var(--cf-text); --input: var(--cf-control-border); --ring: var(--cf-accent); --destructive: var(--danger); --radius: 12px; font-family: Inter, Arial, sans-serif; min-width: 0; }
 .marking-surface [data-slot='dialog-overlay'], .marking-surface [data-slot='dialog-content'], .marking-surface [data-slot='popover-content'], .marking-surface [data-slot='select-content'], .marking-surface [data-slot='dropdown-menu-content'] { z-index: 1400; }
 .marking-surface .integration-theme, .marking-surface .dmkod-theme { font-family: Inter, Arial, sans-serif; }
 .marking-top-tabs.MuiPaper-root { border: 1px solid var(--border); margin-bottom: 24px; overflow: hidden; }

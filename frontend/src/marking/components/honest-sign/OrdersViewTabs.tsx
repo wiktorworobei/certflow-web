@@ -33,7 +33,7 @@ export function OrdersViewTabs({ value, onChange }: OrdersViewTabsProps) {
                         onClick={() => onChange(view)}
                         className={`relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
                             selected
-                                ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-yellow-400"
+                                ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-ring"
                                 : "text-muted-foreground hover:text-foreground"
                         }`}
                     >

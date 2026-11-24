@@ -7,7 +7,7 @@
     --card-foreground: var(--cf-text);
     --popover: var(--cf-surface);
     --popover-foreground: var(--cf-text);
-    --primary: var(--cf-accent);
+    --primary: var(--cf-action);
     --primary-foreground: var(--cf-on-accent);
     --secondary: var(--cf-surface-hover);
     --secondary-foreground: var(--cf-text);
@@ -16,14 +16,14 @@
     --accent: var(--cf-accent-soft);
     --accent-foreground: var(--cf-text);
     --border: var(--cf-border);
-    --input: var(--cf-border);
+    --input: var(--cf-control-border);
     --ring: var(--cf-accent);
     --destructive: var(--cf-danger);
     color: var(--foreground);
 }
-.integration-brand { background: var(--cf-sidebar); color: #fff; border-bottom-color: var(--cf-sidebar-accent); }
+.integration-brand { background: var(--cf-sidebar); color: var(--cf-sidebar-strong); border-bottom-color: var(--cf-sidebar-border); }
 .integration-brand svg { color: var(--cf-sidebar-accent); }
-.integration-theme [data-slot="tabs-trigger"][data-state="active"]::after { background: var(--primary); }
+.integration-theme [data-slot="tabs-trigger"][data-state="active"]::after { background: var(--cf-accent); }
 .integration-theme [data-slot="tabs-trigger"][data-state="active"] { color: var(--foreground); }
 .integration-theme .integration-symbol { background: var(--primary); color: var(--primary-foreground); }
 .marking-surface [data-slot="dialog-content"] { max-height: calc(100dvh - 32px); overflow-y: auto; }

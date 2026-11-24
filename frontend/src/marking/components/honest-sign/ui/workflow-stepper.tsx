@@ -4,14 +4,12 @@ type WorkflowStepperProps = {
     steps: string[];
     activeStep: number;
     className?: string;
-    tone?: "default" | "honest-sign";
 };
 
 export function WorkflowStepper({
     steps,
     activeStep,
     className,
-    tone = "default",
 }: WorkflowStepperProps) {
     return (
         <div
@@ -33,9 +31,7 @@ export function WorkflowStepper({
                         className={cn(
                             "relative py-3",
                             isActive
-                                ? tone === "honest-sign"
-                                    ? "bg-yellow-200 text-slate-950"
-                                    : "bg-primary text-primary-foreground"
+                                ? "bg-primary text-primary-foreground"
                                 : "text-muted-foreground",
                         )}
                     >
@@ -43,12 +39,7 @@ export function WorkflowStepper({
                         {isActive && !isLast ? (
                             <span
                                 aria-hidden="true"
-                                className={cn(
-                                    "absolute top-0 -right-4 h-full w-8 skew-x-[-30deg]",
-                                    tone === "honest-sign"
-                                        ? "bg-yellow-200"
-                                        : "bg-primary",
-                                )}
+                                className="absolute top-0 -right-4 h-full w-8 skew-x-[-30deg] bg-primary"
                             />
                         ) : null}
                     </div>
