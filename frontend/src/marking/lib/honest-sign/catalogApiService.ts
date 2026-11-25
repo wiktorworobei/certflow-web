@@ -8,6 +8,7 @@ import type {
     CatalogCategory,
     CatalogFeedStatus,
     CatalogSubmission,
+    CatalogSubmissionAttempt,
     CatalogCard,
     CatalogOperation,
     CatalogSignRequest,
@@ -116,13 +117,13 @@ export const catalogApiService = {
                   )
                 : apiClient.post<CatalogSubmission>(`${URL}/drafts`, request),
         ),
-    sendDraft: (id: string, expectedVersion?: string | null) =>
+    sendDraft: (id: string, expectedVersion?: string | null, sendToModeration = false) =>
         catalogCall(() =>
             apiClient.post<CatalogSubmission>(
                 `${URL}/submissions/${encodeURIComponent(id)}/send`,
                 undefined,
                 {
-                    params: { expectedVersion, sendToModeration: false },
+                    params: { expectedVersion, sendToModeration },
                     timeout: WORKFLOW_TIMEOUT_MS,
                 },
             ),
@@ -230,6 +231,13 @@ export const catalogApiService = {
             apiClient.get<CatalogFeedStatus>(
                 `${URL}/submissions/${encodeURIComponent(id)}/status`,
                 { signal, timeout: WORKFLOW_TIMEOUT_MS },
+            ),
+        ),
+    attempts: (id: string, page: number, signal?: AbortSignal) =>
+        catalogCall(() =>
+            apiClient.get<{ items: CatalogSubmissionAttempt[]; hasNextPage: boolean }>(
+                `${URL}/submissions/${encodeURIComponent(id)}/attempts`,
+                { params: { page }, signal },
             ),
         ),
 };

@@ -91,6 +91,7 @@ export type CatalogAttribute = {
     isFirstLayer: boolean;
     isSecondLayer: boolean;
     hasUnsupportedDictionary: boolean;
+    optionsFromClassifier?: boolean;
 };
 export type CatalogCardRequest = {
     requestId: string;
@@ -165,6 +166,19 @@ export type CatalogFeedMessage = {
     reason?: "DuplicateGtin" | null;
 };
 
+export type CatalogSubmissionAttempt = {
+    id: string;
+    requestId: string;
+    operation: "Create" | "Update";
+    gtin: string | null;
+    state: Exclude<CatalogSubmission["state"], "Draft"> | "Processing" | "Reconciled";
+    feedId: string | null;
+    sendToModeration: boolean;
+    createdAtUtc: string;
+    updatedAtUtc: string | null;
+    feedStatus: CatalogFeedStatus | null;
+};
+
 export type CatalogOperation = {
     requestId: string;
     submissionId: string;
@@ -195,6 +209,7 @@ export type CatalogCard = {
     canEdit: boolean;
     canModerate: boolean;
     canSign: boolean;
+    canResubmitForModeration?: boolean;
     draft: CatalogCardRequest | null;
     blockingOperation: CatalogOperation | null;
 };

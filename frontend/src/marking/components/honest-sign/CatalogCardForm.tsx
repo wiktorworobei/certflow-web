@@ -70,6 +70,8 @@ export function CatalogCardForm({
     submissionId,
     readOnly = false,
     externalGoodId = 0,
+    retryRejected = false,
+    canResubmitForModeration = false,
     onDirtyChange,
     onBusyChange,
     onStage,
@@ -82,6 +84,8 @@ export function CatalogCardForm({
     initialCard?: CatalogCardRequest;
     submissionId?: string;
     externalGoodId?: number;
+    retryRejected?: boolean;
+    canResubmitForModeration?: boolean;
     onDirtyChange?: (dirty: boolean) => void;
     onBusyChange?: (busy: boolean) => void;
     onStage?: (request: CatalogCardRequest) => void;
@@ -102,11 +106,13 @@ export function CatalogCardForm({
     const savedId = useRef(submissionId);
     const savedReceipt = useRef<CatalogSubmission | null>(null);
     const sendIntent = useRef(false);
+    const validateModeration = useRef(false);
     const [sentRequest, setSentRequest] = useState<CatalogCardRequest | null>(
         null,
     );
     const inFlight = useRef(false);
-    const requestId = useRef(crypto.randomUUID());
+    const [initialRequestId] = useState(() => crypto.randomUUID());
+    const requestId = useRef(initialRequestId);
     const mutation = useMutation({
         retry: false,
         mutationFn: async ({
@@ -118,32 +124,48 @@ export function CatalogCardForm({
         }) => {
             const scope = captureMarkingScope();
             const saved = await catalogApiService.saveDraft(
-                request,
+                { ...request, sendToModeration: false },
                 savedId.current,
             );
             assertMarkingScope(scope);
             savedId.current = saved.id;
             savedReceipt.current = saved;
             return send
-                ? catalogApiService.sendDraft(saved.id, saved.draftVersion)
+                ? catalogApiService.sendDraft(saved.id, saved.draftVersion, request.sendToModeration)
                 : saved;
         },
-        onSettled: async () => {
+        onSuccess: (receipt) => {
+            if (submissionId || receipt.state !== "Accepted" || !receipt.feedId) return;
+            const key = catalogKeys.status(companyId, receipt.id);
+            client.setQueryData<CatalogFeedStatus>(key, (previous) =>
+                previous?.feedId === receipt.feedId ? previous : {
+                    submissionId: receipt.id,
+                    submissionState: receipt.state,
+                    feedId: receipt.feedId,
+                    status: null,
+                    receivedAtUtc: null,
+                    updatedAtUtc: null,
+                    errors: [],
+                },
+            );
+        },
+        onSettled: () => {
             const id = savedId.current;
-            if (id)
-                await client.invalidateQueries({
-                    queryKey: catalogKeys.status(companyId, id),
-                });
             const prefix = catalogKeys.all(companyId);
-            await client.invalidateQueries({
+            void client.invalidateQueries({
                 queryKey: prefix,
                 predicate: (query) =>
-                    !["status", "card"].includes(
+                    ["products", "submissions", "workflow-action", "generated-gtins"].includes(
                         String(query.queryKey[prefix.length]),
                     ),
             });
-            if (id)
-                await client.invalidateQueries({
+            if (id) {
+                void client.invalidateQueries({
+                    queryKey: catalogKeys.attempts(companyId, id),
+                });
+                void client.invalidateQueries({
+                    queryKey: catalogKeys.status(companyId, id),
+                }).then(() => client.invalidateQueries({
                     queryKey: catalogKeys.card(companyId, id),
                     refetchType: isCatalogFeedProcessing(
                         client.getQueryData<CatalogFeedStatus>(
@@ -152,7 +174,8 @@ export function CatalogCardForm({
                     )
                         ? "none"
                         : "active",
-                });
+                }));
+            }
         },
     });
     const form = useForm<CatalogFormValues>({
@@ -166,7 +189,7 @@ export function CatalogCardForm({
                 createCatalogFormSchema(model, (key) =>
                     t(`honestSign.catalog.${key}`),
                 ),
-            )(input, context, options),
+            )({ ...input, sendToModeration: validateModeration.current }, context, options),
     });
     const values = form.watch();
     const gtin = values.gtin.trim();
@@ -216,7 +239,8 @@ export function CatalogCardForm({
         : [];
     const completion = catalogLayerCompletion(model, values);
     const locked = readOnly || sentRequest !== null;
-    const isNewCard = !submissionId && externalGoodId === 0;
+    const identityLocked = externalGoodId > 0;
+    const isNewCard = !retryRejected && !identityLocked;
     const gtinLookup = useCatalogGtinLookup({
         companyId,
         gtin,
@@ -236,6 +260,9 @@ export function CatalogCardForm({
         if (lookupTnved === tnved) void matchingCategories.refetch();
         else setLookupTnved(tnved);
     };
+    const modelReady = Boolean(productGroupCode && categoryId) &&
+        !matchingCategories.isFetching && !matchingCategories.isError &&
+        attributes.isSuccess && !attributes.isFetching;
     const submit = async (request: CatalogCardRequest, send = false) => {
         const scope = captureMarkingScope();
         if (inFlight.current || readOnly) return;
@@ -294,6 +321,7 @@ export function CatalogCardForm({
                               ...saved,
                               state: receipt.submissionState,
                               feedId: receipt.feedId,
+                              sendToModeration: send && request.sendToModeration,
                           }
                         : receipt
                     : null;
@@ -303,10 +331,10 @@ export function CatalogCardForm({
             }
             if (
                 recovered &&
-                ["Accepted", "Sending", "Unknown"].includes(recovered.state)
+                (["Accepted", "Sending", "Unknown"].includes(recovered.state) ||
+                    (send && recovered.state === "Rejected"))
             ) {
-                // The saved server result is authoritative. A lost HTTP response
-                // must not turn an accepted or still unresolved send into a refusal.
+                // Use the stored outcome when the transport lost the send response.
                 if (send) form.reset(form.getValues());
                 onSubmitted(recovered);
                 requestId.current = crypto.randomUUID();
@@ -318,14 +346,14 @@ export function CatalogCardForm({
                 code,
                 receiptState,
             );
+            setSubmissionError(
+                error instanceof Error
+                    ? error
+                    : new Error(t("honestSign.catalog.requestFailed")),
+            );
             if (notice === "editableAfterError") {
                 requestId.current = crypto.randomUUID();
                 setSentRequest(null);
-                setSubmissionError(
-                    error instanceof Error
-                        ? error
-                        : new Error(t("honestSign.catalog.requestFailed")),
-                );
             }
             setRecoveryNotice(notice);
         } finally {
@@ -333,15 +361,18 @@ export function CatalogCardForm({
             inFlight.current = false;
         }
     };
-    const sendCurrent = form.handleSubmit(
-        (v) =>
-            submit(
-                sentRequest ??
-                    buildCatalogCardRequest(v, model, requestId.current),
-                true,
-            ),
-        focusInvalid,
-    );
+    const sendCurrent = async () => {
+        if (!modelReady || gtinError || duplicateGtin || gtinLookup.isWaiting || inFlight.current) return;
+        validateModeration.current = canResubmitForModeration;
+        try {
+            await form.handleSubmit(
+                (v) => submit(buildCatalogCardRequest(v, model, requestId.current), true),
+                focusInvalid,
+            )();
+        } finally {
+            validateModeration.current = false;
+        }
+    };
     function focusInvalid() {
         // Optional fields stay mounted. Open their error groups before moving focus.
         requestAnimationFrame(() => {
@@ -447,10 +478,7 @@ export function CatalogCardForm({
                 form={form}
                 values={values}
                 disabled={locked}
-                identityLocked={
-                    externalGoodId > 0 ||
-                    Boolean(submissionId && initialCard?.gtin)
-                }
+                identityLocked={identityLocked}
                 idPrefix={idPrefix}
             />
             <fieldset
@@ -505,7 +533,7 @@ export function CatalogCardForm({
                                           : 2048
                             }
                             type="text"
-                            readOnly={Boolean(submissionId && field === "gtin")}
+                            readOnly={identityLocked && field === "gtin"}
                             onFocus={field === "gtin" ? () => setGtinVisited(true) : undefined}
                             disabled={
                                 field === "gtin" &&
@@ -924,9 +952,13 @@ export function CatalogCardForm({
                             }
                         >
                             {t(
-                                externalGoodId > 0
-                                    ? "honestSign.catalog.updateExternalDraft"
-                                    : "honestSign.catalog.sendSavedDraft",
+                                canResubmitForModeration
+                                    ? "honestSign.catalog.workflow.sendCorrectionToModeration"
+                                    : retryRejected
+                                      ? "honestSign.catalog.attempts.resend"
+                                      : externalGoodId > 0
+                                        ? "honestSign.catalog.updateExternalDraft"
+                                        : "honestSign.catalog.sendSavedDraft",
                             )}
                         </Button>
                     )}

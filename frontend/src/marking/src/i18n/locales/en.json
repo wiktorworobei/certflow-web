@@ -1001,6 +1001,8 @@
         }
     },
     "honestSign": {
+        "eventJournal": "Event history",
+        "eventJournalBack": "Back to Honest Sign",
         "catalog": {
             "products": {
                 "add": "Add new product",
@@ -1162,6 +1164,7 @@
                 "cancelEdit": "Close editor",
                 "saveChanges": "Save changes",
                 "sendModeration": "Submit draft for moderation",
+                "sendCorrectionToModeration": "Submit corrections for moderation",
                 "signPublish": "Sign with certificate and publish",
                 "publicationAgreement": "Allow the product description to appear on the public National Catalog website (optional).",
                 "confirmSign": "I have checked the details and attributes and confirm signing and publishing this card with my qualified certificate.",
@@ -1215,6 +1218,7 @@
                 "feedResultPending": "The processing result is not available yet. The submission is not resent. Select Refresh to check the server response.",
                 "cardResultPending": "The submission was accepted. Card details are not available yet; this does not mean the submission was rejected. Select Refresh to check its state.",
                 "feedRefreshPending": "The feed result could not be refreshed. The last received result is shown below; select Refresh to retrieve the latest result.",
+                "feedRetryScheduled": "The status will be checked again automatically.",
                 "previousFeedProcessing": "Previous Catalog feed result",
                 "previousFeedNotice": "The Catalog confirmed the card signature. The saved feed was rejected; its result and reason are shown separately below.",
                 "previousFeedReasons": "Previous feed remarks",
@@ -1300,8 +1304,21 @@
             "noAttributes": "No additional attributes.",
             "noCategories": "Catalog returned no active categories for the selected product group.",
             "history": "Catalog drafts and submissions",
-            "emptyHistory": "No cards have been sent from this app. This is not the complete list in your Catalog account.",
+            "emptyHistory": "This journal has no drafts or submissions yet.",
             "historyRefreshFailed": "The journal could not refresh. The last known statuses are shown.",
+            "attempts": {
+                "title": "Submission attempts",
+                "open": "Submission history",
+                "openRetry": "Send again",
+                "empty": "No attempts to send this card to National Catalog have been recorded yet.",
+                "Create": "Create card",
+                "Update": "Update card",
+                "requestId": "Request ID in ZNAQ",
+                "updated": "Updated at",
+                "providerStatus": "Feed status in National Catalog",
+                "providerUpdated": "Feed status updated at",
+                "resend": "Send to National Catalog again"
+            },
             "refresh": "Refresh",
             "created": "Created at",
             "delivery": "Feed delivery",
@@ -1314,9 +1331,9 @@
             "processing": "Catalog feed result",
             "feedResultHelp": "These remarks concern the indicated feed ID. The current card state and signing results are shown separately.",
             "unknownNotice": "The feed ID is not confirmed. Check the card in National Catalog. Automatic resubmission is blocked.",
-            "moderatedNotice": "Feed validation finished. Check product errors and the current card state above: processing a draft feed does not mean the card has passed moderation.",
+            "moderatedNotice": "See the current card status below.",
             "signedNotice": "National Catalog reports approved cards as signed. This is a feed status; check the final card status in the account.",
-            "rejectionReasons": "Honest Sign feedback",
+            "rejectionReasons": "Reasons for rejection",
             "providerMessages": "National Catalog messages",
             "feedMessageText": {
                 "missingGs1": "National Catalog found no active GS1 registration details for the company for this product code.",
@@ -1328,15 +1345,17 @@
                 "providerStatus": "National Catalog feed status",
                 "statusId": "Status code (status_id)",
                 "httpStatus": "National Catalog API response",
+                "receivedAt": "Received by National Catalog",
                 "totalErrors": "Total errors reported by National Catalog",
                 "messageCode": "National Catalog code {{code}}",
                 "validationMessages": "Processing remarks",
                 "itemStatus": "Item status",
                 "parameter": "Parameter {{name}}",
                 "source": "Response field {{source}}",
-                "duplicateGtin": "GTIN already exists in National Catalog"
+                "duplicateGtin": "GTIN already exists in National Catalog",
+                "moderationComments": "There are no saved API remarks for this card. If National Catalog rejected it after forced moderation, the moderator’s comments are available in the National Catalog account."
             },
-            "correctRejection": "Correct the indicated data in the form above and submit the card again. These reasons are saved on the server and remain available when you reopen the card.",
+            "correctRejection": "Correct the details in the form below and send the card again. The previous results stay in the submission history.",
             "noRejectionReason": "Detailed error information is unavailable.",
             "diagnostics": {
                 "title": "Support details",

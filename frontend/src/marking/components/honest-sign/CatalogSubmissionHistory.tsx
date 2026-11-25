@@ -21,9 +21,11 @@ import { useCatalogSubmissions } from "@marking/hooks/use-honest-sign-catalog";
 export function CatalogSubmissionHistory({
     companyId,
     onOpen,
+    attemptsOnly = false,
 }: {
     companyId: string;
-    onOpen: (id: string) => void;
+    onOpen: (id: string, retry?: boolean) => void;
+    attemptsOnly?: boolean;
 }) {
     const { t, i18n } = useTranslation();
     const [page, setPage] = useState(1);
@@ -83,9 +85,9 @@ export function CatalogSubmissionHistory({
                         <TableBody>
                             {submissions.data.items.map((row) => {
                                 const feed = row.latestFeedStatus;
-                                const previousFeed = feed && (row.state === "Draft" || feed.feedId !== row.feedId);
-                                const feedState = row.state === "Accepted" && row.feedId && !previousFeed
-                                    ? feed?.status : null;
+                                const previousFeed = row.state === "Draft" || Boolean(row.feedId && feed && feed.feedId !== row.feedId);
+                                const currentFeed = row.state === "Accepted" && row.feedId && !previousFeed ? feed : null;
+                                const feedState = currentFeed?.submissionState === "Rejected" ? "Rejected" : currentFeed?.status;
                                 const rejected = row.state === "Rejected" || feedState === "Rejected";
                                 const status = feedState
                                     ? t(`honestSign.catalog.feedStates.${feedState}`)
@@ -111,7 +113,7 @@ export function CatalogSubmissionHistory({
                                                     <CatalogFeedCardLookup companyId={companyId} submissionId={row.id} gtin={row.gtin} data={feed} />
                                                 </div>
                                             )}
-                                            {rejected && (previousFeed || !feed?.errors.length) && (
+                                            {rejected && !feed?.errors.length && (
                                                 <p className="mt-2 text-sm text-muted-foreground">
                                                     {t("honestSign.catalog.noRejectionReason")}
                                                 </p>
@@ -121,9 +123,16 @@ export function CatalogSubmissionHistory({
                                             {row.feedId ?? "—"}
                                         </TableCell>
                                         <TableCell>
-                                            <Button variant="outline" size="sm" onClick={() => onOpen(row.id)}>
-                                                {t("honestSign.catalog.openCard")}
-                                            </Button>
+                                            <div className="flex flex-wrap gap-2">
+                                                {rejected && (
+                                                    <Button size="sm" onClick={() => onOpen(row.id, true)}>
+                                                        {t("honestSign.catalog.attempts.openRetry")}
+                                                    </Button>
+                                                )}
+                                                <Button variant="outline" size="sm" onClick={() => onOpen(row.id)}>
+                                                    {t(attemptsOnly ? "honestSign.catalog.attempts.open" : "honestSign.catalog.openCard")}
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 );

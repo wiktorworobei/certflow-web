@@ -38,6 +38,7 @@ import { MarkingDeclarationContext } from '../marking/DeclarationContext';
 import { apiClient, toHttpError } from '../marking/lib/honest-sign/httpClient';
 import i18n from '../marking/src/i18n';
 import { activateCrptEnvironment, type CrptEnvironment } from '../crpt/environment';
+import { CrptCatalogJournal } from '../crpt/CrptCatalogJournal';
 import { CrptCatalogWorkspace } from '../crpt/CrptCatalogWorkspace';
 import { CrptSuzWorkspace } from '../crpt/CrptSuzWorkspace';
 import { api } from '../store';
@@ -45,31 +46,35 @@ import type { MarkingSettings } from '../types';
 import '../marking/marking.css';
 import '../crpt/crpt.css';
 
+type CrptNavigationTarget = CrptEnvironment | 'connection' | 'journal' | 'suz' | 'catalog';
+
 export function Crpt() {
   const [params, setParams] = useSearchParams();
   const environment: CrptEnvironment =
     params.get('environment') === 'production' ? 'production' : 'sandbox';
   const service = params.get('service') === 'suz' ? 'suz' : 'catalog';
   const connection = params.get('view') === 'connection';
+  const journal = params.get('view') === 'journal';
   const { firmId, canEdit, isAdmin } = useWorkspace();
   const [busy, setBusy] = useState(false);
   const [unsaved, setUnsaved] = useState(false);
-  const [pending, setPending] = useState<CrptEnvironment | 'connection' | 'suz' | 'catalog' | null>(
-    null,
-  );
-  const navigate = (target: CrptEnvironment | 'connection' | 'suz' | 'catalog') => {
+  const [pending, setPending] = useState<CrptNavigationTarget | null>(null);
+  const navigate = (target: CrptNavigationTarget) => {
     const next = new URLSearchParams(params);
-    if (target === 'connection') {
-      if (connection) next.delete('view');
-      else next.set('view', 'connection');
+    if (target === 'connection' || target === 'journal') {
+      if (next.get('view') === target) next.delete('view');
+      else next.set('view', target);
+    } else if (target === 'suz' || target === 'catalog') {
+      next.set('service', target);
+      if (journal) next.delete('view');
     } else {
-      next.set(target === 'suz' || target === 'catalog' ? 'service' : 'environment', target);
+      next.set('environment', target);
     }
     setParams(next);
     setPending(null);
     setUnsaved(false);
   };
-  const requestNavigation = (target: CrptEnvironment | 'connection' | 'suz' | 'catalog') => {
+  const requestNavigation = (target: CrptNavigationTarget) => {
     if (busy) return;
     if (unsaved) setPending(target);
     else navigate(target);
@@ -80,9 +85,11 @@ export function Crpt() {
         eyebrow="ЭКОСИСТЕМА ZNAQ / МАРКИРОВКА"
         title="ZNAQ.CRPT"
         subtitle={
-          service === 'suz'
-            ? 'Станция управления заказами. От заказа КМ до сохранённых кодов.'
-            : 'Национальный каталог. От первой карточки до публикации в Честном знаке.'
+          journal
+            ? 'История обращений к Честному знаку в выбранном контуре.'
+            : service === 'suz'
+              ? 'Станция управления заказами. От заказа КМ до сохранённых кодов.'
+              : 'Национальный каталог. От первой карточки до публикации в Честном знаке.'
         }
       >
         <Button
@@ -129,11 +136,15 @@ export function Crpt() {
       </div>
       <Paper className="crpt-services">
         <Tabs
-          value={service}
-          onChange={(_, value: 'catalog' | 'suz') => requestNavigation(value)}
+          value={journal ? 'journal' : service}
+          onChange={(_, value: 'catalog' | 'suz' | 'journal') => requestNavigation(value)}
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
           aria-label="Сервисы ZNAQ.CRPT"
         >
           <Tab value="catalog" label="Национальный каталог" disabled={busy} />
+          <Tab value="journal" label="История событий" disabled={busy || !canEdit} />
           <Tab value="suz" label="СУЗ · Заказы кодов" disabled={busy} />
         </Tabs>
       </Paper>
@@ -173,6 +184,8 @@ export function Crpt() {
               onBack={() => requestNavigation('connection')}
               onUnsavedChange={setUnsaved}
             />
+          ) : journal ? (
+            <CrptCatalogJournal companyId={firmId} onUnsavedChange={setUnsaved} />
           ) : (
             <HonestSignApp
               companyId={firmId}

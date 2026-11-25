@@ -1058,8 +1058,9 @@ export function hasCatalogFormChanges(
 }
 export const isCatalogFeedProcessing = (data: CatalogFeedStatus | undefined) =>
     data?.submissionState === "Sending" ||
-    (data?.submissionState === "Accepted" &&
-        ["Processing", "Received"].includes(data.status ?? ""));
+    ((data?.submissionState === "Accepted" || data?.submissionState === "Rejected") &&
+        (data.status === "Processing" || data.status === "Received")) ||
+    (data?.submissionState === "Accepted" && Boolean(data.feedId) && !data.status);
 
 export const shouldPollCatalogFeed = (data: CatalogFeedStatus | undefined) =>
     !data || isCatalogFeedProcessing(data);

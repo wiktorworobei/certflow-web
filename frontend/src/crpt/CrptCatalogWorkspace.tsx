@@ -121,7 +121,7 @@ export function CrptCatalogWorkspace({
   const [actionMenu, setActionMenu] = useState<HTMLElement | null>(null);
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [editor, setEditor] = useState<Editor | null>(null);
-  const [detail, setDetail] = useState<string | null>(null);
+  const [detail, setDetail] = useState<{ id: string; retry?: boolean } | null>(null);
   const [dirty, setDirty] = useState(false);
   const [formBusy, setFormBusy] = useState(false);
   const [discard, setDiscard] = useState(false);
@@ -231,7 +231,7 @@ export function CrptCatalogWorkspace({
           assertCrptEnvironment(scope);
           if (kind === 'open') {
             setDirty(false);
-            setDetail(local.id);
+            setDetail({ id: local.id });
             return;
           }
           const card = await catalogApiService.card(local.id);
@@ -396,7 +396,7 @@ export function CrptCatalogWorkspace({
   function onSaved(receipt: CatalogSubmission) {
     setEditor(null);
     setDirty(false);
-    setDetail(receipt.id);
+    setDetail({ id: receipt.id });
     void refresh();
   }
   return (
@@ -751,7 +751,7 @@ export function CrptCatalogWorkspace({
                               const local = await track(row);
                               assertCrptEnvironment(scope);
                               setDirty(false);
-                              setDetail(local.id);
+                              setDetail({ id: local.id });
                             } catch (e) {
                               setOutcomes([
                                 {
@@ -876,9 +876,9 @@ export function CrptCatalogWorkspace({
         <div className="crpt-panel">
           <CatalogSubmissionHistory
             companyId={companyId}
-            onOpen={(id) => {
+            onOpen={(id, retry) => {
               setDirty(false);
-              setDetail(id);
+              setDetail({ id, retry });
             }}
           />
         </div>
@@ -978,7 +978,9 @@ export function CrptCatalogWorkspace({
             detail && (
               <CatalogCardWorkflow
                 companyId={companyId}
-                submissionId={detail}
+                key={detail.id}
+                submissionId={detail.id}
+                initialEditorOpen={detail.retry}
                 selectedThumbprint={selectedThumbprint}
                 productGroups={groups.data ?? []}
                 onDirtyChange={setDirty}

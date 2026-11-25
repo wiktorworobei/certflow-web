@@ -28,10 +28,10 @@ const CHALLENGE_URL = "/api/honest-sign/auth/challenge";
 const SIGN_IN_URL = "/api/honest-sign/auth/sign-in";
 
 export const authApiService = {
-    async getCurrentSession(): Promise<AppSessionResponse> {
+    async getCurrentSession(signal?: AbortSignal): Promise<AppSessionResponse> {
         try {
             const response =
-                await apiClient.get<AppSessionResponse>(SESSION_URL);
+                await apiClient.get<AppSessionResponse>(SESSION_URL, { signal });
             return response.data;
         } catch (error) {
             throw toHttpError(

@@ -5,16 +5,21 @@ import {
     useQueryClient,
 } from "@tanstack/react-query";
 import { honestSignKeys } from "@marking/hooks/use-honest-sign";
+import { authApiService } from "@marking/lib/honest-sign/authApiService";
 import { catalogApiService } from "@marking/lib/honest-sign/catalogApiService";
+import { getHttpErrorDiagnostics, getHttpErrorStatus } from "@marking/lib/honest-sign/httpClient";
 import {
     isValidCatalogTnved,
     isCatalogFeedProcessing,
     shouldPollCatalogFeed,
 } from "@marking/lib/honest-sign/catalogForm";
+import { catalogProviderStatus } from "@marking/lib/honest-sign/catalogWorkflowOutcome";
 
 import type {
     CatalogCardRequest,
+    CatalogFeedStatus,
     CatalogProductFilters,
+    CatalogSubmission,
 } from "@marking/lib/honest-sign/catalogTypes";
 
 export const catalogKeys = {
@@ -52,6 +57,8 @@ export const catalogKeys = {
         ] as const,
     submissions: (companyId: string, page: number) =>
         [...catalogKeys.all(companyId), "submissions", page] as const,
+    attempts: (companyId: string, id: string) =>
+        [...catalogKeys.all(companyId), "attempts", id] as const,
     products: (
         companyId: string,
         page: number,
@@ -90,11 +97,11 @@ export const useCatalogProducts = (
         retry: false,
         placeholderData: keepPreviousData,
     });
-export const useCatalogProductGroups = (companyId: string) =>
+export const useCatalogProductGroups = (companyId: string, enabled = true) =>
     useQuery({
         queryKey: catalogKeys.productGroups(companyId),
         queryFn: ({ signal }) => catalogApiService.productGroups(signal),
-        enabled: Boolean(companyId),
+        enabled: Boolean(companyId) && enabled,
         staleTime: 5 * 60_000,
         retry: false,
     });
@@ -145,14 +152,66 @@ export const useCatalogAttributes = (
         staleTime: 5 * 60_000,
         retry: false,
     });
-export const useCatalogSubmissions = (companyId: string, page: number) =>
-    useQuery({
+const catalogSubmissionPollInterval = 30_000;
+
+const hasPendingCatalogSubmission = (row: CatalogSubmission) => {
+    if (row.state !== "Accepted" || !row.feedId) return false;
+    const feed = row.latestFeedStatus;
+    return !feed || (feed.feedId === row.feedId &&
+        (!feed.status || feed.status === "Processing" || feed.status === "Received"));
+};
+
+export function useCatalogSubmissions(companyId: string, page: number) {
+    const session = useQuery({
+        queryKey: [...honestSignKeys.all, companyId, "submission-history-session"],
+        queryFn: ({ signal }) => authApiService.getCurrentSession(signal),
+        enabled: Boolean(companyId),
+        staleTime: catalogSubmissionPollInterval,
+        refetchOnMount: "always",
+        refetchOnWindowFocus: true,
+        retry: false,
+    });
+
+    return useQuery({
         queryKey: catalogKeys.submissions(companyId, page),
         queryFn: ({ signal }) => catalogApiService.submissions(page, signal),
         enabled: Boolean(companyId),
         staleTime: 10_000,
         retry: false,
+        refetchInterval: (query) => {
+            const expiresAt = session.data?.honestSignSessionExpiresAtUtc;
+            if (session.isError || !session.data?.hasHonestSignSession ||
+                (expiresAt && Date.parse(expiresAt) <= Date.now()) ||
+                !query.state.data?.items.some(hasPendingCatalogSubmission)) return false;
+            const retryInterval = catalogReadRetryInterval(query.state.error);
+            return retryInterval && Math.max(catalogSubmissionPollInterval, retryInterval);
+        },
+        refetchIntervalInBackground: false,
     });
+}
+
+export const useCatalogSubmissionAttempts = (companyId: string, id: string, page: number) =>
+    useQuery({
+        queryKey: [...catalogKeys.attempts(companyId, id), page],
+        queryFn: ({ signal }) => catalogApiService.attempts(id, page, signal),
+        enabled: Boolean(companyId && id),
+        staleTime: 10_000,
+        retry: false,
+    });
+
+const catalogReadRetryInterval = (error: Error | null, allowNotFound = false) => {
+    const status = getHttpErrorStatus(error);
+    const upstream = getHttpErrorDiagnostics(error).upstreamStatus;
+    if (status === 429 || upstream === 429) return 300_000;
+    if (status === null || status === 408 || status === 409 || status >= 500 ||
+        upstream === 408 || upstream === 404 || (allowNotFound && status === 404))
+        return 15_000;
+    return false;
+};
+
+export const catalogFeedPollInterval = (data: CatalogFeedStatus | undefined, error: Error | null) =>
+    shouldPollCatalogFeed(data) ? catalogReadRetryInterval(error) : false;
+
 export function useCatalogFeedStatus(companyId: string, id: string) {
     const client = useQueryClient();
     return useQuery({
@@ -162,10 +221,10 @@ export function useCatalogFeedStatus(companyId: string, id: string) {
                 Awaited<ReturnType<typeof catalogApiService.status>>
             >(catalogKeys.status(companyId, id));
             const status = await catalogApiService.status(id, signal);
-            if (
+            const stateChanged =
                 previous?.submissionState !== status.submissionState ||
-                previous?.status !== status.status
-            ) {
+                previous?.status !== status.status;
+            if (stateChanged) {
                 void client.invalidateQueries({
                     queryKey: catalogKeys.card(companyId, id),
                     refetchType: isCatalogFeedProcessing(status)
@@ -173,11 +232,24 @@ export function useCatalogFeedStatus(companyId: string, id: string) {
                         : "active",
                 });
                 void client.invalidateQueries({
-                    queryKey: [...catalogKeys.all(companyId), "submissions"],
-                });
-                void client.invalidateQueries({
                     queryKey: [...catalogKeys.all(companyId), "products"],
                 });
+            }
+            if (
+                stateChanged ||
+                previous?.updatedAtUtc !== status.updatedAtUtc ||
+                previous?.feedId !== status.feedId ||
+                previous?.providerStatus !== status.providerStatus ||
+                previous?.providerStatusId !== status.providerStatusId ||
+                previous?.providerTotalErrors !== status.providerTotalErrors ||
+                previous?.upstreamHttpStatus !== status.upstreamHttpStatus ||
+                JSON.stringify(previous?.errors) !== JSON.stringify(status.errors) ||
+                JSON.stringify(previous?.messages) !== JSON.stringify(status.messages)
+            ) {
+                void client.invalidateQueries({
+                    queryKey: [...catalogKeys.all(companyId), "submissions"],
+                });
+                void client.invalidateQueries({ queryKey: catalogKeys.attempts(companyId, id) });
             }
             return status;
         },
@@ -185,13 +257,8 @@ export function useCatalogFeedStatus(companyId: string, id: string) {
         staleTime: 10_000,
         retry: false,
         refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
         refetchInterval: (query) =>
-            query.state.error
-                ? false
-                : shouldPollCatalogFeed(query.state.data)
-                  ? 15_000
-                  : false,
+            catalogFeedPollInterval(query.state.data, query.state.error),
     });
 }
 export function useCreateCatalogCard(companyId: string) {
@@ -207,7 +274,13 @@ export function useCreateCatalogCard(companyId: string) {
     });
 }
 
-export const useCatalogCard = (companyId: string, id: string, enabled = true) =>
+export const useCatalogCard = (
+    companyId: string,
+    id: string,
+    enabled: boolean,
+    awaitingCard: boolean,
+    awaitingModeration = false,
+) =>
     useQuery({
         queryKey: catalogKeys.card(companyId, id),
         queryFn: ({ signal }) => catalogApiService.card(id, signal),
@@ -216,13 +289,15 @@ export const useCatalogCard = (companyId: string, id: string, enabled = true) =>
         staleTime: 0,
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
-        refetchInterval: (query) =>
-            query.state.error
-                ? false
-                : query.state.data?.blockingOperation?.state === "Processing" ||
-                    query.state.data?.detailedStatuses.includes("moderation")
-                  ? 15_000
-                  : false,
+        refetchInterval: (query) => {
+            const { data, error } = query.state;
+            const status = catalogProviderStatus(data);
+            const waitingForModerationStatus = awaitingModeration &&
+                (error || status === "draft" && data?.canModerate === false);
+            const shouldRefresh = (awaitingCard && !data && error) || waitingForModerationStatus ||
+                data?.blockingOperation?.state === "Processing" || status === "moderation";
+            return shouldRefresh ? catalogReadRetryInterval(error, awaitingCard || awaitingModeration) : false;
+        },
     });
 export function useUpdateCatalogCard(companyId: string, id: string) {
     const client = useQueryClient();

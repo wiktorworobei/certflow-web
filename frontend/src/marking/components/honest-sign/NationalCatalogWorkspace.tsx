@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { CatalogCardForm } from "@marking/components/honest-sign/CatalogCardForm";
 import { CatalogCardWorkflow } from "@marking/components/honest-sign/CatalogCardWorkflow";
 import { CatalogErrorDetails } from "@marking/components/honest-sign/CatalogErrorDetails";
-import { CatalogFeedProcessing } from "@marking/components/honest-sign/CatalogFeedProcessing";
 import { CatalogProductsPanel } from "@marking/components/honest-sign/CatalogProductsPanel";
 import { CatalogPermitsPanel } from "@marking/components/honest-sign/CatalogPermitsPanel";
 import { CatalogSubmissionHistory } from "@marking/components/honest-sign/CatalogSubmissionHistory";
@@ -41,7 +40,7 @@ type SelectedCard = {
     name?: string;
     gtin?: string;
     signing: boolean;
-    showFeed: boolean;
+    retry?: boolean;
 };
 
 export function NationalCatalogWorkspace(props: WorkspaceProps) {
@@ -173,7 +172,6 @@ function CatalogWorkspace({
                                     id: row.id,
                                     gtin: row.gtin,
                                     signing: false,
-                                    showFeed: true,
                                 });
                             }}
                         />
@@ -221,7 +219,6 @@ function CatalogWorkspace({
                                     name: product.name,
                                     gtin: product.gtin,
                                     signing,
-                                    showFeed: false,
                                 })
                             }
                         />
@@ -229,8 +226,8 @@ function CatalogWorkspace({
                     <TabsContent value="history" className="min-w-0">
                         <CatalogSubmissionHistory
                             companyId={companyId}
-                            onOpen={(id) =>
-                                open({ id, signing: false, showFeed: true })
+                            onOpen={(id, retry) =>
+                                open({ id, signing: false, retry })
                             }
                         />
                     </TabsContent>
@@ -264,21 +261,14 @@ function CatalogWorkspace({
                         <CatalogCardWorkflow
                             key={selected.id}
                             showTitle={false}
-                            showFeed={!selected.showFeed}
                             companyId={companyId}
                             submissionId={selected.id}
                             selectedThumbprint={selectedThumbprint}
                             productGroups={productGroups.data ?? []}
                             focusSigning={selected.signing}
+                            initialEditorOpen={selected.retry}
                             onDirtyChange={setDetailDirty}
                             onBusyChange={setDetailBusy}
-                        />
-                    )}
-                    {selected?.showFeed && (
-                        <CatalogFeedProcessing
-                            companyId={companyId}
-                            submissionId={selected.id}
-                            gtin={selected.gtin}
                         />
                     )}
                 </DialogContent>

@@ -25,6 +25,7 @@
 }
 .marking-surface { --background: var(--canvas); --foreground: var(--text); --card: var(--surface); --card-foreground: var(--text); --popover: var(--surface); --popover-foreground: var(--text); --primary: var(--cf-action); --primary-foreground: var(--cf-on-accent); --secondary: var(--cf-surface-hover); --secondary-foreground: var(--cf-text); --muted: var(--cf-surface-soft); --muted-foreground: var(--cf-muted); --accent: var(--cf-accent-soft); --accent-foreground: var(--cf-text); --input: var(--cf-control-border); --ring: var(--cf-accent); --destructive: var(--danger); --radius: 12px; font-family: Inter, Arial, sans-serif; min-width: 0; }
 .marking-surface [data-slot='dialog-overlay'], .marking-surface [data-slot='dialog-content'], .marking-surface [data-slot='popover-content'], .marking-surface [data-slot='select-content'], .marking-surface [data-slot='dropdown-menu-content'] { z-index: 1400; }
+.marking-surface [data-slot='alert-dialog-overlay'], .marking-surface [data-slot='alert-dialog-content'] { z-index: 1401; }
 .marking-surface .integration-theme, .marking-surface .dmkod-theme { font-family: Inter, Arial, sans-serif; }
 .marking-top-tabs.MuiPaper-root { border: 1px solid var(--border); margin-bottom: 24px; overflow: hidden; }
 .marking-link-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; }

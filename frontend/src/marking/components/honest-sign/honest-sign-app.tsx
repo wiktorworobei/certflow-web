@@ -1,6 +1,8 @@
-import { BadgeCheck, CloudOff, Loader2, LogOut, ScanLine } from "lucide-react";
+import { BadgeCheck, CloudOff, History, Loader2, LogOut, ScanLine } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from 'react';
+import { CrptCatalogJournal } from '../../../crpt/CrptCatalogJournal';
 import { AuthorizedAppContent } from "@marking/components/honest-sign/AuthorizedAppContent";
 import { CertificateLogin } from "@marking/components/honest-sign/CertificateLogin";
 import { NationalCatalogWorkspace } from "@marking/components/honest-sign/NationalCatalogWorkspace";
@@ -34,12 +36,33 @@ export function HonestSignApp(props: HonestSignAppProps) {
 
 function HonestSignWorkspace({ companyId, catalogOnly = false, catalogWorkspace, workspaceTitle, workspaceDescription, onConfigureConnection }: HonestSignAppProps) {
     const { t } = useTranslation();
+    const [journalOpen, setJournalOpen] = useState(false);
     const app = useMarkingApp(companyId, catalogOnly);
-    const connectivity = useHonestSignConnectivity(companyId, app.isAuthorized && !catalogOnly);
+    const connectivity = useHonestSignConnectivity(companyId, app.isAuthorized && !catalogOnly && !journalOpen);
+    const openJournal = !catalogOnly && (
+        <Button variant="outline" size="sm" onClick={() => setJournalOpen(true)}>
+            <History className="size-4" aria-hidden="true" />
+            {t("honestSign.eventJournal")}
+        </Button>
+    );
+
+    if (journalOpen) {
+        return (
+            <div className="min-w-0 bg-background">
+                <div className="border-b px-4 py-3 md:px-6">
+                    <Button variant="outline" size="sm" onClick={() => setJournalOpen(false)}>
+                        {t("honestSign.eventJournalBack")}
+                    </Button>
+                </div>
+                <CrptCatalogJournal companyId={companyId} selectedThumbprint={app.selectedThumbprint} />
+            </div>
+        );
+    }
 
     if (app.checkingSession) {
         return (
             <div className="space-y-3 p-2 md:p-3">
+                {openJournal}
                 <Skeleton className="h-20 w-full" />
                 <Skeleton className="mx-auto h-80 w-full max-w-xl" />
             </div>
@@ -48,7 +71,9 @@ function HonestSignWorkspace({ companyId, catalogOnly = false, catalogWorkspace,
 
     if (!app.isAuthorized) {
         return (
-            <CertificateLogin
+            <>
+              {!catalogOnly && <div className="border-b px-4 py-3 md:px-6">{openJournal}</div>}
+              <CertificateLogin
                 certificates={app.certificateOptions}
                 selectedThumbprint={app.selectedThumbprint}
                 loadingCertificates={app.loadingCertificates}
@@ -59,7 +84,8 @@ function HonestSignWorkspace({ companyId, catalogOnly = false, catalogWorkspace,
                 onReload={app.handleReloadCertificates}
                 onConnect={() => void app.onConnectHonestSign()}
                 onConfigureConnection={onConfigureConnection}
-            />
+              />
+            </>
         );
     }
 
@@ -145,6 +171,7 @@ function HonestSignWorkspace({ companyId, catalogOnly = false, catalogWorkspace,
                         {t("honestSign.tabs." + tab)}
                     </button>
                 ))}
+                {openJournal}
             </div>}
             {app.statusMessage ? (
                 <div className="border-b p-3 md:px-6">

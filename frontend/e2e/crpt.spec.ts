@@ -218,3 +218,90 @@ test('CRPT checks a newly entered valid GTIN and prevents a duplicate send', asy
   expect(checks).toEqual([draft.gtin]);
   expect(fixture.writes).toHaveLength(0);
 });
+
+test('CRPT retries a rejected submission from the event journal after editing the card', async ({ page }) => {
+  const fixture = await crptFixtures(page);
+  const createdAtUtc = '2026-11-17T12:00:00Z';
+  const firstFeedId = '24098';
+  const newFeedId = '24099';
+  const unknownGtin = '04006381333931';
+  const correctedGtin = '00012345600012';
+  const correctedName = 'Масло моторное 5W-30, 1 л';
+  const savedWrites: string[] = [];
+  let sent = false;
+  let savedDraft: typeof draft | undefined;
+  const receipt = {
+    id: submissionId, gtin: draft.gtin, state: 'Rejected', feedId: firstFeedId,
+    sendToModeration: false, createdAtUtc,
+  };
+  const status = {
+    submissionId, feedId: firstFeedId, submissionState: 'Rejected', status: 'Moderated',
+    receivedAtUtc: createdAtUtc, updatedAtUtc: createdAtUtc,
+    errors: [{ gtin: draft.gtin, code: 'invalid', message: 'Проверьте наименование товара.' }],
+  };
+  const sentReceipt = { ...receipt, gtin: correctedGtin, state: 'Accepted', feedId: newFeedId };
+
+  await page.route('**/honest-sign/events?*', route => route.fulfill({ json: { items: [], hasNextPage: false } }));
+  await page.route('**/catalog/submissions?*', route => route.fulfill({
+    json: {
+      items: [
+        sent ? sentReceipt : { ...receipt, latestFeedStatus: status },
+        { ...receipt, id: '99999999-9999-4999-8999-999999999999', gtin: unknownGtin, state: 'Unknown', feedId: null },
+      ],
+      hasNextPage: false,
+    },
+  }));
+  await page.route('**/catalog/submissions/*/attempts?*', route => route.fulfill({
+    json: { items: [{ ...receipt, requestId: submissionId, operation: 'Create', feedStatus: status }], hasNextPage: false },
+  }));
+  await page.route('**/catalog/submissions/*/status', route => route.fulfill({
+    json: sent ? { ...status, feedId: newFeedId, submissionState: 'Accepted', errors: [] } : status,
+  }));
+  await page.route('**/catalog/submissions/*/card', route => route.fulfill({
+    json: {
+      submissionId, goodId: sent ? 43 : 0, gtin: sent ? correctedGtin : draft.gtin,
+      status: sent ? 'draft' : 'errors', detailedStatuses: [], isSigned: false,
+      canEdit: true, canSign: false, canModerate: false, canOrderCodes: false,
+      canIntroduce: false, draft: savedDraft ?? draft, blockingOperation: null,
+    },
+  }));
+  await page.route('**/catalog/submissions/*/draft', route => {
+    const request = route.request();
+    savedWrites.push(request.method());
+    savedDraft = request.postDataJSON();
+    return route.fulfill({ json: { ...receipt, gtin: correctedGtin, state: 'Draft', feedId: null, draftVersion: submissionId } });
+  });
+  await page.route('**/catalog/submissions/*/send?*', route => {
+    const request = route.request();
+    savedWrites.push(request.method());
+    expect(new URL(request.url()).searchParams.get('expectedVersion')).toBe(submissionId);
+    sent = true;
+    return route.fulfill({ json: sentReceipt });
+  });
+
+  await page.goto('/#/crpt?environment=sandbox&view=journal');
+  await page.getByRole('tab', { name: 'Карточки товаров', exact: true }).click();
+  const history = page.getByRole('region', { name: 'Черновики и отправки в НК', exact: true });
+  const unknownEntry = history.getByRole('row').filter({ hasText: unknownGtin });
+  await expect(unknownEntry).toContainText('Исход неизвестен');
+  await expect(unknownEntry.getByRole('button', { name: 'Отправить повторно', exact: true })).toHaveCount(0);
+  await history.getByRole('row').filter({ hasText: firstFeedId })
+    .getByRole('button', { name: 'Отправить повторно', exact: true }).click();
+
+  const editor = page.getByRole('dialog', { name: 'Карточка товара', exact: true });
+  const gtinInput = editor.getByLabel('GTIN *', { exact: true });
+  const nameInput = editor.getByLabel('Полное наименование товара *', { exact: true });
+  await expect(gtinInput).toHaveValue(draft.gtin);
+  await expect(nameInput).toHaveValue(draft.name);
+  await expect(editor.getByLabel('Категория НК *', { exact: true })).toBeEnabled();
+  expect(savedWrites).toEqual([]);
+  expect(fixture.writes).toEqual([]);
+
+  await gtinInput.fill(correctedGtin);
+  await nameInput.fill(correctedName);
+  await editor.getByRole('button', { name: 'Отправить в НК повторно', exact: true }).click();
+  await expect(editor.getByRole('region', { name: 'Ответ заявки НК', exact: true })).toContainText(newFeedId);
+  expect(savedDraft).toMatchObject({ gtin: correctedGtin, name: correctedName, sendToModeration: false });
+  expect(savedWrites).toEqual(['PUT', 'POST']);
+  await expect(editor.getByRole('region', { name: 'История попыток отправки' })).toContainText('Проверьте наименование товара.');
+});

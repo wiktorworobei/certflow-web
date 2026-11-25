@@ -1,12 +1,29 @@
 import type { CatalogCard, CatalogOperation } from "./catalogTypes";
 
-/** Provider lifecycle and earlier receipts are facts, not local action prohibitions. */
+type CatalogLifecycle = Pick<CatalogCard, "status"> &
+    Partial<Pick<CatalogCard, "detailedStatuses">>;
+
+export function catalogProviderStatus(card: CatalogLifecycle | undefined) {
+    const normalize = (status: string) => status.trim().toLowerCase();
+    const detailed = card?.detailedStatuses?.map(normalize).filter(Boolean);
+    const states = detailed?.length ? detailed : [normalize(card?.status ?? "")];
+    // A published version can coexist with another revision that needs signing.
+    return ["archived", "moderation", "errors", "notsigned", "draft", "published"]
+        .find((state) => states.includes(state));
+}
+
+export function catalogProviderActions(card: CatalogLifecycle | undefined) {
+    const status = catalogProviderStatus(card);
+    return {
+        canEdit: status === "draft" || status === "errors",
+        canModerate: status === "draft",
+        canSign: status === "notsigned",
+    };
+}
+
 export function catalogActionAvailability(
     card:
-        | Pick<
-              CatalogCard,
-              "canEdit" | "canModerate" | "canSign" | "status" | "isSigned"
-          >
+        | (CatalogLifecycle & Pick<CatalogCard, "canEdit" | "canModerate" | "canSign">)
         | undefined,
     {
         busy,
@@ -20,11 +37,12 @@ export function catalogActionAvailability(
         dirty: boolean;
     },
 ) {
+    const allowed = catalogProviderActions(card);
     const idle = !busy && !pendingRequest;
     return {
-        canEdit: Boolean(card?.canEdit && idle),
-        canModerate: Boolean(card?.canModerate && idle && !fetching && !dirty),
-        canSign: Boolean(card?.canSign && idle && !fetching && !dirty),
+        canEdit: Boolean(card?.canEdit && allowed.canEdit && idle),
+        canModerate: Boolean(card?.canModerate && allowed.canModerate && idle && !fetching && !dirty),
+        canSign: Boolean(card?.canSign && allowed.canSign && idle && !fetching && !dirty),
     };
 }
 
