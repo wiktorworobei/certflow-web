@@ -59,11 +59,13 @@ export const catalogKeys = {
         [...catalogKeys.all(companyId), "submissions", page] as const,
     attempts: (companyId: string, id: string) =>
         [...catalogKeys.all(companyId), "attempts", id] as const,
+    productLists: (companyId: string) =>
+        [...catalogKeys.all(companyId), "products"] as const,
     products: (
         companyId: string,
         page: number,
         filters: CatalogProductFilters,
-    ) => [...catalogKeys.all(companyId), "products", page, filters] as const,
+    ) => [...catalogKeys.productLists(companyId), page, filters] as const,
     status: (companyId: string, id: string) =>
         [...catalogKeys.all(companyId), "status", id] as const,
     card: (companyId: string, id: string) =>
@@ -161,16 +163,19 @@ const hasPendingCatalogSubmission = (row: CatalogSubmission) => {
         (!feed.status || feed.status === "Processing" || feed.status === "Received"));
 };
 
-export function useCatalogSubmissions(companyId: string, page: number) {
-    const session = useQuery({
+export const useCatalogSubmissionHistorySession = (companyId: string, enabled = true) =>
+    useQuery({
         queryKey: [...honestSignKeys.all, companyId, "submission-history-session"],
         queryFn: ({ signal }) => authApiService.getCurrentSession(signal),
-        enabled: Boolean(companyId),
+        enabled: Boolean(companyId) && enabled,
         staleTime: catalogSubmissionPollInterval,
         refetchOnMount: "always",
         refetchOnWindowFocus: true,
         retry: false,
     });
+
+export function useCatalogSubmissions(companyId: string, page: number) {
+    const session = useCatalogSubmissionHistorySession(companyId);
 
     return useQuery({
         queryKey: catalogKeys.submissions(companyId, page),
@@ -278,8 +283,12 @@ export const useCatalogCard = (
     companyId: string,
     id: string,
     enabled: boolean,
-    awaitingCard: boolean,
-    awaitingModeration = false,
+    { awaitingCard, acceptedSubmission, awaitingModeration, awaitingPublication }: {
+        awaitingCard: boolean;
+        acceptedSubmission: boolean;
+        awaitingModeration: boolean;
+        awaitingPublication: boolean;
+    },
 ) =>
     useQuery({
         queryKey: catalogKeys.card(companyId, id),
@@ -292,11 +301,14 @@ export const useCatalogCard = (
         refetchInterval: (query) => {
             const { data, error } = query.state;
             const status = catalogProviderStatus(data);
-            const waitingForModerationStatus = awaitingModeration &&
-                (error || status === "draft" && data?.canModerate === false);
-            const shouldRefresh = (awaitingCard && !data && error) || waitingForModerationStatus ||
+            const waitingForModerationStatus = (awaitingModeration && (error || status === "draft")) ||
+                (acceptedSubmission && status === "draft" && data && data.goodId > 0 &&
+                    !data.canModerate && !data.blockingOperation);
+            const waitingForPublicationStatus = awaitingPublication &&
+                (error || status === "notsigned" || (status === "published" && !data?.isSigned));
+            const shouldRefresh = (awaitingCard && !data && error) || waitingForModerationStatus || waitingForPublicationStatus ||
                 data?.blockingOperation?.state === "Processing" || status === "moderation";
-            return shouldRefresh ? catalogReadRetryInterval(error, awaitingCard || awaitingModeration) : false;
+            return shouldRefresh ? catalogReadRetryInterval(error, awaitingCard || awaitingModeration || awaitingPublication) : false;
         },
     });
 export function useUpdateCatalogCard(companyId: string, id: string) {

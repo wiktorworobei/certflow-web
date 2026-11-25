@@ -361,9 +361,9 @@ export function CatalogCardForm({
             inFlight.current = false;
         }
     };
-    const sendCurrent = async () => {
+    const sendCurrent = async (sendToModeration = canResubmitForModeration) => {
         if (!modelReady || gtinError || duplicateGtin || gtinLookup.isWaiting || inFlight.current) return;
-        validateModeration.current = canResubmitForModeration;
+        validateModeration.current = sendToModeration;
         try {
             await form.handleSubmit(
                 (v) => submit(buildCatalogCardRequest(v, model, requestId.current), true),
@@ -399,6 +399,8 @@ export function CatalogCardForm({
     const payloadConflict =
         getHttpErrorCode(submissionError) ===
         "error.honest_sign_catalog_request_payload_conflict";
+    const sendDisabled = !modelReady || Boolean(gtinError) || duplicateGtin || gtinLookup.isWaiting ||
+        form.formState.isSubmitting || mutation.isPending;
     return (
         <form
             id={`${idPrefix}-form`}
@@ -864,7 +866,9 @@ export function CatalogCardForm({
             </Collapsible>
             <div className="space-y-3 border-t pt-4">
                 <p className="text-sm text-muted-foreground">
-                    {t("honestSign.catalog.publicationNotice")}
+                    {t(canResubmitForModeration
+                        ? "honestSign.catalog.workflow.correctionSubmissionNotice"
+                        : "honestSign.catalog.publicationNotice")}
                 </p>
                 {submissionError && (
                     <Notice
@@ -936,20 +940,7 @@ export function CatalogCardForm({
                         <Button
                             type="button"
                             onClick={() => void sendCurrent()}
-                            disabled={
-                                !productGroupCode ||
-                                !categoryId ||
-                                matchingCategories.isFetching ||
-                                matchingCategories.isError ||
-                                attributes.isPending ||
-                                attributes.isError ||
-                                attributes.isFetching ||
-                                Boolean(gtinError) ||
-                                duplicateGtin ||
-                                gtinLookup.isWaiting ||
-                                form.formState.isSubmitting ||
-                                mutation.isPending
-                            }
+                            disabled={sendDisabled}
                         >
                             {t(
                                 canResubmitForModeration
@@ -962,14 +953,21 @@ export function CatalogCardForm({
                             )}
                         </Button>
                     )}
-                    {locked && mutation.isError && (
+                    {!locked && !onStage && !identityLocked && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={sendDisabled}
+                            onClick={() => void sendCurrent(true)}
+                        >
+                            {t("honestSign.catalog.products.moderate")}
+                        </Button>
+                    )}
+                    {sentRequest && mutation.isError && !readOnly && (
                         <Button
                             type="button"
                             disabled={busy}
-                            onClick={() =>
-                                sentRequest &&
-                                void submit(sentRequest, sendIntent.current)
-                            }
+                            onClick={() => void submit(sentRequest, sendIntent.current)}
                         >
                             {t("honestSign.catalog.retrySameRequest")}
                         </Button>

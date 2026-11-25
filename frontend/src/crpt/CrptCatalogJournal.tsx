@@ -38,7 +38,10 @@ import {
   TableRow,
 } from '../marking/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../marking/components/ui/tabs';
-import { useCatalogProductGroups } from '../marking/hooks/use-honest-sign-catalog';
+import {
+  useCatalogProductGroups,
+  useCatalogSubmissionHistorySession,
+} from '../marking/hooks/use-honest-sign-catalog';
 import { apiClient, toHttpError } from '../marking/lib/honest-sign/httpClient';
 import { useAuthStore } from '../marking/src/store/auth';
 
@@ -370,12 +373,27 @@ function SavedCardSubmissions({
   onSubmitted: () => void;
 }) {
   const { t } = useTranslation();
-  const [selected, setSelected] = useState<{ id: string; retry: boolean } | null>(null);
+  const [selected, setSelected] = useState<{
+    id: string;
+    mode: 'card' | 'retry' | 'attempts';
+  } | null>(null);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [discard, setDiscard] = useState(false);
   const keepEditing = useRef<HTMLButtonElement>(null);
-  const groups = useCatalogProductGroups(companyId, Boolean(selected?.retry));
+  const workflow = selected && selected.mode !== 'attempts' ? selected : null;
+  const groups = useCatalogProductGroups(companyId, Boolean(workflow));
+  const session = useCatalogSubmissionHistorySession(
+    companyId,
+    Boolean(workflow && !selectedThumbprint),
+  );
+  const expiry = session.data?.honestSignSessionExpiresAtUtc;
+  const sessionThumbprint =
+    session.isSuccess &&
+    session.data.hasHonestSignSession &&
+    (!expiry || Date.parse(expiry) > Date.now())
+      ? session.data.certificateThumbprint
+      : null;
   useEffect(() => {
     onUnsavedChange?.(dirty);
     if (!dirty) return;
@@ -401,22 +419,22 @@ function SavedCardSubmissions({
     <div>
       <CatalogSubmissionHistory
         companyId={companyId}
-        onOpen={(id, retry = false) => setSelected({ id, retry })}
-        attemptsOnly
+        onOpen={(id, retry) => setSelected({ id, mode: retry ? 'retry' : 'card' })}
+        onOpenAttempts={(id) => setSelected({ id, mode: 'attempts' })}
       />
       <Dialog open={selected !== null} onOpenChange={(open) => !open && close()}>
         <DialogContent
-          className={`max-h-[90dvh] overflow-y-auto ${selected?.retry ? 'sm:max-w-5xl' : 'sm:max-w-4xl'}`}
+          className={`max-h-[90dvh] overflow-y-auto ${workflow ? 'sm:max-w-5xl' : 'sm:max-w-4xl'}`}
         >
           <DialogHeader>
-            <DialogTitle>{selected?.retry ? 'Карточка товара' : 'Отправки карточки'}</DialogTitle>
+            <DialogTitle>{workflow ? 'Карточка товара' : 'Отправки карточки'}</DialogTitle>
             <DialogDescription>
-              {selected?.retry
+              {workflow
                 ? t('honestSign.catalog.title')
                 : 'Сохранённые результаты обработки в выбранном контуре.'}
             </DialogDescription>
           </DialogHeader>
-          {selected?.retry && groups.isError && (
+          {workflow && groups.isError && (
             <Notice variant="error" role="alert">
               <p>{groups.error.message}</p>
               <CatalogErrorDetails error={groups.error} />
@@ -425,15 +443,15 @@ function SavedCardSubmissions({
               </Button>
             </Notice>
           )}
-          {selected?.retry ? (
+          {workflow ? (
             <CatalogCardWorkflow
-              key={selected.id}
+              key={workflow.id}
               companyId={companyId}
-              submissionId={selected.id}
-              selectedThumbprint={selectedThumbprint}
+              submissionId={workflow.id}
+              selectedThumbprint={selectedThumbprint || sessionThumbprint || ''}
               productGroups={groups.data}
               showTitle={false}
-              initialEditorOpen
+              initialEditorOpen={workflow.mode === 'retry'}
               onDirtyChange={setDirty}
               onBusyChange={setBusy}
               onSubmitted={onSubmitted}

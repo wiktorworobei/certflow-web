@@ -29,6 +29,7 @@ import {
 import { Skeleton } from "@marking/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@marking/components/ui/tabs";
 import { useCatalogProductGroups } from "@marking/hooks/use-honest-sign-catalog";
+import type { CatalogCardAction } from "@marking/lib/honest-sign/catalogTypes";
 
 type WorkspaceProps = {
     companyId: string;
@@ -39,7 +40,7 @@ type SelectedCard = {
     id: string;
     name?: string;
     gtin?: string;
-    signing: boolean;
+    focusAction?: CatalogCardAction;
     retry?: boolean;
 };
 
@@ -171,7 +172,6 @@ function CatalogWorkspace({
                                 open({
                                     id: row.id,
                                     gtin: row.gtin,
-                                    signing: false,
                                 });
                             }}
                         />
@@ -213,12 +213,12 @@ function CatalogWorkspace({
                         <CatalogProductsPanel
                             companyId={companyId}
                             onCreate={create}
-                            onOpen={(product, id, signing) =>
+                            onOpen={(product, id, focusAction) =>
                                 open({
                                     id,
                                     name: product.name,
                                     gtin: product.gtin,
-                                    signing,
+                                    focusAction,
                                 })
                             }
                         />
@@ -227,7 +227,7 @@ function CatalogWorkspace({
                         <CatalogSubmissionHistory
                             companyId={companyId}
                             onOpen={(id, retry) =>
-                                open({ id, signing: false, retry })
+                                open({ id, retry })
                             }
                         />
                     </TabsContent>
@@ -265,7 +265,7 @@ function CatalogWorkspace({
                             submissionId={selected.id}
                             selectedThumbprint={selectedThumbprint}
                             productGroups={productGroups.data ?? []}
-                            focusSigning={selected.signing}
+                            focusAction={selected.focusAction}
                             initialEditorOpen={selected.retry}
                             onDirtyChange={setDetailDirty}
                             onBusyChange={setDetailBusy}

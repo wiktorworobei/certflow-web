@@ -44,6 +44,7 @@ import { useAuthStore } from "@marking/src/store/auth";
 
 import type {
     CatalogCategory,
+    CatalogCardAction,
     CatalogOperation,
     CatalogProductGroup,
 } from "@marking/lib/honest-sign/catalogTypes";
@@ -55,7 +56,7 @@ export function CatalogCardWorkflow({
     categories,
     productGroups,
     showTitle = true,
-    focusSigning = false,
+    focusAction,
     initialEditorOpen = false,
     onDirtyChange,
     onBusyChange,
@@ -67,7 +68,7 @@ export function CatalogCardWorkflow({
     categories?: CatalogCategory[];
     productGroups?: CatalogProductGroup[];
     showTitle?: boolean;
-    focusSigning?: boolean;
+    focusAction?: CatalogCardAction;
     initialEditorOpen?: boolean;
     onDirtyChange?: (dirty: boolean) => void;
     onBusyChange?: (busy: boolean) => void;
@@ -79,11 +80,16 @@ export function CatalogCardWorkflow({
     const authVersion = useAuthStore((state) => state.version);
     const feed = useCatalogFeedStatus(companyId, submissionId);
     const waitingForFeed = !feed.data || isCatalogFeedProcessing(feed.data);
-    const awaitingCard = Boolean(feed.data?.feedId && feed.data.submissionState === "Accepted");
+    const acceptedSubmission = feed.data?.submissionState === "Accepted";
     const [acceptedModerationFor, setAcceptedModerationFor] = useState<string | null>(null);
+    const [acceptedSigningFor, setAcceptedSigningFor] = useState<string | null>(null);
     const card = useCatalogCard(
-        companyId, submissionId, !waitingForFeed, awaitingCard,
-        acceptedModerationFor === submissionId,
+        companyId, submissionId, !waitingForFeed, {
+            acceptedSubmission,
+            awaitingCard: acceptedSubmission && Boolean(feed.data?.feedId),
+            awaitingModeration: acceptedModerationFor === submissionId,
+            awaitingPublication: acceptedSigningFor === submissionId,
+        },
     );
     const showFeed = waitingForFeed || feed.isError || Boolean(feed.data?.feedId || feed.data?.errors.length || feed.data?.messages?.length || feed.data?.upstreamHttpStatus) ||
         feed.data?.submissionState !== "Accepted";
@@ -94,7 +100,10 @@ export function CatalogCardWorkflow({
     const [editorOpened, setEditorOpened] = useState(initialEditorOpen);
     const [editorBusy, setEditorBusy] = useState(false);
     const [recoveredError, setRecoveredError] = useState<Error | null>(null);
+    const moderateButton = useRef<HTMLButtonElement>(null);
     const signingHeading = useRef<HTMLHeadingElement>(null);
+    const focusedAction = useRef(false);
+    const previousProviderStatus = useRef<string | undefined>(undefined);
     const [identityGtin, setIdentityGtin] = useState("");
     const pending = useRef<string | null>(null);
     const inFlight = useRef(false);
@@ -105,6 +114,7 @@ export function CatalogCardWorkflow({
         if (receipt?.state !== "Accepted") return;
         setRecoveredError(null);
         if (receipt.operation === "Moderate") setAcceptedModerationFor(submissionId);
+        if (receipt.operation === "Sign") setAcceptedSigningFor(submissionId);
     };
     const identityCheck = useMutation({
         retry: false,
@@ -123,7 +133,7 @@ export function CatalogCardWorkflow({
             authVersion,
         ),
         retry: false,
-        mutationFn: async (kind: "Moderate" | "Sign") => {
+        mutationFn: async (kind: CatalogCardAction) => {
             const scope = captureMarkingScope();
             if (editorDirty)
                 throw new Error(
@@ -294,8 +304,11 @@ export function CatalogCardWorkflow({
     const providerStatus = catalogProviderStatus(data);
     const providerActions = catalogProviderActions(data);
     const canEditCard = Boolean(data?.canEdit && providerActions.canEdit);
-    const showModeration = Boolean(data && data.goodId > 0 && data.canModerate && providerActions.canModerate);
-    const showSigning = Boolean(data && data.goodId > 0 && data.canSign && providerActions.canSign);
+    const published = data?.isSigned === true && providerStatus === "published";
+    const showModeration = Boolean(data && data.goodId > 0 && data.canModerate && providerActions.canModerate &&
+        acceptedModerationFor !== submissionId);
+    const showSigning = Boolean(data && data.goodId > 0 && data.canSign && providerActions.canSign &&
+        acceptedSigningFor !== submissionId);
     const retryRejected = !waitingForFeed && Boolean(
         canEditCard && (
             feed.data?.submissionState === "Rejected" ||
@@ -314,14 +327,14 @@ export function CatalogCardWorkflow({
         receipt,
         freshSignedCard: Boolean(
             card.isSuccess &&
-            data?.isSigned &&
-            providerStatus === "published" &&
+            published &&
             card.dataUpdatedAt >= action.submittedAt,
         ),
         signedBeforeAction: signedBeforeAction.current,
         pendingRequest: Boolean(pending.current),
         actionFailed: action.isError,
     });
+    const publicationConfirmed = published && (outcome.signAccepted || outcome.publicationConfirmed);
     const uncertain = outcome.uncertain;
     const available = catalogActionAvailability(data, {
         busy,
@@ -329,7 +342,7 @@ export function CatalogCardWorkflow({
         fetching: card.isFetching || card.isError || waitingForFeed,
         dirty: editorDirty,
     });
-    const run = (kind: "Moderate" | "Sign") => {
+    const run = (kind: CatalogCardAction) => {
         const allowed = kind === "Moderate"
             ? showModeration && available.canModerate
             : showSigning && available.canSign;
@@ -355,8 +368,22 @@ export function CatalogCardWorkflow({
             setAcceptedModerationFor(null);
     }, [acceptedModerationFor, data, providerStatus, submissionId]);
     useEffect(() => {
-        if (focusSigning && showSigning) signingHeading.current?.focus();
-    }, [focusSigning, showSigning]);
+        if (focusedAction.current) return;
+        const target = focusAction === "Moderate" && showModeration && available.canModerate
+            ? moderateButton.current
+            : focusAction === "Sign" && showSigning ? signingHeading.current : null;
+        if (target) {
+            target.focus();
+            focusedAction.current = true;
+        }
+    }, [focusAction, showModeration, showSigning, available.canModerate]);
+    useEffect(() => {
+        if (!providerStatus) return;
+        const previous = previousProviderStatus.current;
+        previousProviderStatus.current = providerStatus;
+        if (previous && previous !== providerStatus)
+            void client.invalidateQueries({ queryKey: catalogKeys.productLists(companyId) });
+    }, [client, companyId, providerStatus]);
     const handleSubmitted = () => {
         setEditorDirty(false);
         onSubmitted?.();
@@ -571,7 +598,7 @@ export function CatalogCardWorkflow({
                                     variant={
                                         receipt.state === "Rejected"
                                             ? "error"
-                                            : outcome.signAccepted
+                                            : publicationConfirmed
                                               ? "success"
                                               : "info"
                                     }
@@ -582,14 +609,18 @@ export function CatalogCardWorkflow({
                                     }
                                 >
                                     {t(
-                                        outcome.signAccepted
-                                            ? "honestSign.catalog.workflow.signedAccepted"
-                                            : `honestSign.catalog.workflow.operationStates.${receipt.state}`,
+                                        publicationConfirmed
+                                            ? "honestSign.catalog.workflow.signedVerified"
+                                            : outcome.signAccepted
+                                              ? "honestSign.catalog.workflow.signedAccepted"
+                                              : receipt.operation === "Moderate" && receipt.state === "Accepted"
+                                                ? "honestSign.catalog.workflow.moderationAccepted"
+                                                : `honestSign.catalog.workflow.operationStates.${receipt.state}`,
                                     )}
                                     {receipt.error ? ` · ${receipt.error}` : ""}
                                 </Notice>
                             )}
-                        {outcome.publicationConfirmed &&
+                        {publicationConfirmed &&
                             !outcome.signAccepted && (
                                 <Notice variant="success" role="status">
                                     {t(
@@ -609,6 +640,7 @@ export function CatalogCardWorkflow({
                             <div className="flex flex-wrap gap-3">
                                 {showModeration && (
                                     <Button
+                                        ref={moderateButton}
                                         disabled={!available.canModerate}
                                         onClick={() => run("Moderate")}
                                     >

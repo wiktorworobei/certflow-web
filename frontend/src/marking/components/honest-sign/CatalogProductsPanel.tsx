@@ -32,6 +32,7 @@ import { catalogApiService } from "@marking/lib/honest-sign/catalogApiService";
 import { validCatalogProductDateRange } from "@marking/lib/honest-sign/catalogProductView";
 
 import type {
+    CatalogCardAction,
     CatalogProduct,
     CatalogProductFilters,
     CatalogProductStatusFilter,
@@ -46,7 +47,7 @@ export function CatalogProductsPanel({
     onOpen: (
         product: CatalogProduct,
         submissionId: string,
-        signing: boolean,
+        focusAction?: CatalogCardAction,
     ) => void;
     onCreate: () => void;
 }) {
@@ -68,22 +69,24 @@ export function CatalogProductsPanel({
             product,
         }: {
             product: CatalogProduct;
-            signing: boolean;
-        }) => catalogApiService.trackProduct(product.goodId, product.gtin),
-        onSuccess: (row, { product, signing }) => {
+            focusAction?: CatalogCardAction;
+        }) => product.submissionId
+            ? Promise.resolve({ id: product.submissionId })
+            : catalogApiService.trackProduct(product.goodId, product.gtin),
+        onSuccess: (row, { product, focusAction }) => {
             void client.invalidateQueries({
                 queryKey: catalogKeys.all(companyId),
             });
-            onOpen(product, row.id, signing);
+            onOpen(product, row.id, focusAction);
         },
         onSettled: () => {
             opening.current = false;
         },
     });
-    const open = (product: CatalogProduct, signing: boolean) => {
+    const open = (product: CatalogProduct, focusAction?: CatalogCardAction) => {
         if (opening.current || !product.gtin) return;
         opening.current = true;
-        track.mutate({ product, signing });
+        track.mutate({ product, focusAction });
     };
     const items = products.data?.items ?? [];
     const formatFilterDate = (value: string) =>

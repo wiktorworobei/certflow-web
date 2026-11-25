@@ -21,11 +21,11 @@ import { useCatalogSubmissions } from "@marking/hooks/use-honest-sign-catalog";
 export function CatalogSubmissionHistory({
     companyId,
     onOpen,
-    attemptsOnly = false,
+    onOpenAttempts,
 }: {
     companyId: string;
     onOpen: (id: string, retry?: boolean) => void;
-    attemptsOnly?: boolean;
+    onOpenAttempts?: (id: string) => void;
 }) {
     const { t, i18n } = useTranslation();
     const [page, setPage] = useState(1);
@@ -130,8 +130,13 @@ export function CatalogSubmissionHistory({
                                                     </Button>
                                                 )}
                                                 <Button variant="outline" size="sm" onClick={() => onOpen(row.id)}>
-                                                    {t(attemptsOnly ? "honestSign.catalog.attempts.open" : "honestSign.catalog.openCard")}
+                                                    {t("honestSign.catalog.openCard")}
                                                 </Button>
+                                                {onOpenAttempts && (
+                                                    <Button variant="outline" size="sm" onClick={() => onOpenAttempts(row.id)}>
+                                                        {t("honestSign.catalog.attempts.open")}
+                                                    </Button>
+                                                )}
                                             </div>
                                         </TableCell>
                                     </TableRow>

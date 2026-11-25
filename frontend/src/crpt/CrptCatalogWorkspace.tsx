@@ -34,7 +34,9 @@ import {
   catalogKeys,
 } from '../marking/hooks/use-honest-sign-catalog';
 import { catalogApiService } from '../marking/lib/honest-sign/catalogApiService';
+import { catalogProviderActions } from '../marking/lib/honest-sign/catalogWorkflowOutcome';
 import type {
+  CatalogCardAction,
   CatalogCardRequest,
   CatalogProduct,
   CatalogProductFilters,
@@ -81,6 +83,10 @@ type Column = (typeof columns)[number][0];
 type Editor = { title: string; card?: CatalogCardRequest; batch?: boolean };
 type Outcome = { gtin: string; message: string; error?: boolean };
 
+type ProductAction =
+  | { kind: 'open'; product?: CatalogProduct; focusAction?: CatalogCardAction }
+  | { kind: 'similar' | 'set' | 'export' };
+
 export function CrptCatalogWorkspace({
   companyId,
   environment,
@@ -108,7 +114,7 @@ export function CrptCatalogWorkspace({
   const [detailStatus, setDetailStatus] = useState('all');
   const [gtinSearch, setGtinSearch] = useState('');
   const lookup = useQuery({
-    queryKey: ['crpt-search', companyId, gtinSearch],
+    queryKey: [...catalogKeys.productLists(companyId), 'search', gtinSearch],
     queryFn: ({ signal }) => crptApi.search(gtinSearch, signal),
     enabled: !!gtinSearch,
   });
@@ -121,7 +127,11 @@ export function CrptCatalogWorkspace({
   const [actionMenu, setActionMenu] = useState<HTMLElement | null>(null);
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [editor, setEditor] = useState<Editor | null>(null);
-  const [detail, setDetail] = useState<{ id: string; retry?: boolean } | null>(null);
+  const [detail, setDetail] = useState<{
+    id: string;
+    retry?: boolean;
+    focusAction?: CatalogCardAction;
+  } | null>(null);
   const [dirty, setDirty] = useState(false);
   const [formBusy, setFormBusy] = useState(false);
   const [discard, setDiscard] = useState(false);
@@ -174,6 +184,13 @@ export function CrptCatalogWorkspace({
       );
   }, [items, search, detailStatus, sort, ascending]);
   const selected = items.filter((x) => selection.has(x.goodId));
+  const canModerateSelected =
+    selected.length > 0 &&
+    selected.every((row) => Boolean(row.gtin) && catalogProviderActions(row).canModerate);
+  const canSignSelected =
+    Boolean(selectedThumbprint) &&
+    selected.length > 0 &&
+    selected.every((row) => Boolean(row.gtin) && catalogProviderActions(row).canSign);
   const busy = formBusy || childBusy;
   const clearSelection = () => setSelection(new Set());
   const refresh = async () => {
@@ -197,7 +214,8 @@ export function CrptCatalogWorkspace({
       ? { id: row.submissionId }
       : catalogApiService.trackProduct(row.goodId, row.gtin);
   const action = useMutation({
-    mutationFn: async (kind: 'open' | 'similar' | 'set' | 'export') => {
+    mutationFn: async (request: ProductAction) => {
+      const { kind } = request;
       if (opening.current) return;
       opening.current = true;
       const scope = captureCrptEnvironment();
@@ -226,12 +244,18 @@ export function CrptCatalogWorkspace({
           return;
         }
         const cards: CatalogCardRequest[] = [];
-        for (const row of kind === 'export' ? selected : selected.slice(0, 1)) {
+        const rows =
+          request.kind === 'open' && request.product
+            ? [request.product]
+            : kind === 'export'
+              ? selected
+              : selected.slice(0, 1);
+        for (const row of rows) {
           const local = await track(row);
           assertCrptEnvironment(scope);
           if (kind === 'open') {
             setDirty(false);
-            setDetail({ id: local.id });
+            setDetail({ id: local.id, focusAction: request.focusAction });
             return;
           }
           const card = await catalogApiService.card(local.id);
@@ -252,6 +276,9 @@ export function CrptCatalogWorkspace({
   });
   const bulk = useMutation({
     mutationFn: async (kind: 'Moderate' | 'Sign') => {
+      if (kind === 'Sign' ? !canSignSelected : !canModerateSelected) {
+        throw new Error('Действие недоступно для текущих статусов выбранных карточек.');
+      }
       const scope = captureCrptEnvironment();
       setOutcomes([]);
       onDialogDone();
@@ -389,6 +416,10 @@ export function CrptCatalogWorkspace({
     setConfirmSign(false);
   };
   const locked = busy || action.isPending || bulk.isPending || addPermit.isPending;
+  const canConfirm =
+    confirmation === 'Sign'
+      ? canSignSelected && confirmSign
+      : confirmation === 'Moderate' && canModerateSelected;
   const cabinet =
     environment === 'sandbox'
       ? 'https://markirovka.sandbox.crptech.ru/'
@@ -397,7 +428,7 @@ export function CrptCatalogWorkspace({
     setEditor(null);
     setDirty(false);
     setDetail({ id: receipt.id });
-    void refresh();
+    clearSelection();
   }
   return (
     <div className="crpt-console">
@@ -456,7 +487,7 @@ export function CrptCatalogWorkspace({
               <Button
                 startIcon={<DownloadRounded />}
                 disabled={!selected.length || locked}
-                onClick={() => action.mutate('export')}
+                onClick={() => action.mutate({ kind: 'export' })}
               >
                 Экспорт XLSX
               </Button>
@@ -469,19 +500,27 @@ export function CrptCatalogWorkspace({
             </div>
             <Menu anchorEl={actionMenu} open={!!actionMenu} onClose={() => setActionMenu(null)}>
               {[
-                ['Открыть / редактировать', () => action.mutate('open'), selected.length !== 1],
-                ['Создать подобный товар', () => action.mutate('similar'), selected.length !== 1],
+                [
+                  'Открыть / редактировать',
+                  () => action.mutate({ kind: 'open' }),
+                  selected.length !== 1,
+                ],
+                [
+                  'Создать подобный товар',
+                  () => action.mutate({ kind: 'similar' }),
+                  selected.length !== 1,
+                ],
                 [
                   'Создать набор',
-                  () => action.mutate('set'),
+                  () => action.mutate({ kind: 'set' }),
                   !selected.length || selected.some((x) => !x.gtin),
                 ],
-                ['Отправить на модерацию', () => setConfirmation('Moderate'), !selected.length],
-                [
-                  'Подписать и опубликовать',
-                  () => setConfirmation('Sign'),
-                  !selected.length || !selectedThumbprint,
-                ],
+                ...(canModerateSelected
+                  ? [['Отправить на модерацию', () => setConfirmation('Moderate'), false]]
+                  : []),
+                ...(canSignSelected
+                  ? [['Подписать и опубликовать', () => setConfirmation('Sign'), false]]
+                  : []),
                 ['Предоставить доступ другой компании', () => setTab('access'), !selected.length],
                 ['Добавить разрешительный документ', () => setPermitOpen(true), !selected.length],
               ].map(([label, callback, disabled]) => (
@@ -694,82 +733,86 @@ export function CrptCatalogWorkspace({
                           </button>
                         </th>
                       ))}
-                    <th aria-label="Открытие карточки" />
+                    <th aria-label="Действия с карточкой" />
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((row) => (
-                    <tr
-                      key={row.goodId}
-                      className={selection.has(row.goodId) ? 'crpt-row-selected' : ''}
-                    >
-                      <td className="crpt-check-cell">
-                        <Checkbox
-                          size="small"
-                          inputProps={{ 'aria-label': `Выбрать ${row.gtin || row.name}` }}
-                          checked={selection.has(row.goodId)}
-                          disabled={locked}
-                          onChange={(e) =>
-                            setSelection((value) => {
-                              const next = new Set(value);
-                              if (e.target.checked) next.add(row.goodId);
-                              else next.delete(row.goodId);
-                              return next;
-                            })
-                          }
-                        />
-                      </td>
-                      {visibleColumns.includes('gtin') && (
-                        <td className="crpt-mono">{row.gtin || 'Назначается'}</td>
-                      )}
-                      {visibleColumns.includes('name') && (
-                        <td className="crpt-product-name">{row.name}</td>
-                      )}
-                      {visibleColumns.includes('brand') && <td>{row.brand || '—'}</td>}
-                      {visibleColumns.includes('tnved') && (
-                        <td className="crpt-mono">{row.tnved || '—'}</td>
-                      )}
-                      {visibleColumns.includes('status') && (
-                        <td>
-                          <CatalogProductStatus product={row} />
-                        </td>
-                      )}
-                      {visibleColumns.includes('updatedAt') && (
-                        <td className="crpt-date">
-                          {row.updatedAt?.replace('T', ' ').slice(0, 16) || '—'}
-                        </td>
-                      )}
-                      <td>
-                        <Button
-                          size="small"
-                          disabled={locked || !row.gtin}
-                          onClick={async () => {
-                            if (opening.current) return;
-                            opening.current = true;
-                            const scope = captureCrptEnvironment();
-                            try {
-                              const local = await track(row);
-                              assertCrptEnvironment(scope);
-                              setDirty(false);
-                              setDetail({ id: local.id });
-                            } catch (e) {
-                              setOutcomes([
-                                {
-                                  gtin: row.gtin,
-                                  message: e instanceof Error ? e.message : 'Ошибка открытия',
-                                  error: true,
-                                },
-                              ]);
-                            } finally {
-                              opening.current = false;
+                  {filtered.map((row) => {
+                    const { canModerate, canSign } = catalogProviderActions(row);
+                    const nextAction = canModerate ? 'Moderate' : canSign ? 'Sign' : undefined;
+                    return (
+                      <tr
+                        key={row.goodId}
+                        className={selection.has(row.goodId) ? 'crpt-row-selected' : ''}
+                      >
+                        <td className="crpt-check-cell">
+                          <Checkbox
+                            size="small"
+                            inputProps={{ 'aria-label': `Выбрать ${row.gtin || row.name}` }}
+                            checked={selection.has(row.goodId)}
+                            disabled={locked}
+                            onChange={(e) =>
+                              setSelection((value) => {
+                                const next = new Set(value);
+                                if (e.target.checked) next.add(row.goodId);
+                                else next.delete(row.goodId);
+                                return next;
+                              })
                             }
-                          }}
-                        >
-                          Открыть
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
+                          />
+                        </td>
+                        {visibleColumns.includes('gtin') && (
+                          <td className="crpt-mono">{row.gtin || 'Назначается'}</td>
+                        )}
+                        {visibleColumns.includes('name') && (
+                          <td className="crpt-product-name">{row.name}</td>
+                        )}
+                        {visibleColumns.includes('brand') && <td>{row.brand || '—'}</td>}
+                        {visibleColumns.includes('tnved') && (
+                          <td className="crpt-mono">{row.tnved || '—'}</td>
+                        )}
+                        {visibleColumns.includes('status') && (
+                          <td>
+                            <CatalogProductStatus product={row} />
+                          </td>
+                        )}
+                        {visibleColumns.includes('updatedAt') && (
+                          <td className="crpt-date">
+                            {row.updatedAt?.replace('T', ' ').slice(0, 16) || '—'}
+                          </td>
+                        )}
+                        <td>
+                          <div className="flex items-center gap-1">
+                            {row.gtin && nextAction && (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                disabled={locked}
+                                onClick={() =>
+                                  action.mutate({
+                                    kind: 'open',
+                                    product: row,
+                                    focusAction: nextAction,
+                                  })
+                                }
+                              >
+                                {nextAction === 'Moderate'
+                                  ? 'Отправить на модерацию'
+                                  : 'Подписать и опубликовать'}
+                              </Button>
+                            )}
+                            <Button
+                              size="small"
+                              disabled={locked || !row.gtin}
+                              onClick={() => action.mutate({ kind: 'open', product: row })}
+                            >
+                              Открыть
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -981,6 +1024,7 @@ export function CrptCatalogWorkspace({
                 key={detail.id}
                 submissionId={detail.id}
                 initialEditorOpen={detail.retry}
+                focusAction={detail.focusAction}
                 selectedThumbprint={selectedThumbprint}
                 productGroups={groups.data ?? []}
                 onDirtyChange={setDirty}
@@ -1045,7 +1089,7 @@ export function CrptCatalogWorkspace({
           )}
           <Button
             variant="contained"
-            disabled={confirmation === 'Sign' && !confirmSign}
+            disabled={!canConfirm || locked}
             onClick={() => confirmation && bulk.mutate(confirmation)}
           >
             {confirmation === 'Sign' ? 'Подписать и опубликовать' : 'Отправить на модерацию'}

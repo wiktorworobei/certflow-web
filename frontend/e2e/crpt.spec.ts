@@ -305,3 +305,180 @@ test('CRPT retries a rejected submission from the event journal after editing th
   expect(savedWrites).toEqual(['PUT', 'POST']);
   await expect(editor.getByRole('region', { name: 'История попыток отправки' })).toContainText('Проверьте наименование товара.');
 });
+
+test('CRPT moderates a draft from its row and publishes it only after explicit signing', async ({ page }) => {
+  await crptFixtures(page);
+  await page.clock.install();
+  const goodId = 42;
+  const createdAtUtc = '2026-11-17T12:00:00Z';
+  const preparationId = '66666666-6666-4666-8666-666666666666';
+  const certificateThumbprint = thumbprint;
+  const xml = '<product><good_id>42</good_id><name>Масло моторное</name></product>';
+  const signingData = { preparationId, goodId, xml, payloadHash: 'synthetic-hash', certificateThumbprint };
+  const requests: string[] = [];
+  let status: 'draft' | 'moderation' | 'notsigned' | 'published' = 'draft';
+  const product = () => ({
+    submissionId, goodId, gtin: draft.gtin, name: draft.name, brand: draft.brand, tnved: draft.tnved,
+    status: status === 'published' ? 'published' : 'draft',
+    detailedStatuses: [status], updatedAt: null,
+  });
+
+  await page.route('**/catalog/products?*', route => route.fulfill({ json: {
+    items: [product()], page: 1, pageSize: 50, total: 1, hasNextPage: false,
+  } }));
+  await page.route(`**/catalog/submissions/${submissionId}/status`, route => route.fulfill({ json: {
+    submissionId, submissionState: 'Accepted', status: null, feedId: null, errors: [],
+  } }));
+  await page.route(`**/catalog/submissions/${submissionId}/card`, route => route.fulfill({ json: {
+    ...product(), isSigned: status === 'published', canEdit: status === 'draft',
+    canModerate: status === 'draft', canSign: status === 'notsigned',
+    canOrderCodes: false, canIntroduce: false, draft: null, blockingOperation: null,
+  } }));
+  await page.route(`**/catalog/submissions/${submissionId}/moderation`, route => {
+    requests.push('moderation');
+    expect(route.request().method()).toBe('POST');
+    const { requestId } = route.request().postDataJSON();
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+    status = 'moderation';
+    return route.fulfill({ json: {
+      requestId, submissionId, goodId, operation: 'Moderate', state: 'Accepted',
+      feedId: null, error: null, createdAtUtc, replayed: false,
+    } });
+  });
+  await page.route(`**/catalog/submissions/${submissionId}/signing-data?*`, route => {
+    requests.push('signing-data');
+    expect(route.request().method()).toBe('GET');
+    const publicationAgreement = new URL(route.request().url()).searchParams.get('publicationAgreement') === 'true';
+    expect(publicationAgreement).toBe(false);
+    return route.fulfill({ json: { ...signingData, publicationAgreement } });
+  });
+  await page.route(`**/catalog/submissions/${submissionId}/sign`, route => {
+    requests.push('sign');
+    expect(route.request().method()).toBe('POST');
+    const body = route.request().postDataJSON();
+    expect(body).toMatchObject({
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/), preparationId, xml,
+      payloadHash: signingData.payloadHash, certificateThumbprint,
+      signature: 'synthetic-certificate-proof', publicationAgreement: false,
+    });
+    return route.fulfill({ json: {
+      requestId: body.requestId, submissionId, goodId, operation: 'Sign',
+      state: 'Accepted', feedId: null, error: null, createdAtUtc, replayed: false,
+    } });
+  });
+
+  await page.goto('/#/crpt?environment=sandbox');
+  const row = page.getByRole('row').filter({ hasText: draft.gtin });
+  const moderateFromRow = row.getByRole('button', { name: 'Отправить на модерацию', exact: true });
+  const signFromRow = row.getByRole('button', { name: 'Подписать и опубликовать', exact: true });
+  const card = page.getByRole('dialog', { name: 'Карточка товара', exact: true });
+  const moderate = card.getByRole('button', { name: 'Отправить черновик на модерацию', exact: true });
+  const sign = card.getByRole('button', { name: 'Подписать УКЭП и опубликовать', exact: true });
+  await expect(moderateFromRow).toBeVisible();
+  await expect(signFromRow).toHaveCount(0);
+  await moderateFromRow.click();
+  await expect(moderate).toBeEnabled();
+  expect(requests).toEqual([]);
+  await moderate.click();
+  await expect(card.getByText('На модерации', { exact: true })).toBeVisible();
+  await expect(sign).toHaveCount(0);
+  expect(requests).toEqual(['moderation']);
+  await card.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(row).toContainText('На модерации');
+  await expect(moderateFromRow).toHaveCount(0);
+  await expect(signFromRow).toHaveCount(0);
+
+  status = 'notsigned';
+  await page.reload();
+  await signFromRow.click();
+  await expect(card.getByRole('heading', { name: 'Подписание карточки', exact: true })).toBeFocused();
+  await expect(moderate).toHaveCount(0);
+  await expect(sign).toBeDisabled();
+  expect(requests).toEqual(['moderation']);
+  await card.getByRole('checkbox', { name: /Подтверждаю подписание и публикацию/ }).check();
+  await expect(sign).toBeEnabled();
+  expect(requests).toEqual(['moderation']);
+  await sign.click();
+  const publication = card.getByText('НК подтвердил, что карточка подписана и опубликована.', { exact: true });
+  await expect(card.getByText('НК принял подпись. Ожидаем подтверждения публикации.', { exact: true })).toBeVisible();
+  await expect(card.getByText('Ожидает подписания', { exact: true })).toBeVisible();
+  await expect(sign).toHaveCount(0);
+  await expect(publication).toHaveCount(0);
+  status = 'published';
+  await page.clock.fastForward(15_001);
+  await expect(publication).toBeVisible();
+  await expect(card.getByText('Опубликована', { exact: true })).toBeVisible();
+  expect(requests).toEqual(['moderation', 'signing-data', 'sign']);
+  expect(await page.evaluate(() => (window as unknown as { certificateSignedMessages: string[] }).certificateSignedMessages))
+    .toEqual([xml]);
+});
+
+test('CRPT sends a saved local draft to moderation in its creation feed', async ({ page }) => {
+  await crptFixtures(page);
+  const { gtin, name, brand, tnved, categoryId, productGroupCode } = draft;
+  const createdAtUtc = '2026-11-17T12:00:00Z';
+  const feedId = 'moderation-feed';
+  let sent = false;
+  let saved: typeof draft | undefined;
+  const sends: Array<{ method: string; mode: string | null }> = [];
+  const moderationRequests: string[] = [];
+
+  await page.route(`**/catalog/submissions/${submissionId}/card`, route => route.fulfill({ json: {
+    submissionId, goodId: 0, gtin, status: 'draft', detailedStatuses: ['draft'], isSigned: false,
+    canEdit: true, canSign: false, canModerate: false, canOrderCodes: false,
+    canIntroduce: false, draft: saved, blockingOperation: null,
+  } }));
+  await page.route(`**/catalog/submissions/${submissionId}/status`, route => route.fulfill({ json: {
+    submissionId, submissionState: sent ? 'Accepted' : 'Draft', status: sent ? 'Processing' : null,
+    feedId: sent ? feedId : null, receivedAtUtc: null, updatedAtUtc: null, errors: [],
+  } }));
+  const receipt = {
+    id: submissionId, gtin, state: 'Draft', feedId: null,
+    sendToModeration: false, createdAtUtc, draftVersion: submissionId,
+  };
+  await page.route('**/catalog/gtins/check?*', route => route.fulfill({ json: {
+    gtin, state: 'NotFound', cards: [],
+  } }));
+  await page.route('**/catalog/drafts', route => {
+    expect(route.request().method()).toBe('POST');
+    saved = route.request().postDataJSON();
+    return route.fulfill({ json: receipt });
+  });
+  await page.route(`**/catalog/submissions/${submissionId}/draft`, route => {
+    expect(route.request().method()).toBe('PUT');
+    saved = route.request().postDataJSON();
+    return route.fulfill({ json: receipt });
+  });
+  await page.route(`**/catalog/submissions/${submissionId}/send?*`, route => {
+    const request = route.request();
+    sends.push({ method: request.method(), mode: new URL(request.url()).searchParams.get('sendToModeration') });
+    sent = true;
+    return route.fulfill({ json: {
+      id: submissionId, gtin, state: 'Accepted', feedId, sendToModeration: true, createdAtUtc,
+    } });
+  });
+  await page.route(`**/catalog/submissions/${submissionId}/moderation`, route => {
+    moderationRequests.push(route.request().method());
+    return route.fulfill({ status: 409, json: {} });
+  });
+
+  await page.goto('/#/crpt');
+  await page.getByRole('button', { name: 'Создать новую позицию', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Новая карточка товара', exact: true });
+  await editor.getByLabel('Товарная группа *', { exact: true }).selectOption(String(productGroupCode));
+  await editor.getByLabel('GTIN *', { exact: true }).fill(gtin);
+  await editor.locator('#catalog-name').fill(name);
+  await editor.locator('#catalog-brand').fill(brand);
+  await editor.locator('#catalog-tnved').fill(tnved);
+  await editor.getByRole('button', { name: 'Подобрать категории', exact: true }).click();
+  await editor.locator('#catalog-category').selectOption(String(categoryId));
+  await editor.getByRole('button', { name: 'Сохранить в ZNAQ', exact: true }).click();
+  const card = page.getByRole('dialog', { name: 'Карточка товара', exact: true });
+  await expect(card.getByRole('button', { name: 'Создать черновик в НК', exact: true })).toBeVisible();
+  expect(saved).toMatchObject({ gtin, name, sendToModeration: false });
+  expect(sends).toEqual([]);
+  await card.getByRole('button', { name: 'Отправить на модерацию', exact: true }).click();
+  await expect(card.getByRole('region', { name: 'Ответ заявки НК', exact: true })).toContainText(feedId);
+  expect(sends).toEqual([{ method: 'POST', mode: 'true' }]);
+  expect(moderationRequests).toEqual([]);
+});

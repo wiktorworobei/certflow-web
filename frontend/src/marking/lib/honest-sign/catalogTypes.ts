@@ -179,10 +179,12 @@ export type CatalogSubmissionAttempt = {
     feedStatus: CatalogFeedStatus | null;
 };
 
+export type CatalogCardAction = "Moderate" | "Sign";
+
 export type CatalogOperation = {
     requestId: string;
     submissionId: string;
-    operation: "Update" | "Moderate" | "Sign" | "PrepareSign" | "Track";
+    operation: "Update" | CatalogCardAction | "PrepareSign" | "Track";
     state:
         | "Sending"
         | "Processing"

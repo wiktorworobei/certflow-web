@@ -1,4 +1,4 @@
-import { ArrowUpRight, FileSignature, Loader2, Package } from "lucide-react";
+import { ArrowUpRight, FileSignature, Loader2, Package, Send } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { CatalogProductStatus } from "@marking/components/honest-sign/CatalogProductStatus";
 import { Button } from "@marking/components/ui/button";
@@ -17,38 +17,48 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@marking/components/ui/tooltip";
-import {
-    canOpenCatalogSigning,
-    catalogProductStatuses,
-} from "@marking/lib/honest-sign/catalogProductView";
+import { catalogProviderActions } from "@marking/lib/honest-sign/catalogWorkflowOutcome";
 
-import type { CatalogProduct } from "@marking/lib/honest-sign/catalogTypes";
+import type { CatalogCardAction, CatalogProduct } from "@marking/lib/honest-sign/catalogTypes";
 
 type Actions = {
     product: CatalogProduct;
     busy: boolean;
     openingGoodId?: number;
-    onOpen: (product: CatalogProduct, signing: boolean) => void;
+    onOpen: (product: CatalogProduct, action?: CatalogCardAction) => void;
 };
 
 function ProductActions({ product, busy, openingGoodId, onOpen }: Actions) {
     const { t } = useTranslation();
     const title = product.name || t("honestSign.catalog.products.unnamed");
-    const awaitingSignature =
-        catalogProductStatuses(product).includes("notsigned");
+    const { canModerate, canSign } = catalogProviderActions(product);
     return (
         <>
-            {canOpenCatalogSigning(product) && (
+            {product.gtin && canModerate && (
                 <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className={`h-11 shadow-none motion-reduce:transition-none @min-[56rem]/catalog:h-8 ${awaitingSignature ? "border-amber-500/30 bg-amber-500/10 text-amber-800 hover:bg-amber-500/20 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-200" : ""}`}
+                    className="h-11 motion-reduce:transition-none @min-[56rem]/catalog:h-8"
+                    disabled={busy}
+                    aria-label={t("honestSign.catalog.products.moderateNamed", { name: title })}
+                    onClick={() => onOpen(product, "Moderate")}
+                >
+                    <Send className="size-4" aria-hidden="true" />
+                    {t("honestSign.catalog.products.moderate")}
+                </Button>
+            )}
+            {product.gtin && canSign && (
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-11 border-amber-500/30 bg-amber-500/10 text-amber-800 shadow-none motion-reduce:transition-none hover:bg-amber-500/20 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-200 @min-[56rem]/catalog:h-8"
                     disabled={busy}
                     aria-label={t("honestSign.catalog.products.signNamed", {
                         name: title,
                     })}
-                    onClick={() => onOpen(product, true)}
+                    onClick={() => onOpen(product, "Sign")}
                 >
                     <FileSignature className="size-4" aria-hidden="true" />
                     {t("honestSign.catalog.products.sign")}
@@ -63,7 +73,7 @@ function ProductActions({ product, busy, openingGoodId, onOpen }: Actions) {
                 aria-label={t("honestSign.catalog.products.openNamed", {
                     name: title,
                 })}
-                onClick={() => onOpen(product, false)}
+                onClick={() => onOpen(product)}
             >
                 {openingGoodId === product.goodId ? (
                     <Loader2
@@ -96,7 +106,7 @@ function ProductName({
                     aria-label={t("honestSign.catalog.products.openNamed", {
                         name,
                     })}
-                    onClick={() => onOpen(product, false)}
+                    onClick={() => onOpen(product)}
                 >
                     {name}
                 </button>
@@ -117,7 +127,7 @@ export function CatalogProductsTable({
     items: CatalogProduct[];
     busy?: boolean;
     openingGoodId?: number;
-    onOpen: (product: CatalogProduct, signing: boolean) => void;
+    onOpen: Actions["onOpen"];
 }) {
     const { t } = useTranslation();
     return (
@@ -200,7 +210,7 @@ export function CatalogProductsTable({
                                         />
                                     </TableCell>
                                     <TableCell className="pr-4">
-                                        <div className="flex items-center justify-end gap-1.5">
+                                        <div className="flex flex-wrap items-center justify-end gap-1.5">
                                             <ProductActions
                                                 product={product}
                                                 busy={busy}
