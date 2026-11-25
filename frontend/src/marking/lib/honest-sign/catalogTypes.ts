@@ -36,6 +36,12 @@ export type CatalogProductsPage = {
     toDate: string;
 };
 export type CatalogBrand = { id: number; name: string };
+export type CatalogGtinCheckResult = {
+    gtin: string | null;
+    state: "Invalid" | "Found" | "NotFound";
+    localState?: "Draft" | "Submitted" | null;
+    cards?: { name: string; status: string }[] | null;
+};
 export type CatalogIdentifier = {
     gtin: string;
     level: "trade-unit" | "inner-pack" | "box";

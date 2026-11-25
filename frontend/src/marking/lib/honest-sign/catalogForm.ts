@@ -254,12 +254,18 @@ export function catalogFailureRecoveryNotice(
     return gtinConflict ? "conflictReceiptFound" : "unknownAfterError";
 }
 
-export function isValidCatalogGtin(value: string) {
-    if (!/^(\d{8}|\d{12}|\d{13}|\d{14})$/.test(value)) return false;
+export function catalogGtinError(value: string) {
+    if (!value) return "gtinRequired";
+    if (!/^\d+$/.test(value)) return "gtinDigits";
+    if (![8, 12, 13, 14].includes(value.length)) return "gtinLength";
     let sum = 0;
     for (let i = value.length - 2; i >= 0; i--)
         sum += Number(value[i]) * ((value.length - 2 - i) % 2 === 0 ? 3 : 1);
-    return (10 - (sum % 10)) % 10 === Number(value.at(-1));
+    return (10 - (sum % 10)) % 10 === Number(value.at(-1)) ? null : "gtinCheckDigit";
+}
+
+export function isValidCatalogGtin(value: string) {
+    return catalogGtinError(value) === null;
 }
 export function isValidCatalogText(value: string) {
     return [...value].every((character) => {
@@ -556,11 +562,10 @@ export function createCatalogFormSchema(
                 Number(value) <= 2147483647;
             const normalizeGtin = (gtin: string) =>
                 gtin.trim().padStart(14, "0");
-            if (
-                (values.gtinMode === "existing" || values.gtin) &&
-                !isValidCatalogGtin(values.gtin)
-            )
-                issue(["gtin"], "gtinInvalid");
+            if (values.gtinMode === "existing" || values.gtin) {
+                const gtinError = catalogGtinError(values.gtin);
+                if (gtinError) issue(["gtin"], gtinError);
+            }
             if (
                 values.gtinMode === "industrial" &&
                 values.composition === "kit"

@@ -146,21 +146,24 @@ test('CRPT imports Excel-compatible CSV and saves drafts without publishing', as
   await expect(page.getByRole('link', { name: 'Открыть песочницу ЧЗ', exact: true })).toHaveAttribute('href', 'https://markirovka.sandbox.crptech.ru/');
 });
 
-test('CRPT shows every saved provider rejection reason directly in the submission journal', async ({ page }) => {
+test('CRPT shows readable rejection reasons and checks the card directly in the submission journal', async ({ page }) => {
   const fixture = await crptFixtures(page);
   const feedId = '24098';
   const createdAtUtc = '2026-11-17T12:00:00Z';
-  const okpd2Error = 'Не заполнено значение параметра Код ОКПД2 для кода товара.';
-  const moderationError = 'Карточка товара находится на модерации и недоступна для редактирования.';
+  const checks: { url: URL; method: string }[] = [];
+  await page.route('**/catalog/gtins/check?*', route => {
+    checks.push({ url: new URL(route.request().url()), method: route.request().method() });
+    return route.fulfill({ json: { gtin: draft.gtin, state: 'Found', cards: [{ name: 'Тестовая карточка НК', status: 'moderation' }] } });
+  });
   await page.route('**/catalog/submissions?*', route => route.fulfill({ json: {
     items: [{
       id: submissionId, gtin: draft.gtin, state: 'Rejected', feedId, sendToModeration: false, createdAtUtc,
       latestFeedStatus: {
         submissionId, feedId, submissionState: 'Rejected', status: 'Rejected', providerStatus: 'Rejected',
-        providerStatusId: 0, receivedAtUtc: createdAtUtc, updatedAtUtc: createdAtUtc,
+        providerStatusId: 0, upstreamHttpStatus: 200, receivedAtUtc: createdAtUtc, updatedAtUtc: createdAtUtc,
         errors: [
-          { gtin: draft.gtin, attributeId: 3961, code: '81', message: okpd2Error },
-          { gtin: draft.gtin, attributeId: null, code: '157', message: moderationError },
+          { gtin: draft.gtin, attributeId: 3961, code: '81', message: 'Не заполнено значение обязательного параметра Код ОКПД2 для кода товара [скрыто].' },
+          { gtin: draft.gtin, attributeId: null, code: '157', entryId: 0, source: 'error_details.items', message: 'Карточка товара [скрыто] находится на модерации и недоступна для редактирования. Воспользуйтесь методом feed-product для её поиска.' },
         ],
       },
     }],
@@ -171,7 +174,47 @@ test('CRPT shows every saved provider rejection reason directly in the submissio
   await page.getByRole('tab', { name: 'Журнал операций', exact: true }).click();
   const entry = page.getByRole('row').filter({ hasText: feedId });
   await expect(entry.getByText('Запрос отклонён НК', { exact: true })).toBeVisible();
-  await expect(entry.getByText(okpd2Error, { exact: true })).toBeVisible();
-  await expect(entry.getByText(moderationError, { exact: true })).toBeVisible();
+  await expect(entry.getByText('Укажите код ОКПД2 в карточке товара.', { exact: true })).toBeVisible();
+  await expect(entry.getByText('НК отклонил изменения, потому что карточка уже была на модерации.', { exact: true })).toBeVisible();
+  await expect(entry).not.toContainText(/feed-product|status_id|HTTP 200|error_details|entry 0|Код НК|скрыто/);
+  expect(checks).toHaveLength(0);
+  await entry.getByRole('button', { name: 'Проверить карточку в НК', exact: true }).click();
+  await expect(entry.getByText('Тестовая карточка НК · На модерации', { exact: true })).toBeVisible();
+  expect(checks).toHaveLength(1);
+  expect(checks[0].method).toBe('GET');
+  expect(checks[0].url.pathname).toBe(`/api/firms/${firmId}/crpt/sandbox/honest-sign/catalog/gtins/check`);
+  expect(checks[0].url.searchParams.get('gtin')).toBe(draft.gtin);
+  expect(checks[0].url.searchParams.get('submissionId')).toBe(submissionId);
   expect(fixture.requests.some(path => path.endsWith(`/catalog/submissions/${submissionId}/status`))).toBe(false);
+  expect(fixture.writes).toHaveLength(0);
+});
+
+test('CRPT checks a newly entered valid GTIN and prevents a duplicate send', async ({ page }) => {
+  const fixture = await crptFixtures(page);
+  const checks: string[] = [];
+  await page.route('**/catalog/gtins/check?*', route => {
+    const gtin = new URL(route.request().url()).searchParams.get('gtin')!;
+    checks.push(gtin);
+    return route.fulfill({ json: { gtin, state: 'Found', cards: [{ name: 'Существующая карточка', status: 'notsigned' }] } });
+  });
+
+  await page.goto('/#/crpt');
+  await page.getByRole('button', { name: 'Создать новую позицию', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Новая карточка товара', exact: true });
+  const gtinInput = editor.getByLabel('GTIN *', { exact: true });
+  await editor.getByLabel('Товарная группа *', { exact: true }).selectOption('43');
+  await editor.locator('#catalog-tnved').fill(draft.tnved);
+  await editor.getByRole('button', { name: 'Подобрать категории', exact: true }).click();
+  await editor.locator('#catalog-category').selectOption('100');
+  await editor.locator('#catalog-name').fill(draft.name);
+  await editor.locator('#catalog-brand').fill(draft.brand);
+  await gtinInput.fill('05011846021160');
+  await expect(editor.getByText('Неверная контрольная цифра GTIN.', { exact: true })).toBeVisible();
+  expect(checks).toHaveLength(0);
+  await gtinInput.fill(draft.gtin);
+  await expect(editor.getByText('Существующая карточка · Ожидает подписания', { exact: true })).toBeVisible();
+  await expect(editor.getByText(/GTIN уже зарегистрирован в Национальном каталоге/)).toBeVisible();
+  await expect(editor.getByRole('button', { name: 'Создать черновик в НК', exact: true })).toBeDisabled();
+  expect(checks).toEqual([draft.gtin]);
+  expect(fixture.writes).toHaveLength(0);
 });

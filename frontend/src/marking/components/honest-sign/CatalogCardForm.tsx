@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { CatalogAttributeGroups } from "@marking/components/honest-sign/CatalogAttributeGroups";
 import { CatalogBrandLookup } from "@marking/components/honest-sign/CatalogBrandLookup";
 import { CatalogErrorDetails } from "@marking/components/honest-sign/CatalogErrorDetails";
+import { CatalogGtinCheck, useCatalogGtinLookup } from "@marking/components/honest-sign/CatalogGtinCheck";
 import { CatalogGtinPicker } from "@marking/components/honest-sign/CatalogGtinPicker";
 import { CatalogMediaFields } from "@marking/components/honest-sign/CatalogMediaFields";
 import {
@@ -39,6 +40,7 @@ import {
     catalogLayerCompletion,
     createCatalogFormSchema,
     emptyCatalogForm,
+    catalogGtinError,
     isValidCatalogTnved,
     isCatalogFeedProcessing,
     catalogFormFromCard,
@@ -95,6 +97,7 @@ export function CatalogCardForm({
     const [submissionError, setSubmissionError] = useState<Error | null>(null);
     const [checkingReceipt, setCheckingReceipt] = useState(false);
     const [mediaOpened, setMediaOpened] = useState(false);
+    const [gtinVisited, setGtinVisited] = useState(false);
     const client = useQueryClient();
     const savedId = useRef(submissionId);
     const savedReceipt = useRef<CatalogSubmission | null>(null);
@@ -166,6 +169,10 @@ export function CatalogCardForm({
             )(input, context, options),
     });
     const values = form.watch();
+    const gtin = values.gtin.trim();
+    const existingGtin = values.gtinMode === "existing";
+    const gtinError = existingGtin || gtin ? catalogGtinError(gtin) : null;
+    const showGtinError = gtinError && (gtinVisited || values.gtin || form.formState.errors.gtin);
     const productGroupCode = values.productGroupCode
         ? Number(values.productGroupCode)
         : undefined;
@@ -209,6 +216,15 @@ export function CatalogCardForm({
         : [];
     const completion = catalogLayerCompletion(model, values);
     const locked = readOnly || sentRequest !== null;
+    const isNewCard = !submissionId && externalGoodId === 0;
+    const gtinLookup = useCatalogGtinLookup({
+        companyId,
+        gtin,
+        submissionId: savedId.current,
+        enabled: existingGtin && !locked && !gtinError,
+        automatic: isNewCard,
+    });
+    const duplicateGtin = isNewCard && gtinLookup.result?.state === "Found";
     const lookupCategories = () => {
         if (
             !productGroupCode ||
@@ -223,6 +239,7 @@ export function CatalogCardForm({
     const submit = async (request: CatalogCardRequest, send = false) => {
         const scope = captureMarkingScope();
         if (inFlight.current || readOnly) return;
+        if ((send || onStage) && (duplicateGtin || gtinLookup.isWaiting)) return;
         if (onStage) { onStage(request); onDirtyChange?.(false); return; }
         inFlight.current = true;
         sendIntent.current = send;
@@ -340,6 +357,10 @@ export function CatalogCardForm({
         mediaOpened ||
         Boolean(form.formState.errors.photoUrl || form.formState.errors.images);
     const coreFields = ["tnved", "gtin", "name", "brand"] as const;
+    const gtinFieldError = showGtinError
+        ? t(`honestSign.catalog.${gtinError}`)
+        : duplicateGtin ? t("honestSign.catalog.gtinCheck.alreadyRegistered")
+            : form.formState.errors.gtin?.message;
     const gtinPreflightConflict = isCatalogGtinPreflightConflict(
         getHttpErrorStatus(submissionError),
         getHttpErrorCode(submissionError),
@@ -474,7 +495,7 @@ export function CatalogCardForm({
                             }
                             maxLength={
                                 field === "gtin"
-                                    ? 14
+                                    ? undefined
                                     : field === "tnved"
                                       ? 10
                                       : field === "name"
@@ -485,6 +506,7 @@ export function CatalogCardForm({
                             }
                             type="text"
                             readOnly={Boolean(submissionId && field === "gtin")}
+                            onFocus={field === "gtin" ? () => setGtinVisited(true) : undefined}
                             disabled={
                                 field === "gtin" &&
                                 values.gtinMode !== "existing" &&
@@ -505,16 +527,21 @@ export function CatalogCardForm({
                                     lookupCategories();
                                 }
                             }}
-                            aria-invalid={Boolean(form.formState.errors[field])}
+                            aria-required={field === "gtin" ? existingGtin : undefined}
+                            aria-invalid={field === "gtin" ? Boolean(gtinFieldError) : Boolean(form.formState.errors[field])}
                             aria-describedby={`${idPrefix}-${field}-help`}
                         />
                         <div
                             id={`${idPrefix}-${field}-help`}
                             className="text-xs"
                         >
-                            {form.formState.errors[field]?.message ? (
+                            {(field === "gtin" ? gtinFieldError : form.formState.errors[field]?.message) ? (
                                 <p role="alert" className="text-destructive">
-                                    {form.formState.errors[field]?.message}
+                                    {field === "gtin" ? gtinFieldError : form.formState.errors[field]?.message}
+                                </p>
+                            ) : field === "gtin" && existingGtin && gtin ? (
+                                <p role="status" className="text-muted-foreground">
+                                    {t("honestSign.catalog.gtinValid")}
                                 </p>
                             ) : (
                                 ["gtin", "tnved", "brand"].includes(field) && (
@@ -524,6 +551,9 @@ export function CatalogCardForm({
                                 )
                             )}
                         </div>
+                        {field === "gtin" && existingGtin && (
+                            <CatalogGtinCheck lookup={gtinLookup} confirmedDuplicate={duplicateGtin} />
+                        )}
                         {field === "gtin" &&
                             values.gtinMode === "existing" &&
                             !submissionId && (
@@ -858,6 +888,8 @@ export function CatalogCardForm({
                                 attributes.isPending ||
                                 attributes.isError ||
                                 attributes.isFetching ||
+                                Boolean(gtinError) ||
+                                Boolean(onStage && (duplicateGtin || gtinLookup.isWaiting)) ||
                                 form.formState.isSubmitting
                             }
                         >
@@ -884,6 +916,9 @@ export function CatalogCardForm({
                                 attributes.isPending ||
                                 attributes.isError ||
                                 attributes.isFetching ||
+                                Boolean(gtinError) ||
+                                duplicateGtin ||
+                                gtinLookup.isWaiting ||
                                 form.formState.isSubmitting ||
                                 mutation.isPending
                             }

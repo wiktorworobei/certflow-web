@@ -264,6 +264,7 @@ function CatalogWorkspace({
                         <CatalogCardWorkflow
                             key={selected.id}
                             showTitle={false}
+                            showFeed={!selected.showFeed}
                             companyId={companyId}
                             submissionId={selected.id}
                             selectedThumbprint={selectedThumbprint}
@@ -277,6 +278,7 @@ function CatalogWorkspace({
                         <CatalogFeedProcessing
                             companyId={companyId}
                             submissionId={selected.id}
+                            gtin={selected.gtin}
                         />
                     )}
                 </DialogContent>

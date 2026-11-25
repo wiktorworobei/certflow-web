@@ -2,7 +2,8 @@ import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CatalogErrorDetails } from "@marking/components/honest-sign/CatalogErrorDetails";
-import { CatalogFeedMessages, CatalogFeedProviderStatus } from "@marking/components/honest-sign/CatalogFeedProcessing";
+import { CatalogFeedCardLookup } from "@marking/components/honest-sign/CatalogFeedCardLookup";
+import { CatalogFeedMessages } from "@marking/components/honest-sign/CatalogFeedProcessing";
 import { Notice } from "@marking/components/honest-sign/ui/notice";
 import { Badge } from "@marking/components/ui/badge";
 import { Button } from "@marking/components/ui/button";
@@ -106,8 +107,8 @@ export function CatalogSubmissionHistory({
                                                             {t("honestSign.catalog.workflow.previousFeedProcessing")}
                                                         </p>
                                                     )}
-                                                    <CatalogFeedProviderStatus data={feed} />
                                                     <CatalogFeedMessages data={feed} compact />
+                                                    <CatalogFeedCardLookup companyId={companyId} submissionId={row.id} gtin={row.gtin} data={feed} />
                                                 </div>
                                             )}
                                             {rejected && (previousFeed || !feed?.errors.length) && (

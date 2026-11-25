@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CatalogCardForm } from "@marking/components/honest-sign/CatalogCardForm";
+import { CatalogFeedCardLookup } from "@marking/components/honest-sign/CatalogFeedCardLookup";
+import { CatalogFeedMessages } from "@marking/components/honest-sign/CatalogFeedProcessing";
 import { CatalogErrorDetails } from "@marking/components/honest-sign/CatalogErrorDetails";
 import { Notice } from "@marking/components/honest-sign/ui/notice";
 import { Badge } from "@marking/components/ui/badge";
@@ -48,6 +50,7 @@ export function CatalogCardWorkflow({
     categories,
     productGroups,
     showTitle = true,
+    showFeed = true,
     focusSigning = false,
     onDirtyChange,
     onBusyChange,
@@ -58,6 +61,7 @@ export function CatalogCardWorkflow({
     categories?: CatalogCategory[];
     productGroups?: CatalogProductGroup[];
     showTitle?: boolean;
+    showFeed?: boolean;
     focusSigning?: boolean;
     onDirtyChange?: (dirty: boolean) => void;
     onBusyChange?: (busy: boolean) => void;
@@ -344,6 +348,12 @@ export function CatalogCardWorkflow({
                     {t("honestSign.catalog.refresh")}
                 </Button>
             </div>
+            {showFeed && feed.data && Boolean(feed.data.errors.length || feed.data.messages?.length) && (
+                <div className="space-y-2">
+                    <CatalogFeedMessages data={feed.data} compact />
+                    <CatalogFeedCardLookup companyId={companyId} submissionId={submissionId} gtin={data?.gtin} data={feed.data} />
+                </div>
+            )}
             {waitingForFeed ? (
                 <Notice role="status">
                     {t(

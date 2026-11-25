@@ -15,6 +15,7 @@ import type {
     DeclarationCatalogProduct,
     CatalogProductGroup,
     CatalogBrand,
+    CatalogGtinCheckResult,
     CatalogGtinReceipt,
     CatalogProductFilters,
     CatalogProductsPage,
@@ -69,6 +70,14 @@ export const catalogApiService = {
                 `${URL}/brands`,
                 { signal, params: { query, page } },
             ),
+        ),
+    checkGtin: (companyId: string, gtin: string, submissionId?: string, signal?: AbortSignal) =>
+        catalogCall(() =>
+            apiClient.get<CatalogGtinCheckResult>(`${URL}/gtins/check`, {
+                signal,
+                params: { gtin, submissionId },
+                headers: { "X-Company-Id": companyId },
+            }),
         ),
     generateGtins: (requestId: string, quantity = 1) =>
         catalogCall(() =>
