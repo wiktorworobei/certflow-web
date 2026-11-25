@@ -120,6 +120,7 @@ export type CatalogSubmission = {
     createdAtUtc: string;
     draftVersion?: string | null;
     identityPending?: boolean;
+    latestFeedStatus?: CatalogFeedStatus | null;
 };
 export type CatalogFeedStatus = {
     submissionId: string;
@@ -134,15 +135,28 @@ export type CatalogFeedStatus = {
         | null;
     receivedAtUtc: string | null;
     updatedAtUtc: string | null;
+    providerStatus?: string | null;
+    providerStatusId?: number | null;
+    providerTotalErrors?: number | null;
+    upstreamHttpStatus?: number | null;
     correlationId?: string | null;
     responseDiagnostics?: HonestSignResponseDiagnostics | null;
-    errors: Array<{
-        gtin: string | null;
-        attributeId: number | null;
-        parameter?: string | null;
-        code: string | null;
-        message: string;
-    }>;
+    errors: CatalogFeedMessage[];
+    messages?: CatalogFeedMessage[] | null;
+};
+
+export type CatalogFeedMessage = {
+    gtin: string | null;
+    attributeId: number | null;
+    attributeName?: string | null;
+    entryId?: number | null;
+    goodId?: number | null;
+    parameter?: string | null;
+    code: string | null;
+    message: string;
+    statusMessage?: string | null;
+    source?: string | null;
+    reason?: "DuplicateGtin" | null;
 };
 
 export type CatalogOperation = {

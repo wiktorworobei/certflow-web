@@ -2,6 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CatalogErrorDetails } from "@marking/components/honest-sign/CatalogErrorDetails";
+import { CatalogFeedMessages, CatalogFeedProviderStatus } from "@marking/components/honest-sign/CatalogFeedProcessing";
 import { Notice } from "@marking/components/honest-sign/ui/notice";
 import { Badge } from "@marking/components/ui/badge";
 import { Button } from "@marking/components/ui/button";
@@ -45,14 +46,16 @@ export function CatalogSubmissionHistory({
                     {t("honestSign.catalog.refresh")}
                 </Button>
             </div>
-            {submissions.isError ? (
-                <Notice variant="error" role="alert">
+            {submissions.isError && (
+                <Notice variant={submissions.data ? "warning" : "error"} role="alert">
+                    {submissions.data && <p>{t("honestSign.catalog.historyRefreshFailed")}</p>}
                     <p>{submissions.error.message}</p>
                     <CatalogErrorDetails error={submissions.error} />
                 </Notice>
-            ) : submissions.isPending ? (
+            )}
+            {submissions.isPending ? (
                 <Skeleton className="h-20 w-full" />
-            ) : !submissions.data?.items.length ? (
+            ) : !submissions.data ? null : !submissions.data.items.length ? (
                 <p className="text-sm text-muted-foreground">
                     {t("honestSign.catalog.emptyHistory")}
                 </p>
@@ -77,38 +80,53 @@ export function CatalogSubmissionHistory({
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {submissions.data.items.map((row) => (
-                                <TableRow key={row.id}>
-                                    <TableCell className="font-mono">
-                                        {row.gtin ||
-                                            t("honestSign.catalog.pendingGtin")}
-                                    </TableCell>
-                                    <TableCell>
-                                        {new Date(
-                                            row.createdAtUtc,
-                                        ).toLocaleString(i18n.language)}
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge variant="outline">
-                                            {t(
-                                                `honestSign.catalog.deliveryStates.${row.state}`,
+                            {submissions.data.items.map((row) => {
+                                const feed = row.latestFeedStatus;
+                                const previousFeed = feed && (row.state === "Draft" || feed.feedId !== row.feedId);
+                                const feedState = row.state === "Accepted" && row.feedId && !previousFeed
+                                    ? feed?.status : null;
+                                const rejected = row.state === "Rejected" || feedState === "Rejected";
+                                const status = feedState
+                                    ? t(`honestSign.catalog.feedStates.${feedState}`)
+                                    : t(`honestSign.catalog.deliveryStates.${row.state}`);
+                                return (
+                                    <TableRow key={row.id}>
+                                        <TableCell className="font-mono">
+                                            {row.gtin || t("honestSign.catalog.pendingGtin")}
+                                        </TableCell>
+                                        <TableCell>
+                                            {new Date(row.createdAtUtc).toLocaleString(i18n.language)}
+                                        </TableCell>
+                                        <TableCell className="min-w-52 max-w-md align-top whitespace-normal">
+                                            <Badge variant={rejected ? "destructive" : "outline"}>{status}</Badge>
+                                            {feed && (
+                                                <div className="mt-2 space-y-2">
+                                                    {previousFeed && (
+                                                        <p className="text-sm text-muted-foreground">
+                                                            {t("honestSign.catalog.workflow.previousFeedProcessing")}
+                                                        </p>
+                                                    )}
+                                                    <CatalogFeedProviderStatus data={feed} />
+                                                    <CatalogFeedMessages data={feed} compact />
+                                                </div>
                                             )}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="font-mono">
-                                        {row.feedId ?? "—"}
-                                    </TableCell>
-                                    <TableCell>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => onOpen(row.id)}
-                                        >
-                                            {t("honestSign.catalog.openCard")}
-                                        </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
+                                            {rejected && (previousFeed || !feed?.errors.length) && (
+                                                <p className="mt-2 text-sm text-muted-foreground">
+                                                    {t("honestSign.catalog.noRejectionReason")}
+                                                </p>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="font-mono">
+                                            {row.feedId ?? "—"}
+                                        </TableCell>
+                                        <TableCell>
+                                            <Button variant="outline" size="sm" onClick={() => onOpen(row.id)}>
+                                                {t("honestSign.catalog.openCard")}
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                );
+                            })}
                         </TableBody>
                     </Table>
                 </div>

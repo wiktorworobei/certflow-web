@@ -1277,6 +1277,7 @@
             "noCategories": "Catalog returned no active categories for the selected product group.",
             "history": "Catalog drafts and submissions",
             "emptyHistory": "No cards have been sent from this app. This is not the complete list in your Catalog account.",
+            "historyRefreshFailed": "The journal could not refresh. The last known statuses are shown.",
             "refresh": "Refresh",
             "created": "Created at",
             "delivery": "Feed delivery",
@@ -1292,6 +1293,19 @@
             "moderatedNotice": "Feed validation finished. Check product errors and the current card state above: processing a draft feed does not mean the card has passed moderation.",
             "signedNotice": "National Catalog reports approved cards as signed. This is a feed status; check the final card status in the account.",
             "rejectionReasons": "Honest Sign feedback",
+            "providerMessages": "National Catalog messages",
+            "feedDetails": {
+                "providerStatus": "National Catalog feed status",
+                "statusId": "Status code (status_id)",
+                "httpStatus": "National Catalog API response",
+                "totalErrors": "Total errors reported by National Catalog",
+                "messageCode": "National Catalog code {{code}}",
+                "validationMessages": "Processing remarks",
+                "itemStatus": "Item status",
+                "parameter": "Parameter {{name}}",
+                "source": "Response field {{source}}",
+                "duplicateGtin": "GTIN already exists in National Catalog"
+            },
             "correctRejection": "Correct the indicated data in the form above and submit the card again. These reasons are saved on the server and remain available when you reopen the card.",
             "noRejectionReason": "Detailed error information is unavailable.",
             "diagnostics": {
@@ -1359,8 +1373,8 @@
             },
             "feedStates": {
                 "Processing": "Waiting for processing",
-                "Received": "Accepted for processing",
-                "Moderated": "Feed validation finished",
+                "Received": "Data under moderation",
+                "Moderated": "Feed moderation completed",
                 "Signed": "Approved cards signed",
                 "Rejected": "Feed rejected"
             },

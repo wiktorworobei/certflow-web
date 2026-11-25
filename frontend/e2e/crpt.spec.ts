@@ -145,3 +145,33 @@ test('CRPT imports Excel-compatible CSV and saves drafts without publishing', as
   await page.getByRole('tab', { name: 'Удаление карточек', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Открыть песочницу ЧЗ', exact: true })).toHaveAttribute('href', 'https://markirovka.sandbox.crptech.ru/');
 });
+
+test('CRPT shows every saved provider rejection reason directly in the submission journal', async ({ page }) => {
+  const fixture = await crptFixtures(page);
+  const feedId = '24098';
+  const createdAtUtc = '2026-11-17T12:00:00Z';
+  const okpd2Error = 'Не заполнено значение параметра Код ОКПД2 для кода товара.';
+  const moderationError = 'Карточка товара находится на модерации и недоступна для редактирования.';
+  await page.route('**/catalog/submissions?*', route => route.fulfill({ json: {
+    items: [{
+      id: submissionId, gtin: draft.gtin, state: 'Rejected', feedId, sendToModeration: false, createdAtUtc,
+      latestFeedStatus: {
+        submissionId, feedId, submissionState: 'Rejected', status: 'Rejected', providerStatus: 'Rejected',
+        providerStatusId: 0, receivedAtUtc: createdAtUtc, updatedAtUtc: createdAtUtc,
+        errors: [
+          { gtin: draft.gtin, attributeId: 3961, code: '81', message: okpd2Error },
+          { gtin: draft.gtin, attributeId: null, code: '157', message: moderationError },
+        ],
+      },
+    }],
+    hasNextPage: false,
+  } }));
+
+  await page.goto('/#/crpt');
+  await page.getByRole('tab', { name: 'Журнал операций', exact: true }).click();
+  const entry = page.getByRole('row').filter({ hasText: feedId });
+  await expect(entry.getByText('Запрос отклонён НК', { exact: true })).toBeVisible();
+  await expect(entry.getByText(okpd2Error, { exact: true })).toBeVisible();
+  await expect(entry.getByText(moderationError, { exact: true })).toBeVisible();
+  expect(fixture.requests.some(path => path.endsWith(`/catalog/submissions/${submissionId}/status`))).toBe(false);
+});

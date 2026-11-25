@@ -5,6 +5,78 @@ import { Button } from "@marking/components/ui/button";
 import { Skeleton } from "@marking/components/ui/skeleton";
 import { useCatalogFeedStatus } from "@marking/hooks/use-honest-sign-catalog";
 
+import type { CatalogFeedMessage, CatalogFeedStatus } from "@marking/lib/honest-sign/catalogTypes";
+
+export function CatalogFeedProviderStatus({ data }: { data: CatalogFeedStatus }) {
+    const { t } = useTranslation();
+    const status = data.providerStatus;
+    const statusId = data.providerStatusId;
+    const httpStatus = data.upstreamHttpStatus;
+    const totalErrors = data.providerTotalErrors;
+    if (!status && statusId == null && httpStatus == null && totalErrors == null) return null;
+    return (
+        <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 text-xs">
+            {status && <><dt>{t("honestSign.catalog.feedDetails.providerStatus")}</dt><dd><code translate="no">{status}</code></dd></>}
+            {statusId != null && <><dt>{t("honestSign.catalog.feedDetails.statusId")}</dt><dd><code>{statusId}</code></dd></>}
+            {httpStatus != null && <><dt>{t("honestSign.catalog.feedDetails.httpStatus")}</dt><dd><code>HTTP {httpStatus}</code></dd></>}
+            {totalErrors != null && <><dt>{t("honestSign.catalog.feedDetails.totalErrors")}</dt><dd><code>{totalErrors}</code></dd></>}
+        </dl>
+    );
+}
+
+function CatalogFeedMessageList({ items, compact, title }: { items: CatalogFeedMessage[]; compact: boolean; title: string }) {
+    const { t } = useTranslation();
+    if (!items.length) return null;
+    return (
+        <section className={compact ? "space-y-1 text-sm" : "space-y-2 text-sm"} aria-label={title}>
+            <p className="font-medium">{title}</p>
+            <ul className={compact ? "list-disc space-y-2 pl-4" : "space-y-2"}>
+                {items.map((item, index) => {
+                    const httpCode = /^HTTP_(\d{3})$/.exec(item.code ?? "")?.[1];
+                    const facts = [
+                        httpCode ? `HTTP ${httpCode}` : item.code && t("honestSign.catalog.feedDetails.messageCode", { code: item.code }),
+                        item.gtin && `GTIN ${item.gtin}`,
+                        item.attributeName,
+                        item.attributeId != null && t("honestSign.catalog.attributeId", { id: item.attributeId }),
+                        item.parameter && t("honestSign.catalog.feedDetails.parameter", { name: item.parameter }),
+                        item.entryId != null && `entry ${item.entryId}`,
+                        item.goodId != null && `good_id ${item.goodId}`,
+                        item.source && t("honestSign.catalog.feedDetails.source", { source: item.source }),
+                    ].filter(Boolean);
+                    return (
+                        <li key={index} className={compact ? "min-w-0 wrap-anywhere" : "min-w-0 wrap-anywhere rounded-md border p-3"}>
+                            {item.reason === "DuplicateGtin" && (
+                                <p className="font-semibold">{t("honestSign.catalog.feedDetails.duplicateGtin")}</p>
+                            )}
+                            {item.message && <p className="whitespace-pre-wrap" translate="no">{item.message}</p>}
+                            {item.statusMessage && item.statusMessage !== item.message && (
+                                <p className="whitespace-pre-wrap">
+                                    <span className="font-medium">{t("honestSign.catalog.feedDetails.itemStatus")} · </span>
+                                    <span translate="no">{item.statusMessage}</span>
+                                </p>
+                            )}
+                            {!item.message && !item.statusMessage && <p>{t("honestSign.catalog.noRejectionReason")}</p>}
+                            {facts.length > 0 && <p className="mt-1 text-xs text-muted-foreground" translate="no">{facts.join(" · ")}</p>}
+                        </li>
+                    );
+                })}
+            </ul>
+        </section>
+    );
+}
+
+export function CatalogFeedMessages({ data, compact = false }: { data: CatalogFeedStatus; compact?: boolean }) {
+    const { t } = useTranslation();
+    const rejected = data.status === "Rejected" || data.submissionState === "Rejected";
+    return (
+        <>
+            <CatalogFeedMessageList items={data.errors} compact={compact} title={t(rejected
+                ? "honestSign.catalog.rejectionReasons" : "honestSign.catalog.feedDetails.validationMessages")} />
+            {data.messages && <CatalogFeedMessageList items={data.messages} compact={compact} title={t("honestSign.catalog.providerMessages")} />}
+        </>
+    );
+}
+
 export function CatalogFeedProcessing({
     companyId,
     submissionId,
@@ -84,49 +156,13 @@ export function CatalogFeedProcessing({
                             </p>
                         </Notice>
                         <CatalogErrorDetails diagnostics={status.data} />
+                        <CatalogFeedProviderStatus data={status.data} />
                         {status.data.errors.length > 0 && (
-                            <div className="space-y-2" role="status">
-                                <p className="text-sm font-medium">
-                                    {t("honestSign.catalog.rejectionReasons")}
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                    {t("honestSign.catalog.feedResultHelp")}
-                                </p>
-                                <ul className="space-y-2 text-sm">
-                                    {status.data.errors.map((e, index) => (
-                                        <li
-                                            key={index}
-                                            className="rounded-md border border-destructive/20 p-3"
-                                        >
-                                            {e.gtin && (
-                                                <span className="mr-2 font-mono">
-                                                    {e.gtin}
-                                                </span>
-                                            )}
-                                            {e.attributeId && (
-                                                <span>
-                                                    {t(
-                                                        "honestSign.catalog.attributeId",
-                                                        {
-                                                            id: e.attributeId,
-                                                        },
-                                                    )}{" "}
-                                                    ·{" "}
-                                                </span>
-                                            )}
-                                            {!e.attributeId && e.parameter && (
-                                                <span>{e.parameter} · </span>
-                                            )}
-                                            {e.code && <span>{e.code}: </span>}
-                                            {e.message ||
-                                                t(
-                                                    "honestSign.catalog.noRejectionReason",
-                                                )}
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
+                            <p className="text-sm text-muted-foreground">
+                                {t("honestSign.catalog.feedResultHelp")}
+                            </p>
                         )}
+                        <CatalogFeedMessages data={status.data} />
                     </>
                 )
             )}
