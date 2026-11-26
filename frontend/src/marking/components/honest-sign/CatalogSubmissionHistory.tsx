@@ -5,6 +5,7 @@ import { CatalogErrorDetails } from "@marking/components/honest-sign/CatalogErro
 import { CatalogFeedCardLookup } from "@marking/components/honest-sign/CatalogFeedCardLookup";
 import { CatalogFeedMessages } from "@marking/components/honest-sign/CatalogFeedProcessing";
 import { Notice } from "@marking/components/honest-sign/ui/notice";
+import { Select } from "@marking/components/honest-sign/ui/select";
 import { Badge } from "@marking/components/ui/badge";
 import { Button } from "@marking/components/ui/button";
 import { Skeleton } from "@marking/components/ui/skeleton";
@@ -20,16 +21,20 @@ import { useCatalogSubmissions } from "@marking/hooks/use-honest-sign-catalog";
 
 export function CatalogSubmissionHistory({
     companyId,
+    initialDraftOnly = false,
     onOpen,
     onOpenAttempts,
 }: {
     companyId: string;
+    initialDraftOnly?: boolean;
     onOpen: (id: string, retry?: boolean) => void;
     onOpenAttempts?: (id: string) => void;
 }) {
     const { t, i18n } = useTranslation();
     const [page, setPage] = useState(1);
+    const [draftOnly, setDraftOnly] = useState(initialDraftOnly);
     const submissions = useCatalogSubmissions(companyId, page);
+    const items = submissions.data?.items.filter((row) => !draftOnly || row.state === "Draft");
     return (
         <section
             className="space-y-3 border-t pt-5"
@@ -39,15 +44,29 @@ export function CatalogSubmissionHistory({
                 <h3 className="font-semibold">
                     {t("honestSign.catalog.history")}
                 </h3>
-                <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={submissions.isFetching}
-                    onClick={() => void submissions.refetch()}
-                >
-                    <RefreshCw className="size-4" aria-hidden="true" />
-                    {t("honestSign.catalog.refresh")}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                        className="w-auto"
+                        aria-label={t("honestSign.catalog.historyFilter")}
+                        value={draftOnly ? "draft" : "all"}
+                        onChange={(event) => {
+                            setDraftOnly(event.target.value === "draft");
+                            setPage(1);
+                        }}
+                    >
+                        <option value="all">{t("honestSign.catalog.historyFilterAll")}</option>
+                        <option value="draft">{t("honestSign.catalog.historyFilterDrafts")}</option>
+                    </Select>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={submissions.isFetching}
+                        onClick={() => void submissions.refetch()}
+                    >
+                        <RefreshCw className="size-4" aria-hidden="true" />
+                        {t("honestSign.catalog.refresh")}
+                    </Button>
+                </div>
             </div>
             {submissions.isError && (
                 <Notice variant={submissions.data ? "warning" : "error"} role="alert">
@@ -58,9 +77,9 @@ export function CatalogSubmissionHistory({
             )}
             {submissions.isPending ? (
                 <Skeleton className="h-20 w-full" />
-            ) : !submissions.data ? null : !submissions.data.items.length ? (
+            ) : !submissions.data ? null : !items?.length ? (
                 <p className="text-sm text-muted-foreground">
-                    {t("honestSign.catalog.emptyHistory")}
+                    {t(draftOnly ? "honestSign.catalog.emptyDraftPage" : "honestSign.catalog.emptyHistory")}
                 </p>
             ) : (
                 <div className="overflow-x-auto">
@@ -83,15 +102,17 @@ export function CatalogSubmissionHistory({
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {submissions.data.items.map((row) => {
+                            {items.map((row) => {
                                 const feed = row.latestFeedStatus;
                                 const previousFeed = row.state === "Draft" || Boolean(row.feedId && feed && feed.feedId !== row.feedId);
                                 const currentFeed = row.state === "Accepted" && row.feedId && !previousFeed ? feed : null;
                                 const feedState = currentFeed?.submissionState === "Rejected" ? "Rejected" : currentFeed?.status;
                                 const rejected = row.state === "Rejected" || feedState === "Rejected";
-                                const status = feedState
-                                    ? t(`honestSign.catalog.feedStates.${feedState}`)
-                                    : t(`honestSign.catalog.deliveryStates.${row.state}`);
+                                const status = row.state === "Draft"
+                                    ? t("honestSign.catalog.workflow.cardStates.local_draft")
+                                    : feedState
+                                      ? t(`honestSign.catalog.feedStates.${feedState}`)
+                                      : t(`honestSign.catalog.deliveryStates.${row.state}`);
                                 return (
                                     <TableRow key={row.id}>
                                         <TableCell className="font-mono">

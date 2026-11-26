@@ -20,6 +20,12 @@ import type { SubmittedUtilisationReport } from '../marking/lib/honest-sign/util
 import { CrptSuzReceipts } from './CrptSuzReceipts';
 import { CrptSuzSpecialReports } from './CrptSuzSpecialReports';
 import { CrptTurnoverWorkspace } from './CrptTurnoverWorkspace';
+import {
+  CrptUtilisationHistory,
+  utilisationHistoryKey,
+  utilisationStatusKey,
+  utilisationStatusLabel,
+} from './CrptUtilisationHistory';
 import type { CrptEnvironment } from './environment';
 
 type Section = 'utilisation' | 'introduction' | 'withdrawal' | 'receipts' | 'registry' | 'special';
@@ -63,10 +69,15 @@ export function CrptDocumentsWorkspace({
   );
   const hasSpecialReports = groups.data?.some((group) => specialUtilisationGroups.has(group));
   const status = useQuery({
-    queryKey: ['crpt-utilisation-status', companyId, environment, report?.reportId],
-    queryFn: () => documentsApiService.getUtilisationReportStatus(report!.reportId),
+    queryKey: utilisationStatusKey(companyId, environment, report?.reportId),
+    queryFn: async () => {
+      const result = await documentsApiService.getUtilisationReportStatus(report!.reportId);
+      void client.invalidateQueries({ queryKey: utilisationHistoryKey(companyId, environment) });
+      return result;
+    },
     enabled: section === 'utilisation' && !formOpen && !!report,
   });
+  const reportStatus = status.data?.status ?? report?.status;
 
   useEffect(() => {
     onUnsavedChange(dirty);
@@ -138,6 +149,9 @@ export function CrptDocumentsWorkspace({
             onSubmitted={(nextReport) => {
               setReport(nextReport);
               void client.invalidateQueries({
+                queryKey: utilisationHistoryKey(companyId, environment),
+              });
+              void client.invalidateQueries({
                 queryKey: ['crpt-suz-receipts', companyId, environment],
               });
               go('utilisation');
@@ -175,9 +189,17 @@ export function CrptDocumentsWorkspace({
             )}
             {report && (
               <div className="crpt-document-report">
-                <Alert severity={status.data?.status === 'SUCCESS' ? 'success' : 'info'}>
+                <Alert
+                  severity={
+                    reportStatus === 'SUCCESS'
+                      ? 'success'
+                      : reportStatus === 'FAILED'
+                        ? 'error'
+                        : 'info'
+                  }
+                >
                   Отчёт {report.reportId} · кодов {report.codesCount} ·{' '}
-                  {status.data?.status ?? report.status ?? 'Получен СУЗ'}
+                  {reportStatus ? utilisationStatusLabel(reportStatus) : 'Получен СУЗ'}
                   {status.data?.errorReason && <p>{status.data.errorReason}</p>}
                 </Alert>
                 {status.isError && <Alert severity="warning">{status.error.message}</Alert>}
@@ -200,7 +222,23 @@ export function CrptDocumentsWorkspace({
                 </div>
               </div>
             )}
-            <UtilisationBatchesHistory companyId={companyId} />
+            <CrptUtilisationHistory
+              companyId={companyId}
+              environment={environment}
+              productGroups={groups.data ?? noGroups}
+              onOpenReceipt={(id) => {
+                setReceiptId(id);
+                go('receipts');
+              }}
+            />
+            <UtilisationBatchesHistory
+              companyId={companyId}
+              onProcessed={() =>
+                void client.invalidateQueries({
+                  queryKey: utilisationHistoryKey(companyId, environment),
+                })
+              }
+            />
           </section>
         ))}
 

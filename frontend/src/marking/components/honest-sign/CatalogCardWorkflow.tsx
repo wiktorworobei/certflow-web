@@ -301,13 +301,14 @@ export function CatalogCardWorkflow({
     const receipt = check.data ?? action.data;
     const data = card.data;
     const hasCurrentCardLookup = catalogFeedLookupGtins(feed.data, data?.gtin).length > 0;
+    const isLocalDraft = Boolean(data?.draft && feed.data?.submissionState === "Draft");
     const providerStatus = catalogProviderStatus(data);
     const providerActions = catalogProviderActions(data);
     const canEditCard = Boolean(data?.canEdit && providerActions.canEdit);
     const published = data?.isSigned === true && providerStatus === "published";
-    const showModeration = Boolean(data && data.goodId > 0 && data.canModerate && providerActions.canModerate &&
+    const showModeration = Boolean(!isLocalDraft && data && data.goodId > 0 && data.canModerate && providerActions.canModerate &&
         acceptedModerationFor !== submissionId);
-    const showSigning = Boolean(data && data.goodId > 0 && data.canSign && providerActions.canSign &&
+    const showSigning = Boolean(!isLocalDraft && data && data.goodId > 0 && data.canSign && providerActions.canSign &&
         acceptedSigningFor !== submissionId);
     const retryRejected = !waitingForFeed && Boolean(
         canEditCard && (
@@ -524,11 +525,11 @@ export function CatalogCardWorkflow({
                                 {data.gtin ||
                                     t("honestSign.catalog.pendingGtin")}
                             </span>
-                            {catalogProductStatuses(data).map((state) => (
+                            {(isLocalDraft ? ["local_draft"] : catalogProductStatuses(data)).map((state) => (
                                 <Badge key={state} variant="outline">
                                     {t(
-                                        data.goodId === 0 && state === "draft"
-                                            ? "honestSign.catalog.deliveryStates.Draft"
+                                        state === "draft" && data.goodId <= 0
+                                            ? "honestSign.catalog.workflow.cardStates.unknown"
                                             : `honestSign.catalog.workflow.cardStates.${state}`,
                                         {
                                             defaultValue: t(

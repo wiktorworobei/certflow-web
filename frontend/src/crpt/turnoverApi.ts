@@ -2,9 +2,28 @@ import { apiClient, toHttpError } from '../marking/lib/honest-sign/httpClient';
 import type {
   TurnoverCapabilities,
   TurnoverCodeInfo,
-  TurnoverOperation,
   TurnoverReceipt,
+  TurnoverState,
 } from './turnover';
+
+export type TurnoverJournalSort = 'newest' | 'oldest' | 'groupAsc' | 'groupDesc';
+export type TurnoverJournalFilters = {
+  productGroup?: string;
+  documentType?: string;
+  state?: TurnoverState;
+  externalStatus?: string;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  sort?: TurnoverJournalSort;
+};
+type TurnoverJournalPage = {
+  items: TurnoverReceipt[];
+  hasNextPage: boolean;
+  total: number;
+  page: number;
+  pageSize: number;
+};
 
 const base = '/api/honest-sign/turnover';
 const detail = (id: string) => `${base}/${encodeURIComponent(id)}`;
@@ -21,10 +40,15 @@ async function request<T>(read: () => Promise<{ data: T }>): Promise<T> {
 export const turnoverApi = {
   capabilities: (signal: AbortSignal) =>
     request(() => apiClient.get<TurnoverCapabilities>(`${base}/capabilities`, { signal })),
-  page: (operation: TurnoverOperation, page: number, signal: AbortSignal) =>
+  page: (
+    operation: TurnoverReceipt['operation'],
+    page: number,
+    signal: AbortSignal,
+    filters: TurnoverJournalFilters & { pageSize?: number } = {},
+  ) =>
     request(() =>
-      apiClient.get<{ items: TurnoverReceipt[]; hasNextPage: boolean }>(base, {
-        params: { operation, page },
+      apiClient.get<TurnoverJournalPage>(base, {
+        params: { operation, page, ...filters },
         signal,
       }),
     ),

@@ -29,6 +29,7 @@ import {
   ORDER_TEMPLATE_OPTIONS,
   PRODUCT_GROUP_LABELS,
 } from '../marking/components/honest-sign/constants';
+import { CodesCheckWorkspace } from '../marking/components/honest-sign/CodesCheckWorkspace';
 import { assertMarkingScope, captureMarkingScope } from '../marking/lib/workspace-scope';
 import { downloadFile, exportSheet, readSheet } from './spreadsheet';
 import {
@@ -345,6 +346,7 @@ export function CrptSuzWorkspace({
         <Tab value="orders" label="Заказы КМ" />
         <Tab value="create" label="Создать заказ" />
         <Tab value="documents" label="Документы с кодами" />
+        <Tab value="code-check" label="Проверка кодов" />
         <Tab value="merge" label="Объединение файлов" />
         <Tab value="history" label="Журнал СУЗ" />
         <Tab value="help" label="Статусы и правила" />
@@ -1196,6 +1198,19 @@ export function CrptSuzWorkspace({
             </Button>
           </div>
         </section>
+      )}
+      {tab === 'code-check' && (
+        <div className="crpt-panel crpt-code-check">
+          {groups.isError && (
+            <Alert
+              severity="warning"
+              action={<Button onClick={() => void groups.refetch()}>Повторить</Button>}
+            >
+              Не удалось загрузить товарные группы.
+            </Alert>
+          )}
+          <CodesCheckWorkspace companyId={companyId} productGroups={groups.data ?? []} />
+        </div>
       )}
       {tab === 'help' && (
         <section className="crpt-panel crpt-suz-help">

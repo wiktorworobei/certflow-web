@@ -64,7 +64,7 @@ const operations: Record<string, string> = {
 const date = (value: number) =>
   value > 0 && Number.isFinite(value) ? new Date(value).toLocaleString('ru-RU') : '—';
 const day = (value: string) => Date.parse(`${value}T00:00:00Z`);
-const validId = (value: string) =>
+export const isSuzReceiptId = (value: string) =>
   /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value) && /[1-9a-f]/i.test(value);
 
 async function read<T>(
@@ -88,7 +88,7 @@ export function CrptSuzReceipts({ companyId, environment, initialReceiptId }: Pr
   const [page, setPage] = useState(1);
   const [lookupId, setLookupId] = useState(initialReceiptId ?? '');
   const [receiptId, setReceiptId] = useState(
-    initialReceiptId && validId(initialReceiptId) ? initialReceiptId : '',
+    initialReceiptId && isSuzReceiptId(initialReceiptId) ? initialReceiptId : '',
   );
   const [operationId, setOperationId] = useState('');
   const [codePage, setCodePage] = useState(0);
@@ -209,7 +209,7 @@ export function CrptSuzReceipts({ companyId, environment, initialReceiptId }: Pr
         className="crpt-toolbar crpt-document-lookup"
         onSubmit={(event) => {
           event.preventDefault();
-          if (validId(lookupId.trim())) open(lookupId.trim());
+          if (isSuzReceiptId(lookupId.trim())) open(lookupId.trim());
         }}
       >
         <TextField
@@ -219,7 +219,7 @@ export function CrptSuzReceipts({ companyId, environment, initialReceiptId }: Pr
           onChange={(event) => setLookupId(event.target.value)}
           inputProps={{ maxLength: 40 }}
         />
-        <Button type="submit" variant="outlined" disabled={!validId(lookupId.trim())}>
+        <Button type="submit" variant="outlined" disabled={!isSuzReceiptId(lookupId.trim())}>
           Найти квитанцию
         </Button>
       </form>

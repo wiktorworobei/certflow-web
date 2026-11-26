@@ -18,6 +18,7 @@ import { normalizeDataMatrixCode } from '../marking/lib/honest-sign/codeNormaliz
 import { cryptoProSignatureService } from '../marking/lib/honest-sign/cryptoProSignatureService';
 import { apiClient, toHttpError } from '../marking/lib/honest-sign/httpClient';
 import { assertMarkingScope, captureMarkingScope } from '../marking/lib/workspace-scope';
+import { utilisationHistoryKey } from './CrptUtilisationHistory';
 import type { CrptEnvironment } from './environment';
 import { turnoverApi } from './turnoverApi';
 import type { TurnoverReceipt } from './turnover';
@@ -216,6 +217,7 @@ export function CrptSuzSpecialReports({
         setInn('');
       }
       void client.invalidateQueries({ queryKey: journalKey });
+      void client.invalidateQueries({ queryKey: utilisationHistoryKey(companyId, environment) });
       void client.invalidateQueries({ queryKey: ['crpt-suz-receipts', companyId, environment] });
     },
   });

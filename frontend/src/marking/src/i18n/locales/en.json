@@ -1063,6 +1063,12 @@
             "sendingDraft": "Sending the draft to Catalog…",
             "createStage": "1. Basic card information",
             "detailsStage": "2. Attributes for moderation",
+            "wizard": {
+                "label": "Card creation steps",
+                "basics": "Basic information",
+                "details": "Attributes",
+                "submission": "Photos and submission"
+            },
             "draftDetailsHelp": "Basic information is enough to create a draft. Starred attributes are needed before the separate moderation action. Expand other sections when needed.",
             "requiredAttributes": "Required attributes for moderation",
             "otherAttributes": "Additional attributes",
@@ -1197,7 +1203,8 @@
                 "confirmReconcile": "I checked the card and the operation outcome in the Catalog account and confirm manual reconciliation.",
                 "reconcile": "Acknowledge reconciliation",
                 "cardStates": {
-                    "draft": "Catalog draft",
+                    "local_draft": "Draft",
+                    "draft": "Draft in Honest Sign",
                     "sending": "Awaiting the Catalog response",
                     "errors": "Changes required",
                     "moderation": "Under moderation",
@@ -1316,6 +1323,10 @@
             "noCategories": "Catalog returned no active categories for the selected product group.",
             "history": "Catalog drafts and submissions",
             "emptyHistory": "This journal has no drafts or submissions yet.",
+            "historyFilter": "Journal entries",
+            "historyFilterAll": "All entries",
+            "historyFilterDrafts": "Drafts",
+            "emptyDraftPage": "There are no drafts on this page.",
             "historyRefreshFailed": "The journal could not refresh. The last known statuses are shown.",
             "attempts": {
                 "title": "Submission attempts",
@@ -1433,8 +1444,8 @@
             },
             "feedStates": {
                 "Processing": "Waiting for processing",
-                "Received": "Data under moderation",
-                "Moderated": "Feed moderation completed",
+                "Received": "Honest Sign received the submission",
+                "Moderated": "Feed processing completed",
                 "Signed": "Approved cards signed",
                 "Rejected": "Feed rejected"
             },
@@ -1588,7 +1599,13 @@
             "statuses": {
                 "EMITTED": "Emitted",
                 "APPLIED": "Applied",
-                "INTRODUCED": "In circulation"
+                "INTRODUCED": "In circulation",
+                "WRITTEN_OFF": "Written off",
+                "RETIRED": "Withdrawn",
+                "WITHDRAWN": "Withdrawn",
+                "DISAGGREGATION": "Disaggregated",
+                "DISAGGREGATED": "Disaggregated",
+                "APPLIED_NOT_PAID": "Applied, payment pending"
             },
             "errors": {
                 "invalidFile": "Use a UTF-8 TXT or CSV file with one full marking code on each line.",

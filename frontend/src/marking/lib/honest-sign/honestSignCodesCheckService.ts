@@ -17,6 +17,7 @@ import {
     MAX_UTILISATION_REPORT_CODES,
     UTILISATION_CODE_CHECK_BATCH_SIZE,
 } from "@marking/lib/honest-sign/utilisationReport";
+import { assertMarkingScope, captureMarkingScope } from "@marking/lib/workspace-scope";
 import i18n from "@marking/src/i18n";
 import { useAuthStore } from "@marking/src/store/auth";
 import { useCompanyContextStore } from "@marking/src/store/company-context";
@@ -117,9 +118,11 @@ export const honestSignCodesCheckService = {
         options: HonestSignCodesCheckOptions = {},
     ): Promise<HonestSignCodesCheckSummary> {
         throwIfAborted(options.signal);
+        const markingScope = captureMarkingScope();
         const authVersion = useAuthStore.getState().version;
         const companyId = useCompanyContextStore.getState().selectedCompany?.id;
         const assertScope = () => {
+            assertMarkingScope(markingScope);
             if (
                 authVersion !== useAuthStore.getState().version ||
                 companyId !==
@@ -176,16 +179,16 @@ export const honestSignCodesCheckService = {
                         productGroup,
                         {
                             signal: options.signal,
-                            onProgress: (completed) =>
-                                options.onProgress?.(
-                                    offset + completed,
-                                    preparedCodes.length,
-                                ),
+                            onProgress: (completed) => {
+                                if (completed > 0)
+                                    options.onProgress?.(offset + completed, preparedCodes.length);
+                            },
                         },
                     ),
                 );
             }
 
+            assertScope();
             const items = summaries.flatMap((summary) => summary.items);
             const validCount = items.filter((item) => item.isValid).length;
             return {
@@ -201,22 +204,23 @@ export const honestSignCodesCheckService = {
             let stage: CheckStage = "cryptography";
             try {
                 assertScope();
+                const requestConfig = {
+                    signal: options.signal,
+                    authVersion,
+                    certflowScope: markingScope,
+                    crptScope: markingScope.crpt,
+                    timeout: CODE_CHECK_TIMEOUT_MS,
+                    headers: {
+                        Accept: "application/json",
+                        "Content-Type": "application/json",
+                        ...(companyId ? { "X-Company-Id": companyId } : {}),
+                    },
+                };
                 const postCheck = () =>
                     apiClient.post<CodesCheckResponse>(
                         CODES_CHECK_URL,
                         { codes: preparedCodes.map((item) => item.normalized) },
-                        {
-                            signal: options.signal,
-                            authVersion,
-                            timeout: CODE_CHECK_TIMEOUT_MS,
-                            headers: {
-                                Accept: "application/json",
-                                "Content-Type": "application/json",
-                                ...(companyId
-                                    ? { "X-Company-Id": companyId }
-                                    : {}),
-                            },
-                        },
+                        requestConfig,
                     );
                 // These POST methods only read code information. A bounded retry on an explicit
                 // 429 is safe; report submission and signing never pass through this path.
@@ -292,21 +296,10 @@ export const honestSignCodesCheckService = {
                 const infoResponse = await apiClient.post<CodeInfoResponse[]>(
                     CODES_INFO_URL,
                     {
-                        codes: preparedCodes.map(
-                            (item) => item.informationCode,
-                        ),
+                        codes: [...new Set(preparedCodes.map((item) => item.informationCode))],
                         productGroup: productGroup?.trim() || null,
                     },
-                    {
-                        signal: options.signal,
-                        authVersion,
-                        timeout: CODE_CHECK_TIMEOUT_MS,
-                        headers: {
-                            Accept: "application/json",
-                            "Content-Type": "application/json",
-                            ...(companyId ? { "X-Company-Id": companyId } : {}),
-                        },
-                    },
+                    requestConfig,
                 );
                 throwIfAborted(options.signal);
                 assertScope();
@@ -334,7 +327,7 @@ export const honestSignCodesCheckService = {
                 const items = cryptoItems.map((item) => {
                     const info = infoByCode.get(item.informationCode) ?? null;
                     const infoError = info
-                        ? info.errorMessage || info.errorCode || ""
+                        ? info.errorMessage || (info.errorCode === "0" ? "" : info.errorCode) || ""
                         : i18n.t("honestSign.dmCheck.noInformation");
                     const reasons = infoError
                         ? [...item.reasons, infoError]
@@ -361,6 +354,7 @@ export const honestSignCodesCheckService = {
 
                 throwIfAborted(options.signal);
                 options.onProgress?.(items.length, preparedCodes.length);
+                assertScope();
 
                 return {
                     items,

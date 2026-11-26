@@ -14,6 +14,7 @@ const archiveCode = `${cis}\x1d93TEST`;
 const contourPath = (environment: string) =>
   `/api/firms/${companyId}/crpt/${environment}/honest-sign`;
 const receiptPath = '/reports/receipts';
+const historyPath = '/reports/utilisation/history';
 
 function makeReceipt(resultDocId: string) {
   return {
@@ -124,6 +125,176 @@ async function mockDocumentsApi(page: Page) {
   });
   return { requests, errors };
 }
+
+test('Submitted report history survives reload, filters all pages and opens the saved receipt', async ({
+  page,
+}) => {
+  const { errors } = await mockDocumentsApi(page);
+  const base = contourPath('sandbox') + historyPath;
+  const selection: URLSearchParams[] = [];
+  let checked = false;
+  const legacyId = '66666666-6666-4666-8666-666666666666';
+  const savedReport = () => ({
+    id: legacyId,
+    reportId,
+    source: 'Single',
+    kind: 'UTILISATION',
+    productGroup: checked ? 'toys' : null,
+    codesCount: 1,
+    status: 'FAILED',
+    providerStatus: 'FAILED',
+    errorReason: checked ? 'Код отклонён при обработке отчёта' : null,
+    createdAtUtc: '2026-11-26T12:00:00Z',
+    lastCheckedAtUtc: checked ? '2026-11-26T12:03:00Z' : null,
+  });
+  await page.route(
+    (url) => url.pathname === base,
+    (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      selection.push(params);
+      const filtered = params.get('productGroup') === 'toys';
+      return route.fulfill({
+        json: {
+          items: [
+            params.get('page') === '2'
+              ? {
+                  ...savedReport(),
+                  id: archiveId,
+                  reportId: productionReportId,
+                  source: 'Batch',
+                  fileName: 'отчёт.csv',
+                  productGroup: 'toys',
+                  status: 'SUCCESS',
+                  providerStatus: 'SUCCESS',
+                }
+              : savedReport(),
+          ],
+          totalCount: filtered ? 1 : 21,
+          hasNextPage: !filtered && params.get('page') === '1',
+        },
+      });
+    },
+  );
+  await page.route(`**${base}/${legacyId}/refresh`, (route) => {
+    expect(route.request().method()).toBe('POST');
+    checked = true;
+    return route.fulfill({ json: savedReport() });
+  });
+
+  await page.goto('/#/crpt?service=documents');
+  const history = page.getByRole('region', { name: 'История отчётов о нанесении' });
+  await expect(history).toBeVisible({ timeout: 20_000 });
+  const saved = history.getByRole('row', { name: new RegExp(reportId) });
+  await expect(saved).toContainText('Ошибка обработки');
+  await expect(history.getByText('Найдено отчётов: 21')).toBeVisible();
+  await saved.getByRole('button', { name: 'Проверить статус' }).click();
+  await expect(saved).toContainText('Код отклонён при обработке отчёта');
+
+  await history.getByRole('button', { name: 'Далее' }).click();
+  await expect(history.getByRole('row', { name: new RegExp(productionReportId) })).toContainText(
+    'отчёт.csv',
+  );
+  await expect(history.getByText('Страница 2 из 2')).toBeVisible();
+  await history.getByRole('combobox', { name: 'Товарная группа' }).click();
+  await page.getByRole('option', { name: /игрушки/i }).click();
+  await history.getByRole('combobox', { name: 'Статус' }).click();
+  await page.getByRole('option', { name: 'Ошибка обработки' }).click();
+  await history.getByRole('combobox', { name: 'Сортировка' }).click();
+  await page.getByRole('option', { name: 'По названию группы (Я–А)' }).click();
+  await history.getByRole('textbox', { name: 'ID отчёта' }).fill(reportId.slice(0, 8));
+  await history.getByRole('button', { name: 'Применить' }).click();
+  await expect(history.getByText('Страница 1 из 1')).toBeVisible();
+  expect(Object.fromEntries(selection.at(-1)!)).toMatchObject({
+    page: '1',
+    productGroup: 'toys',
+    status: 'FAILED',
+    sort: 'groupDesc',
+    reportId: reportId.slice(0, 8),
+  });
+
+  await page.reload();
+  await expect(history).toBeVisible({ timeout: 20_000 });
+  await expect(saved).toContainText('Код отклонён при обработке отчёта');
+  await saved.getByRole('button', { name: 'Квитанция СУЗ' }).click();
+  const receipt = page.getByRole('dialog', { name: 'Квитанция СУЗ' });
+  await expect(receipt).toContainText(reportId);
+  await expect(receipt.getByText('Обработано ГИС МТ')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('SUZ files are checked explicitly in two stages with the chosen group', async ({ page }) => {
+  const { errors } = await mockDocumentsApi(page);
+  const root = contourPath('sandbox');
+  const checks: string[] = [];
+  const otherCis = '010460000000000021TEST000000002';
+  const otherCode = `${otherCis}\x1d93OTHER`;
+  const badCode = `${cis}\x1d93INVALID`;
+  await page.route(`**${root}/codes/check`, (route) => {
+    expect(route.request().method()).toBe('POST');
+    expect(route.request().postDataJSON()).toEqual({ codes: [archiveCode, otherCode, badCode] });
+    checks.push('check');
+    return route.fulfill({ json: { result: false, codes: [badCode] } });
+  });
+  await page.route(`**${root}/codes/info`, (route) => {
+    expect(route.request().method()).toBe('POST');
+    expect(route.request().postDataJSON()).toEqual({
+      codes: [cis, otherCis],
+      productGroup: 'toys',
+    });
+    checks.push('info');
+    return route.fulfill({
+      json: [
+        {
+          requestedCode: otherCis,
+          cis: otherCis,
+          status: 'APPLIED',
+          productName: 'Второй тестовый товар',
+        },
+        {
+          requestedCode: cis,
+          cis,
+          status: 'WRITTEN_OFF',
+          extendedStatus: 'TEST_DETAIL',
+          errorCode: '0',
+          productName: 'Первый тестовый товар',
+        },
+      ],
+    });
+  });
+
+  await page.goto('/#/crpt?service=suz');
+  await page.getByRole('tab', { name: 'Проверка кодов', exact: true }).click({ timeout: 20_000 });
+  const check = page.getByRole('region', { name: 'Проверка ДМ' });
+  await check.locator('input[type=file]').setInputFiles([
+    {
+      name: 'партия.CSV',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(`\uFEFFcode\r\n"${cis}<GS>93TEST"\r\n`),
+    },
+    {
+      name: 'партия.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(`${archiveCode}\n${otherCis}\\x1D93OTHER\n${badCode}`),
+    },
+  ]);
+  await expect(check.getByText('Уникальных кодов: 3')).toBeVisible();
+  await expect(check.getByText(/Повторяющихся строк: 1/)).toBeVisible();
+  expect(checks).toEqual([]);
+  await check.getByRole('combobox', { name: 'Товарная группа' }).selectOption('toys');
+  await check.getByRole('button', { name: 'Проверить коды', exact: true }).click();
+  const results = check.getByRole('region', { name: 'Результаты проверки' });
+  await expect(results.getByText('Проверено: 3 · без ошибок: 2 · с замечаниями: 1')).toBeVisible();
+  await results.getByRole('combobox', { name: 'Показать' }).selectOption('issues');
+  await expect(
+    results.getByText('Списан', { exact: true }).filter({ visible: true }),
+  ).toBeVisible();
+  await expect(
+    results.getByText('TEST_DETAIL', { exact: true }).filter({ visible: true }),
+  ).toBeVisible();
+  await expect(results.getByText(archiveCode, { exact: true })).toHaveCount(0);
+  expect(checks).toEqual(['check', 'info']);
+  expect(errors).toEqual([]);
+});
 
 test('Documents show completed SUZ receipts and their code results in the selected environment', async ({
   page,

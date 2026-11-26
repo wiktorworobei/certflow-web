@@ -14,6 +14,9 @@ export const PRODUCT_GROUP_LABELS: Record<string, string> = {
     water: "Упакованная вода",
     "soft-drinks": "Безалкогольные напитки",
     shoes: "Обувь",
+    toys: "Игры и игрушки для детей",
+    radio: "Радиоэлектронная продукция",
+    chemistry: "Косметика, бытовая химия и товары личной гигиены",
 };
 
 export const ORDER_TEMPLATE_OPTIONS: OrderTemplateOption[] = [

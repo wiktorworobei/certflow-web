@@ -8,6 +8,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Loader2, Save } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import { Controller, useForm } from "react-hook-form";
+import type { FieldErrors, FieldPath } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { CatalogAttributeGroups } from "@marking/components/honest-sign/CatalogAttributeGroups";
 import { CatalogBrandLookup } from "@marking/components/honest-sign/CatalogBrandLookup";
@@ -62,6 +63,11 @@ import type {
     CatalogFeedStatus,
 } from "@marking/lib/honest-sign/catalogTypes";
 
+const creationSteps = ["basics", "details", "submission"] as const;
+const stepFields = [
+    ["productGroupCode", "gtinMode", "composition", "tnved", "categoryId", "gtin", "name", "brand"],
+    ["unit", "baseLevel", "baseMultiplier", "identifiers", "setGtins", "attributes"],
+] satisfies FieldPath<CatalogFormValues>[][];
 type ClassificationOption = { id: string; label: string };
 const filterClassification = createFilterOptions<ClassificationOption>({
     stringify: ({ id, label }) => `${label} ${id}`,
@@ -160,6 +166,9 @@ export function CatalogCardForm({
     const [checkingReceipt, setCheckingReceipt] = useState(false);
     const [mediaOpened, setMediaOpened] = useState(false);
     const [gtinVisited, setGtinVisited] = useState(false);
+    const [step, setStep] = useState(0);
+    const wizard = !submissionId && !readOnly;
+    const finalStep = !wizard || step === creationSteps.length - 1;
     const client = useQueryClient();
     const savedId = useRef(submissionId);
     const savedReceipt = useRef<CatalogSubmission | null>(null);
@@ -445,17 +454,48 @@ export function CatalogCardForm({
             validateModeration.current = false;
         }
     };
-    function focusInvalid() {
-        // Optional fields stay mounted. Open their error groups before moving focus.
+    function focusError() {
+        // Wait for optional groups with validation errors to open before moving focus.
         requestAnimationFrame(() => {
             const root = document.getElementById(`${idPrefix}-form`);
-            const invalid = root?.querySelector<HTMLElement>(
-                '[aria-invalid="true"]:not([disabled])',
+            const invalid = Array.from(root?.querySelectorAll<HTMLElement>(
+                '[aria-invalid="true"]:not(:disabled)',
+            ) ?? []).find(
+                (element) => element.getClientRects().length > 0,
             );
             invalid?.focus();
             invalid?.scrollIntoView({ block: "nearest" });
         });
     }
+    function focusInvalid(errors: FieldErrors<CatalogFormValues>) {
+        if (wizard) {
+            const target = stepFields.findIndex((fields) => fields.some((field) => errors[field]));
+            setStep(target < 0 ? creationSteps.length - 1 : target);
+        }
+        focusError();
+    }
+    const moveStep = (next: number) => {
+        setStep(next);
+        requestAnimationFrame(() => document.getElementById(`${idPrefix}-step-${next}`)?.focus());
+    };
+    const nextStep = async () => {
+        if (finalStep || busy || locked || (step === 1 && !modelReady)) return;
+        const valid = await form.trigger(stepFields[step]);
+        if (step === 0 && !productGroupCode) {
+            form.setError("productGroupCode", { message: t("honestSign.catalog.required") });
+            focusError();
+        } else if (!valid) {
+            focusError();
+        } else {
+            moveStep(step + 1);
+        }
+    };
+    const saveDraft = form.handleSubmit(
+        (v) => (modelReady || sentRequest) && submit(
+            sentRequest ?? buildCatalogCardRequest(v, model, requestId.current),
+        ),
+        focusInvalid,
+    );
     const mediaOpen =
         mediaOpened ||
         Boolean(form.formState.errors.photoUrl || form.formState.errors.images);
@@ -473,25 +513,8 @@ export function CatalogCardForm({
         "error.honest_sign_catalog_request_payload_conflict";
     const sendDisabled = !modelReady || Boolean(gtinError) || duplicateGtin || gtinLookup.isWaiting ||
         form.formState.isSubmitting || mutation.isPending;
-    return (
-        <form
-            id={`${idPrefix}-form`}
-            className="space-y-6"
-            aria-busy={busy}
-            noValidate
-            onSubmit={form.handleSubmit(
-                (v) =>
-                    submit(
-                        sentRequest ??
-                            buildCatalogCardRequest(
-                                v,
-                                model,
-                                requestId.current,
-                            ),
-                    ),
-                focusInvalid,
-            )}
-        >
+    const basics = (
+        <div hidden={wizard && step !== 0} className="space-y-6">
             {declaration && !initialCard && <Notice>
                 <p>Декларация {declaration.reference}: {declaration.registrationNumber || 'регистрационный номер не указан'}.</p>
                 <Button type="button" variant="outline" disabled={locked} onClick={() => {
@@ -556,7 +579,7 @@ export function CatalogCardForm({
                 className="grid min-w-0 gap-4 md:grid-cols-2"
                 disabled={locked}
             >
-                <legend className="mb-3 text-sm font-semibold">
+                <legend className={wizard ? "sr-only" : "mb-3 text-sm font-semibold"}>
                     {t("honestSign.catalog.createStage")}
                 </legend>
                 {coreFields.map((field) => (
@@ -792,6 +815,10 @@ export function CatalogCardForm({
                     </p>
                 </FormField>
             </fieldset>
+        </div>
+    );
+    const details = (
+        <div hidden={wizard && step !== 1} className="space-y-6">
             <CatalogPackagingFields
                 form={form}
                 values={values}
@@ -800,11 +827,11 @@ export function CatalogCardForm({
             />
             {categoryId > 0 && (
                 <section
-                    className="space-y-4 border-t pt-4"
+                    className={wizard ? "space-y-4" : "space-y-4 border-t pt-4"}
                     aria-label={t("honestSign.catalog.characteristics")}
                 >
                     <div>
-                        <h3 className="font-semibold">
+                        <h3 className={wizard ? "sr-only" : "font-semibold"}>
                             {t("honestSign.catalog.detailsStage")}
                         </h3>
                         <p className="text-sm text-muted-foreground">
@@ -857,6 +884,10 @@ export function CatalogCardForm({
                     )}
                 </section>
             )}
+        </div>
+    );
+    const media = (
+        <div hidden={!finalStep}>
             <Collapsible
                 open={mediaOpen}
                 onOpenChange={setMediaOpened}
@@ -916,12 +947,53 @@ export function CatalogCardForm({
                     />
                 </CollapsibleContent>
             </Collapsible>
+        </div>
+    );
+    return (
+        <form
+            id={`${idPrefix}-form`}
+            className="space-y-6"
+            aria-busy={busy}
+            noValidate
+            onSubmit={(event) => {
+                if (!wizard) {
+                    void saveDraft(event);
+                    return;
+                }
+                event.preventDefault();
+                if (!finalStep) void nextStep();
+            }}
+        >
+            {wizard && (
+                <nav aria-label={t("honestSign.catalog.wizard.label")}>
+                    <ol className="grid grid-cols-3 gap-2">
+                        {creationSteps.map((key, index) => (
+                            <li key={key}>
+                                <span
+                                    id={`${idPrefix}-step-${index}`}
+                                    tabIndex={index === step ? -1 : undefined}
+                                    aria-current={index === step ? "step" : undefined}
+                                    className={`flex h-full items-center gap-2 rounded-lg border px-2 py-2 text-xs sm:px-3 sm:text-sm ${index === step ? "border-primary bg-primary/10 font-semibold text-foreground" : "text-muted-foreground"}`}
+                                >
+                                    <span aria-hidden="true" className="font-semibold">{index + 1}</span>
+                                    {t(`honestSign.catalog.wizard.${key}`)}
+                                </span>
+                            </li>
+                        ))}
+                    </ol>
+                </nav>
+            )}
+            {basics}
+            {details}
+            {media}
             <div className="space-y-3 border-t pt-4">
-                <p className="text-sm text-muted-foreground">
-                    {t(canResubmitForModeration
-                        ? "honestSign.catalog.workflow.correctionSubmissionNotice"
-                        : "honestSign.catalog.publicationNotice")}
-                </p>
+                {finalStep && (
+                    <p className="text-sm text-muted-foreground">
+                        {t(canResubmitForModeration
+                            ? "honestSign.catalog.workflow.correctionSubmissionNotice"
+                            : "honestSign.catalog.publicationNotice")}
+                    </p>
+                )}
                 {submissionError && (
                     <Notice
                         variant={gtinPreflightConflict ? "warning" : "error"}
@@ -960,18 +1032,23 @@ export function CatalogCardForm({
                     </p>
                 )}
                 <div className="flex flex-wrap gap-3">
-                    {!locked && (
+                    {wizard && step > 0 && (
+                        <Button type="button" variant="outline" disabled={busy} onClick={() => moveStep(step - 1)}>
+                            {t("common.back")}
+                        </Button>
+                    )}
+                    {!finalStep && !locked && (
+                        <Button type="button" disabled={busy || (step === 1 && !modelReady)} onClick={() => void nextStep()}>
+                            {t("common.next")}
+                        </Button>
+                    )}
+                    {!locked && (!onStage || finalStep) && (
                         <Button
-                            type="submit"
+                            type="button"
                             variant="outline"
+                            onClick={() => void saveDraft()}
                             disabled={
-                                !productGroupCode ||
-                                !categoryId ||
-                                matchingCategories.isFetching ||
-                                matchingCategories.isError ||
-                                attributes.isPending ||
-                                attributes.isError ||
-                                attributes.isFetching ||
+                                !modelReady ||
                                 Boolean(gtinError) ||
                                 Boolean(onStage && (duplicateGtin || gtinLookup.isWaiting)) ||
                                 form.formState.isSubmitting
@@ -988,7 +1065,7 @@ export function CatalogCardForm({
                             {onStage ? 'Добавить в пакет' : t("honestSign.catalog.createDraft")}
                         </Button>
                     )}
-                    {!locked && !onStage && (
+                    {finalStep && !locked && !onStage && (
                         <Button
                             type="button"
                             onClick={() => void sendCurrent()}
@@ -1005,7 +1082,7 @@ export function CatalogCardForm({
                             )}
                         </Button>
                     )}
-                    {!locked && !onStage && !identityLocked && (
+                    {finalStep && !locked && !onStage && !identityLocked && (
                         <Button
                             type="button"
                             variant="outline"
@@ -1033,6 +1110,7 @@ export function CatalogCardForm({
                                 form.reset(emptyCatalogForm);
                                 setCategoryId(0);
                                 setLookupTnved("");
+                                setStep(0);
                                 setSentRequest(null);
                                 requestId.current = crypto.randomUUID();
                                 mutation.reset();

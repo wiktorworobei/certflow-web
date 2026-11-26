@@ -12,21 +12,23 @@ import { useUtilisationBatchProcessor } from "@marking/hooks/use-utilisation-bat
 import { useUtilisationBatches } from "@marking/hooks/use-utilisation-batches";
 import { useAuthStore } from "@marking/src/store/auth";
 
-export function UtilisationBatchesHistory({
-    companyId,
-}: {
+type Props = {
     companyId: string;
-}) {
+    onProcessed?: () => void;
+};
+
+export function UtilisationBatchesHistory({ companyId, onProcessed }: Props) {
     const actorId = useAuthStore((state) => state.user?.id ?? "anonymous");
     return (
         <ScopedUtilisationBatchesHistory
             key={`${companyId}:${actorId}`}
             companyId={companyId}
+            onProcessed={onProcessed}
         />
     );
 }
 
-function ScopedUtilisationBatchesHistory({ companyId }: { companyId: string }) {
+function ScopedUtilisationBatchesHistory({ companyId, onProcessed }: Props) {
     const { t, i18n } = useTranslation();
     const [page, setPage] = useState(1);
     const [selected, setSelected] = useState("");
@@ -163,7 +165,10 @@ function ScopedUtilisationBatchesHistory({ companyId }: { companyId: string }) {
                     batchId={selected}
                     processing={processor.isProcessing}
                     processError={processor.error}
-                    onContinue={() => void processor.processBatch(selected)}
+                    onContinue={async () => {
+                        await processor.processBatch(selected);
+                        onProcessed?.();
+                    }}
                 />
             )}
         </section>

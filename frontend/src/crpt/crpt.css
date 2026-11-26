@@ -495,11 +495,39 @@
 .crpt-suz-filters > .MuiTextField-root {
   flex: 1;
 }
+.crpt-code-check {
+  padding: 0;
+}
+.crpt-code-check > .MuiAlert-root {
+  margin-inline: 24px;
+}
 .crpt-document-report {
   display: grid;
   gap: 10px;
   margin-block: 16px;
   min-width: 0;
+}
+.crpt-utilisation-history {
+  margin-block: 22px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--cf-border);
+}
+.crpt-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.crpt-utilisation-history .crpt-filters {
+  padding-bottom: 2px;
+}
+.crpt-utilisation-history .crpt-pagination > div {
+  flex-wrap: wrap;
+}
+.crpt-utilisation-history .crpt-pagination .MuiTextField-root {
+  width: 112px;
+  margin-block: 6px;
 }
 .crpt-document-lookup {
   margin-block-end: 16px;

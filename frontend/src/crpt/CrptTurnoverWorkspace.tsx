@@ -40,7 +40,7 @@ import {
   type TurnoverReceipt,
   type TurnoverState,
 } from './turnover';
-import { turnoverApi } from './turnoverApi';
+import { turnoverApi, type TurnoverJournalFilters, type TurnoverJournalSort } from './turnoverApi';
 
 type Props = {
   companyId: string;
@@ -72,6 +72,18 @@ const stateLabels: Record<TurnoverState, string> = {
   OutcomeUnknown: 'Исход неизвестен',
 };
 const dateFormat = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+const journalDateFormat = new Intl.DateTimeFormat('ru-RU', {
+  dateStyle: 'short',
+  timeStyle: 'short',
+  timeZone: 'UTC',
+});
+const defaultJournalFilters: TurnoverJournalFilters = { sort: 'newest' };
+const journalSortOptions: Record<TurnoverJournalSort, string> = {
+  newest: 'Сначала новые',
+  oldest: 'Сначала старые',
+  groupAsc: 'По коду группы (А–Я)',
+  groupDesc: 'По коду группы (Я–А)',
+};
 const titleOf = (type: string) => turnoverNames[type] ?? type;
 const groupName = (group: string) => PRODUCT_GROUP_LABELS[group] ?? group;
 const normaliseThumbprint = (value: string) => value.replace(/[^a-f0-9]/gi, '').toUpperCase();
@@ -123,6 +135,9 @@ export function CrptTurnoverWorkspace({
   const authVersion = useAuthStore((state) => state.version);
   const [view, setView] = useState<'compose' | 'journal'>('compose');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [journalDraft, setJournalDraft] = useState(defaultJournalFilters);
+  const [journalFilters, setJournalFilters] = useState(defaultJournalFilters);
   const [group, setGroup] = useState('');
   const [type, setType] = useState('');
   const [fields, setFields] = useState<TurnoverFields>({});
@@ -170,10 +185,19 @@ export function CrptTurnoverWorkspace({
     queryFn: () => participantsApiService.getParticipantProductGroups(),
   });
   const ledger = useQuery({
-    queryKey: [...ledgerKey, page],
-    queryFn: ({ signal }) => turnoverApi.page(operation, page, signal),
+    queryKey: [...ledgerKey, journalFilters, pageSize, page],
+    queryFn: ({ signal }) =>
+      turnoverApi.page(operation, page, signal, { ...journalFilters, pageSize }),
     enabled: view === 'journal',
   });
+  const total = ledger.data?.total;
+  const lastPage =
+    total === undefined
+      ? undefined
+      : Math.max(1, Math.ceil(total / (ledger.data?.pageSize ?? pageSize)));
+  useEffect(() => {
+    if (lastPage !== undefined && page > lastPage) setPage(lastPage);
+  }, [lastPage, page]);
   const details = useQuery({
     queryKey: detailKey(selectedId),
     queryFn: ({ signal }) => turnoverApi.get(selectedId!, signal),
@@ -182,6 +206,29 @@ export function CrptTurnoverWorkspace({
   });
   const receipt = details.data;
   const caps = capabilities.data;
+  const journalGroups = [
+    ...new Set([
+      ...Object.keys(PRODUCT_GROUP_LABELS),
+      ...(groups.data ?? []),
+      ...(caps?.productGroupRules?.map((rule) => rule.productGroup) ?? []),
+      ...(ledger.data?.items.map((item) => item.productGroup) ?? []),
+      ...(journalDraft.productGroup ? [journalDraft.productGroup] : []),
+    ]),
+  ].sort((left, right) => groupName(left).localeCompare(groupName(right), 'ru'));
+  const journalTypes = caps
+    ? caps.documentTypes
+        .filter((item) => item.operation === operation)
+        .map((item) => item.documentType)
+    : Object.keys(turnoverNames).filter(
+        (documentType) =>
+          (operation === 'Withdrawal') === ['LK_RECEIPT', 'LK_GTIN_RECEIPT'].includes(documentType),
+      );
+  const invalidJournalDates = Boolean(
+    journalDraft.dateFrom && journalDraft.dateTo && journalDraft.dateFrom > journalDraft.dateTo,
+  );
+  const journalFiltered = Object.entries(journalFilters).some(
+    ([key, value]) => key !== 'sort' && Boolean(value),
+  );
   const eligibleTypes = allowedTurnoverTypes(caps, group, operation);
   const selectedType = eligibleTypes.some((item) => item.documentType === type) ? type : '';
   const structured = hasStructuredTurnover(selectedType, group);
@@ -410,6 +457,10 @@ export function CrptTurnoverWorkspace({
   const canPrepare = Boolean(
     caps && group && selectedType && (jsonMode ? manualJson.trim() : codesText.trim()),
   );
+  const editJournalFilter = <Key extends keyof TurnoverJournalFilters>(
+    key: Key,
+    value: TurnoverJournalFilters[Key],
+  ) => setJournalDraft((previous) => ({ ...previous, [key]: value || undefined }));
 
   return (
     <section className="crpt-panel">
@@ -423,6 +474,9 @@ export function CrptTurnoverWorkspace({
         value={view}
         onChange={(_, value: 'compose' | 'journal') => setView(value)}
         aria-label="Документы оборота"
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
       >
         <Tab value="compose" label="Подготовить документ" disabled={busy} />
         <Tab value="journal" label="Журнал документов" disabled={busy} />
@@ -622,27 +676,164 @@ export function CrptTurnoverWorkspace({
           <TurnoverError error={prepare.error} />
         </form>
       ) : (
-        <div className="space-y-3 pt-4">
-          <Button
-            variant="outlined"
-            disabled={busy || ledger.isFetching}
-            onClick={() => void ledger.refetch()}
+        <section
+          className="space-y-3 pt-4"
+          aria-label={
+            operation === 'Introduction' ? 'Журнал ввода в оборот' : 'Журнал вывода из оборота'
+          }
+        >
+          <form
+            className="space-y-3"
+            aria-label="Фильтры журнала"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (invalidJournalDates) return;
+              setJournalFilters({
+                ...journalDraft,
+                externalStatus: journalDraft.externalStatus?.trim() || undefined,
+                search: journalDraft.search?.trim() || undefined,
+              });
+              setPage(1);
+            }}
           >
-            Обновить журнал
-          </Button>
-          {ledger.isFetching && <LinearProgress />}
+            <div className="crpt-filters">
+              <TextField
+                select
+                size="small"
+                label="Товарная группа"
+                value={journalDraft.productGroup ?? ''}
+                onChange={(event) => editJournalFilter('productGroup', event.target.value)}
+              >
+                <MenuItem value="">Все группы</MenuItem>
+                {journalGroups.map((value) => (
+                  <MenuItem key={value} value={value}>
+                    {groupName(value)}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                select
+                size="small"
+                label="Вид документа"
+                value={journalDraft.documentType ?? ''}
+                onChange={(event) => editJournalFilter('documentType', event.target.value)}
+              >
+                <MenuItem value="">Все виды</MenuItem>
+                {journalTypes.map((value) => (
+                  <MenuItem key={value} value={value}>
+                    {titleOf(value)}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                select
+                size="small"
+                label="Состояние документа"
+                value={journalDraft.state ?? ''}
+                onChange={(event) =>
+                  editJournalFilter('state', event.target.value as TurnoverState)
+                }
+              >
+                <MenuItem value="">Все состояния</MenuItem>
+                {Object.entries(stateLabels).map(([key, label]) => (
+                  <MenuItem key={key} value={key}>
+                    {label}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                size="small"
+                label="Статус ЧЗ"
+                value={journalDraft.externalStatus ?? ''}
+                onChange={(event) => editJournalFilter('externalStatus', event.target.value)}
+              />
+              <TextField
+                size="small"
+                label="Идентификатор"
+                placeholder="ID документа, операции или запроса"
+                value={journalDraft.search ?? ''}
+                onChange={(event) => editJournalFilter('search', event.target.value)}
+              />
+              <TextField
+                type="date"
+                size="small"
+                label="Создан с (UTC)"
+                InputLabelProps={{ shrink: true }}
+                value={journalDraft.dateFrom ?? ''}
+                onChange={(event) => editJournalFilter('dateFrom', event.target.value)}
+                error={invalidJournalDates}
+              />
+              <TextField
+                type="date"
+                size="small"
+                label="Создан по (UTC)"
+                InputLabelProps={{ shrink: true }}
+                value={journalDraft.dateTo ?? ''}
+                onChange={(event) => editJournalFilter('dateTo', event.target.value)}
+                error={invalidJournalDates}
+              />
+              <TextField
+                select
+                size="small"
+                label="Сортировка"
+                value={journalDraft.sort ?? 'newest'}
+                onChange={(event) =>
+                  editJournalFilter('sort', event.target.value as TurnoverJournalSort)
+                }
+              >
+                {Object.entries(journalSortOptions).map(([key, label]) => (
+                  <MenuItem key={key} value={key}>
+                    {label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </div>
+            {invalidJournalDates && <Alert severity="error">Начальная дата позже конечной.</Alert>}
+            <div className="crpt-toolbar">
+              <Button type="submit" variant="contained" disabled={invalidJournalDates || busy}>
+                Применить фильтры
+              </Button>
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setJournalDraft(defaultJournalFilters);
+                  setJournalFilters(defaultJournalFilters);
+                  setPage(1);
+                }}
+              >
+                Сбросить фильтры
+              </Button>
+              <Button
+                type="button"
+                variant="outlined"
+                disabled={busy || ledger.isFetching}
+                onClick={() => void ledger.refetch()}
+              >
+                Обновить журнал
+              </Button>
+            </div>
+          </form>
+          {ledger.isFetching && <LinearProgress aria-label="Загрузка журнала" />}
           <TurnoverError error={ledger.error} />
-          {ledger.data?.items.length === 0 && <p>В журнале пока нет документов.</p>}
+          {ledger.isSuccess && ledger.data.items.length === 0 && (
+            <p>
+              {journalFiltered
+                ? 'По выбранным фильтрам документов нет.'
+                : 'В журнале пока нет документов.'}
+            </p>
+          )}
           {!!ledger.data?.items.length && (
             <div className="crpt-table-wrap">
               <table className="crpt-table">
                 <thead>
                   <tr>
-                    <th>Создан</th>
+                    <th>Создан (UTC)</th>
                     <th>Вид документа</th>
                     <th>Товарная группа</th>
                     <th>Строки</th>
-                    <th>Статус</th>
+                    <th>Состояние</th>
+                    <th>Статус ЧЗ</th>
                     <th>Действие</th>
                   </tr>
                 </thead>
@@ -650,7 +841,7 @@ export function CrptTurnoverWorkspace({
                   {ledger.data.items.map((item) => (
                     <tr key={item.id}>
                       <td className="crpt-date">
-                        {dateFormat.format(new Date(item.createdAtUtc))}
+                        {journalDateFormat.format(new Date(item.createdAtUtc))}
                       </td>
                       <td>{titleOf(item.documentType)}</td>
                       <td>{groupName(item.productGroup)}</td>
@@ -658,6 +849,7 @@ export function CrptTurnoverWorkspace({
                       <td>
                         <TurnoverStateBadge receipt={item} />
                       </td>
+                      <td>{item.externalStatus || '—'}</td>
                       <td>
                         <Button
                           size="small"
@@ -667,7 +859,7 @@ export function CrptTurnoverWorkspace({
                             openReceipt(item.id);
                           }}
                         >
-                          Открыть
+                          {item.state === 'Prepared' ? 'Продолжить' : 'Открыть'}
                         </Button>
                       </td>
                     </tr>
@@ -676,22 +868,47 @@ export function CrptTurnoverWorkspace({
               </table>
             </div>
           )}
-          <div className="crpt-toolbar">
-            <Button
-              disabled={page === 1 || ledger.isFetching}
-              onClick={() => setPage((value) => value - 1)}
-            >
-              Назад
-            </Button>
-            <span>Страница {page}</span>
-            <Button
-              disabled={!ledger.data?.hasNextPage || ledger.isFetching}
-              onClick={() => setPage((value) => value + 1)}
-            >
-              Далее
-            </Button>
+          <div className="crpt-pagination">
+            <span aria-live="polite">
+              {total === undefined ? '' : `Документов: ${total} · `}
+              Страница {ledger.data?.page ?? page}
+              {lastPage !== undefined ? ` из ${lastPage}` : ''}
+            </span>
+            <div>
+              <TextField
+                select
+                size="small"
+                label="На странице"
+                value={pageSize}
+                disabled={busy}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value));
+                  setPage(1);
+                }}
+              >
+                {[20, 50, 100].map((size) => (
+                  <MenuItem key={size} value={size}>
+                    {size}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <Button
+                aria-label="Предыдущая страница журнала"
+                disabled={busy || page === 1 || ledger.isFetching}
+                onClick={() => setPage((value) => value - 1)}
+              >
+                Назад
+              </Button>
+              <Button
+                aria-label="Следующая страница журнала"
+                disabled={busy || !ledger.data?.hasNextPage || ledger.isFetching}
+                onClick={() => setPage((value) => value + 1)}
+              >
+                Далее
+              </Button>
+            </div>
           </div>
-        </div>
+        </section>
       )}
       <Dialog
         open={selectedId !== null}
@@ -721,6 +938,8 @@ export function CrptTurnoverWorkspace({
                 <TurnoverStateBadge receipt={receipt} />
                 <span>Строк: {receipt.codesCount}</span>
               </div>
+              <p className="break-all">ID операции: {receipt.id}</p>
+              {receipt.requestId && <p className="break-all">ID запроса: {receipt.requestId}</p>}
               {receipt.externalDocumentId && (
                 <p className="break-all">ID документа ЧЗ: {receipt.externalDocumentId}</p>
               )}

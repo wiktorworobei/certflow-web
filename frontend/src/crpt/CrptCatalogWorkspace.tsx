@@ -105,6 +105,7 @@ export function CrptCatalogWorkspace({
 }) {
   const client = useQueryClient();
   const [tab, setTab] = useState('products');
+  const [historyDraftOnly, setHistoryDraftOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<CatalogProductFilters>({
     fromDate: '2000-01-01',
@@ -449,7 +450,9 @@ export function CrptCatalogWorkspace({
       <Tabs
         value={tab}
         onChange={(_, value: string) => {
-          if (!locked) setTab(value);
+          if (locked) return;
+          setHistoryDraftOnly(false);
+          setTab(value);
         }}
         variant="scrollable"
         scrollButtons="auto"
@@ -500,6 +503,16 @@ export function CrptCatalogWorkspace({
                 }}
               >
                 {awaitingSignatureLabel}
+              </Button>
+              <Button
+                variant="outlined"
+                disabled={locked}
+                onClick={() => {
+                  setHistoryDraftOnly(true);
+                  setTab('history');
+                }}
+              >
+                Черновики
               </Button>
               <div className="crpt-toolbar-spacer" />
               <Button
@@ -600,7 +613,7 @@ export function CrptCatalogWorkspace({
               >
                 <MenuItem value="all">Все статусы</MenuItem>
                 <MenuItem value="published">Опубликованные</MenuItem>
-                <MenuItem value="draft">Черновики и модерация</MenuItem>
+                <MenuItem value="draft">Черновики ЧЗ и модерация</MenuItem>
                 <MenuItem value="archived">В архиве</MenuItem>
               </TextField>
               <TextField
@@ -614,7 +627,7 @@ export function CrptCatalogWorkspace({
                 }}
               >
                 <MenuItem value="all">Все состояния</MenuItem>
-                <MenuItem value="draft">Черновик</MenuItem>
+                <MenuItem value="draft">Черновик в ЧЗ</MenuItem>
                 <MenuItem value="moderation">На модерации</MenuItem>
                 <MenuItem value="notsigned">{awaitingSignatureLabel}</MenuItem>
                 <MenuItem value="errors">Требует изменений</MenuItem>
@@ -981,6 +994,7 @@ export function CrptCatalogWorkspace({
         <div className="crpt-panel">
           <CatalogSubmissionHistory
             companyId={companyId}
+            initialDraftOnly={historyDraftOnly}
             onOpen={(id, retry) => {
               setDirty(false);
               setDetail({ id, retry });

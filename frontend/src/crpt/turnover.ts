@@ -7,6 +7,7 @@ export type TurnoverState =
   'Prepared' | 'Sending' | 'Submitted' | 'Accepted' | 'Rejected' | 'OutcomeUnknown';
 export type TurnoverReceipt = {
   id: string;
+  requestId?: string;
   operation: TurnoverOperation | 'SuzReport';
   documentType: string;
   productGroup: string;
