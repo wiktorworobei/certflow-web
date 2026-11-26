@@ -45,11 +45,12 @@ export const catalogApiService = {
         page: number,
         filters: CatalogProductFilters,
         signal?: AbortSignal,
+        pageSize = 50,
     ) =>
         catalogCall(() =>
             apiClient.get<CatalogProductsPage>(`${URL}/products`, {
                 signal,
-                params: { page, pageSize: 50, ...filters },
+                params: { page, pageSize, ...filters },
             }),
         ),
     trackProduct: (goodId: number, gtin: string) =>

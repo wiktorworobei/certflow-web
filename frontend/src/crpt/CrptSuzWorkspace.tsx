@@ -33,12 +33,18 @@ import { assertMarkingScope, captureMarkingScope } from '../marking/lib/workspac
 import { downloadFile, exportSheet, readSheet } from './spreadsheet';
 import {
   blankSuzRow,
+  bufferStatusColors,
   bufferStatuses,
   buildSuzOrders,
   cisOptions,
   codesCsv,
+  getSuzReceivingProducts,
+  getSuzRecoveryProducts,
   importSuzRows,
+  isSuzOrderExhausted,
+  isSuzProductExhausted,
   operationStatuses,
+  orderStatusColors,
   orderStatuses,
   parseSuzCodes,
   releaseOptions,
@@ -46,15 +52,19 @@ import {
   type SuzBatchOrder,
   type SuzCatalogItem,
   type SuzOrder,
+  type SuzProduct,
   type SuzReceipt,
   type SuzRow,
 } from './suz';
 import { suzApi } from './suzApi';
 import type { CrptEnvironment } from './environment';
+import { SuzCatalogProductPicker } from './SuzCatalogProductPicker';
 
 const fmt = (n: number | null | undefined) => (n == null ? '—' : n.toLocaleString('ru'));
 const date = (s: string | null) => (s ? new Date(s).toLocaleString('ru-RU') : '—');
 const label = (group: string) => PRODUCT_GROUP_LABELS[group] ?? group;
+const initialCodesQuantity = (product?: SuzProduct) =>
+  String(Math.min(product?.availableCodes ?? 100, 100));
 type Props = {
   companyId: string;
   environment: CrptEnvironment;
@@ -86,7 +96,9 @@ export function CrptSuzWorkspace({
   const [review, setReview] = useState<SuzReceipt[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [preparationTotal, setPreparationTotal] = useState(0);
-  const [codesOrder, setCodesOrder] = useState<SuzOrder | null>(null);
+  const [codesDialog, setCodesDialog] = useState<{ order: SuzOrder; recovery: boolean } | null>(
+    null,
+  );
   const [codeGtin, setCodeGtin] = useState('');
   const [quantity, setCodesQuantity] = useState('100');
   const [blocks, setBlocks] = useState<
@@ -177,12 +189,37 @@ export function CrptSuzWorkspace({
   });
   const run = (fn: () => Promise<void>) => task.mutate(fn);
   const busy = task.isPending;
+  const codesOrder =
+    codesDialog &&
+    (orders.data?.items.find((order) => order.orderId === codesDialog.order.orderId) ??
+      codesDialog.order);
+  const recovery = codesDialog?.recovery === true;
+  const codesProducts = codesOrder
+    ? recovery
+      ? getSuzRecoveryProducts(codesOrder)
+      : getSuzReceivingProducts(codesOrder)
+    : [];
+  const codeProduct = codesProducts.find((product) => product.gtin === codeGtin);
+  const maxQuantity = Math.min(codeProduct?.availableCodes ?? 10_000, 10_000);
+  const validQuantity =
+    /^[0-9]+$/.test(quantity) && Number(quantity) >= 1 && Number(quantity) <= maxQuantity;
+  const codesAvailable = codesProducts.length > 0;
+  useEffect(() => {
+    if (!busy && codesDialog && !codesAvailable) {
+      setCodesDialog(null);
+      setMessage(
+        'Статус заказа изменился. Обновите список заказов, чтобы увидеть доступные действия.',
+      );
+    }
+  }, [busy, codesDialog, codesAvailable]);
   const update = (id: string, change: Partial<SuzRow>) =>
     setRows((prev) => prev.map((x) => (x.id === id ? { ...x, ...change } : x)));
-  const startCodes = (order: SuzOrder) => {
-    setCodesOrder(order);
-    setCodeGtin(order.products[0]?.gtin ?? '');
-    setCodesQuantity('100');
+  const startCodes = (order: SuzOrder, recover = false) => {
+    const [product] = recover ? getSuzRecoveryProducts(order) : getSuzReceivingProducts(order);
+    if (!product?.gtin) return;
+    setCodesDialog({ order, recovery: recover });
+    setCodeGtin(product.gtin);
+    setCodesQuantity(initialCodesQuantity(product));
     setBlock('');
     setBlocks([]);
   };
@@ -266,12 +303,15 @@ export function CrptSuzWorkspace({
             x.orderId,
             x.productionOrderId ?? '',
             date(x.createdAtUtc),
-            orderStatuses[x.status] ?? x.status,
+            (orderStatuses[x.status] ?? x.status) +
+              (isSuzOrderExhausted(x) ? ' · Коды исчерпаны' : ''),
             p.gtin ?? '',
             String(p.totalCodes ?? ''),
             String(p.totalPassed ?? ''),
             String(p.availableCodes ?? ''),
-            bufferStatuses[p.status ?? ''] ?? p.status ?? '',
+            isSuzProductExhausted(p)
+              ? bufferStatuses.EXHAUSTED
+              : (bufferStatuses[p.status ?? ''] ?? p.status ?? ''),
             p.rejectionReason ?? x.declineReason ?? '',
           ]),
         ),
@@ -474,6 +514,7 @@ export function CrptSuzWorkspace({
                     onExpand={() => setExpanded(expanded === order.orderId ? null : order.orderId)}
                     busy={busy}
                     onCodes={() => startCodes(order)}
+                    onRecover={() => startCodes(order, true)}
                     onClose={() =>
                       run(async () => {
                         const receipt = await suzApi.prepare(crypto.randomUUID(), 'Close', {
@@ -731,7 +772,17 @@ export function CrptSuzWorkspace({
                     label="Группа товара"
                     value={row.group}
                     disabled={busy}
-                    onChange={(e) => update(row.id, { group: e.target.value })}
+                    onChange={(e) =>
+                      update(row.id, {
+                        group: e.target.value,
+                        ...(row.catalogProduct && {
+                          catalogProduct: undefined,
+                          gtin: '',
+                          name: '',
+                          cis: 'UNIT',
+                        }),
+                      })
+                    }
                   >
                     <MenuItem value="">Выберите группу</MenuItem>
                     {(groups.data ?? []).map((x) => (
@@ -743,12 +794,31 @@ export function CrptSuzWorkspace({
                       <MenuItem value={row.group}>{label(row.group)} · из импорта</MenuItem>
                     )}
                   </TextField>
+                  <SuzCatalogProductPicker
+                    key={row.group}
+                    companyId={companyId}
+                    environment={environment}
+                    selectedThumbprint={selectedThumbprint}
+                    productGroup={row.group}
+                    value={row.catalogProduct ?? null}
+                    disabled={busy}
+                    onChange={(product) =>
+                      update(row.id, {
+                        catalogProduct: product ?? undefined,
+                        gtin: product?.gtin ?? '',
+                        name: product?.name ?? '',
+                        cis: product?.cisType ?? 'UNIT',
+                      })
+                    }
+                  />
                   <TextField
                     size="small"
                     label="GTIN · 14 цифр"
                     value={row.gtin}
                     disabled={busy}
-                    onChange={(e) => update(row.id, { gtin: e.target.value })}
+                    onChange={(e) =>
+                      update(row.id, { gtin: e.target.value, catalogProduct: undefined })
+                    }
                     inputProps={{ maxLength: 14 }}
                   />
                   <TextField
@@ -1140,7 +1210,12 @@ export function CrptSuzWorkspace({
               {Object.entries(orderStatuses).map(([id, text]) => (
                 <p key={id}>
                   <code>{id}</code>
-                  <span>{text}</span>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={text}
+                    color={orderStatusColors[id] ?? 'default'}
+                  />
                 </p>
               ))}
             </div>
@@ -1149,7 +1224,12 @@ export function CrptSuzWorkspace({
               {Object.entries(bufferStatuses).map(([id, text]) => (
                 <p key={id}>
                   <code>{id}</code>
-                  <span>{text}</span>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={text}
+                    color={bufferStatusColors[id] ?? 'default'}
+                  />
                 </p>
               ))}
             </div>
@@ -1241,16 +1321,18 @@ export function CrptSuzWorkspace({
           </Button>
         </DialogActions>
       </Dialog>
-      {codesOrder && (
+      {codesOrder && codesAvailable && (
         <Dialog
           open={true}
           onClose={() => {
-            if (!busy) setCodesOrder(null);
+            if (!busy) setCodesDialog(null);
           }}
           maxWidth="sm"
           fullWidth
         >
-          <DialogTitle>Получить коды маркировки</DialogTitle>
+          <DialogTitle>
+            {recovery ? 'Восстановить выданный блок' : 'Получить коды маркировки'}
+          </DialogTitle>
           <DialogContent>
             {error && <Alert severity="error">{error}</Alert>}
             <p className="crpt-mono">{codesOrder?.orderId}</p>
@@ -1258,35 +1340,48 @@ export function CrptSuzWorkspace({
               <TextField
                 select
                 label="GTIN заказа"
-                value={codeGtin}
+                value={codeProduct ? codeGtin : ''}
                 disabled={busy}
                 onChange={(e) => {
                   setCodeGtin(e.target.value);
+                  setCodesQuantity(
+                    initialCodesQuantity(
+                      codesProducts.find((product) => product.gtin === e.target.value),
+                    ),
+                  );
                   setBlock('');
                   setBlocks([]);
                 }}
               >
-                {codesOrder?.products
-                  .filter((x) => x.gtin)
-                  .map((x) => (
-                    <MenuItem key={x.gtin} value={x.gtin!}>
-                      {x.gtin} · {bufferStatuses[x.status ?? ''] ?? x.status}
-                    </MenuItem>
-                  ))}
+                {!codeProduct && (
+                  <MenuItem value="" disabled>
+                    Выберите GTIN
+                  </MenuItem>
+                )}
+                {codesProducts.map((x) => (
+                  <MenuItem key={x.gtin} value={x.gtin!}>
+                    {x.gtin} ·{' '}
+                    {recovery
+                      ? (bufferStatuses[x.status ?? ''] ?? x.status)
+                      : `доступно ${fmt(x.availableCodes)}`}
+                  </MenuItem>
+                ))}
               </TextField>
-              <TextField
-                label="Количество кодов"
-                value={quantity}
-                disabled={busy || !!block}
-                onChange={(e) => setCodesQuantity(e.target.value)}
-                inputProps={{ inputMode: 'numeric' }}
-                helperText="Новая порция: от 1 до 10 000 кодов"
-              />
+              {!recovery && (
+                <TextField
+                  label="Количество кодов"
+                  value={quantity}
+                  disabled={busy || !!block}
+                  onChange={(e) => setCodesQuantity(e.target.value)}
+                  inputProps={{ inputMode: 'numeric' }}
+                  helperText={`Новая порция от 1 до ${fmt(maxQuantity)} кодов`}
+                />
+              )}
               <Button
-                disabled={busy || !codeGtin}
+                disabled={busy || !codeProduct}
                 onClick={() =>
                   run(async () => {
-                    const value = await suzApi.blocks(codesOrder!.orderId, codeGtin);
+                    const value = await suzApi.blocks(codesOrder.orderId, codeGtin);
                     const list = Array.isArray(value)
                       ? value
                       : ((value as { blocks?: unknown[] }).blocks ?? []);
@@ -1301,10 +1396,12 @@ export function CrptSuzWorkspace({
                 select
                 label="Получение кодов"
                 value={block}
-                disabled={busy}
+                disabled={busy || !codeProduct}
                 onChange={(e) => setBlock(e.target.value)}
               >
-                <MenuItem value="">Новая порция кодов</MenuItem>
+                <MenuItem value="" disabled={recovery}>
+                  {recovery ? 'Выберите выданный блок' : 'Новая порция кодов'}
+                </MenuItem>
                 {blocks.map((x) => (
                   <MenuItem key={x.blockId} value={x.blockId}>
                     Повторить блок {x.blockId} · {fmt(x.quantity)}
@@ -1318,20 +1415,16 @@ export function CrptSuzWorkspace({
             </Alert>
           </DialogContent>
           <DialogActions>
-            <Button disabled={busy} onClick={() => setCodesOrder(null)}>
+            <Button disabled={busy} onClick={() => setCodesDialog(null)}>
               Отмена
             </Button>
             <Button
               variant="contained"
-              disabled={
-                busy ||
-                !codeGtin ||
-                (!block && (!/^[0-9]+$/.test(quantity) || +quantity < 1 || +quantity > 10000))
-              }
+              disabled={busy || !codeProduct || (!block && (recovery || !validQuantity))}
               onClick={() =>
                 run(async () => {
                   const payload = {
-                    orderId: codesOrder!.orderId,
+                    orderId: codesOrder.orderId,
                     gtin: codeGtin,
                     quantity: block ? 1 : Number(quantity),
                     ...(block ? { blockId: block } : {}),
@@ -1346,13 +1439,13 @@ export function CrptSuzWorkspace({
                   if (result.state === 'Accepted') {
                     downloadAttempt.current = null;
                     saveCsv(result);
-                    setCodesOrder(null);
+                    setCodesDialog(null);
                     setMessage(`Сохранено кодов: ${result.codesCount}.`);
                   } else setError(result.message ?? 'Проверьте журнал и список выданных блоков.');
                 })
               }
             >
-              {block ? 'Восстановить блок' : 'Получить и сохранить'}
+              {recovery || block ? 'Восстановить блок' : 'Получить и сохранить'}
             </Button>
           </DialogActions>
         </Dialog>
@@ -1412,6 +1505,7 @@ function OrderRows({
   onSelect,
   onExpand,
   onCodes,
+  onRecover,
   onClose,
   busy,
 }: {
@@ -1421,9 +1515,13 @@ function OrderRows({
   onSelect: () => void;
   onExpand: () => void;
   onCodes: () => void;
+  onRecover: () => void;
   onClose: () => void;
   busy: boolean;
 }) {
+  const exhausted = isSuzOrderExhausted(order);
+  const receivable = getSuzReceivingProducts(order).length > 0;
+  const recoverable = getSuzRecoveryProducts(order).length > 0;
   return (
     <>
       <tr>
@@ -1445,18 +1543,15 @@ function OrderRows({
         </td>
         <td>{date(order.createdAtUtc)}</td>
         <td>
-          <Chip
-            size="small"
-            variant="outlined"
-            label={orderStatuses[order.status] ?? order.status}
-            color={
-              order.status === 'DECLINED'
-                ? 'error'
-                : order.status === 'READY'
-                  ? 'success'
-                  : 'default'
-            }
-          />
+          <div className="crpt-suz-statuses">
+            <Chip
+              size="small"
+              variant="outlined"
+              label={orderStatuses[order.status] ?? (order.status || 'Неизвестно')}
+              color={orderStatusColors[order.status] ?? 'default'}
+            />
+            {exhausted && <Chip size="small" variant="outlined" label="Коды исчерпаны" />}
+          </div>
           {order.declineReason && <small>{order.declineReason}</small>}
         </td>
         <td>{fmt(order.totalCodes)}</td>
@@ -1464,9 +1559,14 @@ function OrderRows({
         <td>{fmt(order.remainingCodes)}</td>
         <td>
           <div className="crpt-suz-row-actions">
-            <Button size="small" disabled={busy || order.status !== 'READY'} onClick={onCodes}>
+            <Button size="small" disabled={busy || !receivable} onClick={onCodes}>
               Получить коды
             </Button>
+            {!receivable && recoverable && (
+              <Button size="small" disabled={busy} onClick={onRecover}>
+                Восстановить выданный блок
+              </Button>
+            )}
             <Button
               size="small"
               disabled={busy || ['CLOSED', 'DECLINED'].includes(order.status)}
@@ -1481,26 +1581,31 @@ function OrderRows({
         <tr>
           <td colSpan={8}>
             <div className="crpt-suz-buffers">
-              {order.products.map((p, i) => (
-                <div key={i}>
-                  <strong className="crpt-mono">{p.gtin}</strong>
-                  <Chip
-                    size="small"
-                    label={bufferStatuses[p.status ?? ''] ?? p.status ?? 'Неизвестно'}
-                  />
-                  <span>
-                    Запрошено: {fmt(p.totalCodes)} · получено: {fmt(p.totalPassed)} · доступно:{' '}
-                    {fmt(p.availableCodes)}
-                  </span>
-                  {p.cisType && (
+              {order.products.map((p, i) => {
+                const status = isSuzProductExhausted(p) ? 'EXHAUSTED' : (p.status ?? '');
+                return (
+                  <div key={i}>
+                    <strong className="crpt-mono">{p.gtin}</strong>
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={bufferStatuses[status] ?? (status || 'Неизвестно')}
+                      color={bufferStatusColors[status] ?? 'default'}
+                    />
                     <span>
-                      Тип: {cisOptions[p.cisType as keyof typeof cisOptions] ?? p.cisType}
+                      Запрошено: {fmt(p.totalCodes)} · получено: {fmt(p.totalPassed)} · доступно:{' '}
+                      {fmt(p.availableCodes)}
                     </span>
-                  )}
-                  {p.expiredAtUtc && <span>Срок: {date(p.expiredAtUtc)}</span>}
-                  {p.rejectionReason && <Alert severity="error">{p.rejectionReason}</Alert>}
-                </div>
-              ))}
+                    {p.cisType && (
+                      <span>
+                        Тип: {cisOptions[p.cisType as keyof typeof cisOptions] ?? p.cisType}
+                      </span>
+                    )}
+                    {p.expiredAtUtc && <span>Срок: {date(p.expiredAtUtc)}</span>}
+                    {p.rejectionReason && <Alert severity="error">{p.rejectionReason}</Alert>}
+                  </div>
+                );
+              })}
             </div>
           </td>
         </tr>

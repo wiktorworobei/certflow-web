@@ -1,4 +1,9 @@
 import type { CatalogProduct } from "./catalogTypes";
+import { catalogProviderActions } from "./catalogWorkflowOutcome";
+
+export function isCatalogProductReadyForSigning(product: CatalogProduct): boolean {
+    return Boolean(product.gtin) && catalogProviderActions(product).canSign;
+}
 
 export function catalogProductStatuses(
     product: Pick<CatalogProduct, "status" | "detailedStatuses">,

@@ -40,23 +40,29 @@ import i18n from '../marking/src/i18n';
 import { activateCrptEnvironment, type CrptEnvironment } from '../crpt/environment';
 import { CrptCatalogJournal } from '../crpt/CrptCatalogJournal';
 import { CrptCatalogWorkspace } from '../crpt/CrptCatalogWorkspace';
+import { CrptDocumentsWorkspace } from '../crpt/CrptDocumentsWorkspace';
 import { CrptSuzWorkspace } from '../crpt/CrptSuzWorkspace';
 import { api } from '../store';
 import type { MarkingSettings } from '../types';
 import '../marking/marking.css';
 import '../crpt/crpt.css';
 
-type CrptNavigationTarget = CrptEnvironment | 'connection' | 'journal' | 'suz' | 'catalog';
+type CrptService = 'catalog' | 'suz' | 'documents';
+type CrptNavigationTarget = CrptEnvironment | CrptService | 'connection' | 'journal';
 
 export function Crpt() {
   const [params, setParams] = useSearchParams();
   const environment: CrptEnvironment =
     params.get('environment') === 'production' ? 'production' : 'sandbox';
-  const service = params.get('service') === 'suz' ? 'suz' : 'catalog';
+  const serviceParam = params.get('service');
+  const service: CrptService =
+    serviceParam === 'suz' || serviceParam === 'documents' ? serviceParam : 'catalog';
   const connection = params.get('view') === 'connection';
   const journal = params.get('view') === 'journal';
   const { firmId, canEdit, isAdmin } = useWorkspace();
-  const [busy, setBusy] = useState(false);
+  const [mutating, setMutating] = useState(false);
+  const [documentsBusy, setDocumentsBusy] = useState(false);
+  const busy = mutating || documentsBusy;
   const [unsaved, setUnsaved] = useState(false);
   const [pending, setPending] = useState<CrptNavigationTarget | null>(null);
   const navigate = (target: CrptNavigationTarget) => {
@@ -64,7 +70,7 @@ export function Crpt() {
     if (target === 'connection' || target === 'journal') {
       if (next.get('view') === target) next.delete('view');
       else next.set('view', target);
-    } else if (target === 'suz' || target === 'catalog') {
+    } else if (target === 'suz' || target === 'catalog' || target === 'documents') {
       next.set('service', target);
       if (journal) next.delete('view');
     } else {
@@ -89,7 +95,9 @@ export function Crpt() {
             ? 'История обращений к Честному знаку в выбранном контуре.'
             : service === 'suz'
               ? 'Станция управления заказами. От заказа КМ до сохранённых кодов.'
-              : 'Национальный каталог. От первой карточки до публикации в Честном знаке.'
+              : service === 'documents'
+                ? 'Отчёты о нанесении, документы оборота и квитанции Честного знака.'
+                : 'Национальный каталог. От первой карточки до публикации в Честном знаке.'
         }
       >
         <Button
@@ -103,7 +111,7 @@ export function Crpt() {
         <Button
           component="a"
           href={
-            service === 'suz'
+            service !== 'catalog'
               ? 'https://docs.crpt.ru/gismt/files/pdf/API_%D0%A1%D0%A3%D0%97_3.0.pdf'
               : 'https://docs.crpt.ru/gismt/API_%D0%9D%D0%9A/'
           }
@@ -114,30 +122,32 @@ export function Crpt() {
           Документация
         </Button>
       </PageTitle>
-      <div className="crpt-banner">
-        <span className="crpt-banner-symbol">
-          <VerifiedOutlined />
-        </span>
-        <div>
-          <strong>
-            {service === 'suz'
-              ? 'От товара — к коду маркировки.'
-              : 'Один каталог. Весь путь товара.'}
-          </strong>
-          <p>
-            {service === 'suz'
-              ? 'Заказы, блоки кодов и документы — под контролем в каждом контуре.'
-              : 'Единицы, комплекты, наборы и технические карточки — в одном рабочем пространстве.'}
-          </p>
+      {service !== 'documents' && (
+        <div className="crpt-banner">
+          <span className="crpt-banner-symbol">
+            <VerifiedOutlined />
+          </span>
+          <div>
+            <strong>
+              {service === 'suz'
+                ? 'От товара — к коду маркировки.'
+                : 'Один каталог. Весь путь товара.'}
+            </strong>
+            <p>
+              {service === 'suz'
+                ? 'Заказы, блоки кодов и документы — под контролем в каждом контуре.'
+                : 'Единицы, комплекты, наборы и технические карточки — в одном рабочем пространстве.'}
+            </p>
+          </div>
+          <span className="crpt-version">
+            {service === 'suz' ? 'API СУЗ · 3.0.40' : 'API НК · v5.69'}
+          </span>
         </div>
-        <span className="crpt-version">
-          {service === 'suz' ? 'API СУЗ · 3.0.40' : 'API НК · v5.69'}
-        </span>
-      </div>
+      )}
       <Paper className="crpt-services">
         <Tabs
           value={journal ? 'journal' : service}
-          onChange={(_, value: 'catalog' | 'suz' | 'journal') => requestNavigation(value)}
+          onChange={(_, value: CrptService | 'journal') => requestNavigation(value)}
           variant="scrollable"
           scrollButtons="auto"
           allowScrollButtonsMobile
@@ -146,6 +156,7 @@ export function Crpt() {
           <Tab value="catalog" label="Национальный каталог" disabled={busy} />
           <Tab value="journal" label="История событий" disabled={busy || !canEdit} />
           <Tab value="suz" label="СУЗ · Заказы кодов" disabled={busy} />
+          <Tab value="documents" label="Документы" disabled={busy} />
         </Tabs>
       </Paper>
       <Paper className="crpt-environments">
@@ -176,7 +187,7 @@ export function Crpt() {
         <CrptScope
           key={`${firmId}:${environment}:${service}`}
           environment={environment}
-          onActivityChange={setBusy}
+          onActivityChange={setMutating}
         >
           {connection ? (
             <CrptConnection
@@ -191,9 +202,20 @@ export function Crpt() {
               companyId={firmId}
               catalogOnly
               onConfigureConnection={isAdmin ? () => requestNavigation('connection') : undefined}
-              workspaceTitle={service === 'suz' ? 'СУЗ · управление заказами' : undefined}
+              workspaceTitle={
+                service === 'suz'
+                  ? 'СУЗ · управление заказами'
+                  : service === 'documents'
+                    ? 'Документы маркировки'
+                    : undefined
+              }
+              workspaceEyebrow={service === 'documents' ? 'Честный знак · Документы' : undefined}
               workspaceDescription={
-                service === 'suz' ? 'Заказ, получение и архив кодов маркировки.' : undefined
+                service === 'suz'
+                  ? 'Заказ, получение и архив кодов маркировки.'
+                  : service === 'documents'
+                    ? 'Подготовка, подписание и проверка результатов обработки.'
+                    : undefined
               }
               catalogWorkspace={(thumbprint) =>
                 service === 'suz' ? (
@@ -202,6 +224,14 @@ export function Crpt() {
                     environment={environment}
                     selectedThumbprint={thumbprint}
                     onUnsavedChange={setUnsaved}
+                  />
+                ) : service === 'documents' ? (
+                  <CrptDocumentsWorkspace
+                    companyId={firmId}
+                    environment={environment}
+                    selectedThumbprint={thumbprint}
+                    onUnsavedChange={setUnsaved}
+                    onBusyChange={setDocumentsBusy}
                   />
                 ) : (
                   <CrptCatalogWorkspace

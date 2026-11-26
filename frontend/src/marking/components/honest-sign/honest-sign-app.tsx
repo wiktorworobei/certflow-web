@@ -21,6 +21,7 @@ type HonestSignAppProps = {
     catalogOnly?: boolean;
     catalogWorkspace?: (selectedThumbprint: string) => ReactNode;
     workspaceTitle?: string;
+    workspaceEyebrow?: string;
     workspaceDescription?: string;
     onConfigureConnection?: () => void;
 };
@@ -34,7 +35,7 @@ export function HonestSignApp(props: HonestSignAppProps) {
     );
 }
 
-function HonestSignWorkspace({ companyId, catalogOnly = false, catalogWorkspace, workspaceTitle, workspaceDescription, onConfigureConnection }: HonestSignAppProps) {
+function HonestSignWorkspace({ companyId, catalogOnly = false, catalogWorkspace, workspaceTitle, workspaceEyebrow, workspaceDescription, onConfigureConnection }: HonestSignAppProps) {
     const { t } = useTranslation();
     const [journalOpen, setJournalOpen] = useState(false);
     const app = useMarkingApp(companyId, catalogOnly);
@@ -98,7 +99,7 @@ function HonestSignWorkspace({ companyId, catalogOnly = false, catalogWorkspace,
                     </div>
                     <div>
                         <p className="text-xs font-medium tracking-wide text-muted-foreground">
-                            {catalogOnly ? workspaceTitle ? 'Честный знак · СУЗ 3.0' : 'Национальный каталог · карточки товаров' : t("honestSign.systemLabel")}
+                            {catalogOnly ? workspaceEyebrow ?? (workspaceTitle ? 'Честный знак · СУЗ 3.0' : 'Национальный каталог · карточки товаров') : t("honestSign.systemLabel")}
                         </p>
                         <div className="mt-0.5 flex flex-wrap items-center gap-2">
                             <WorkspaceHeader title={catalogOnly ? workspaceTitle ?? 'Работа с карточками товаров' : t("honestSign.title")} />

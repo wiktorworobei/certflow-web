@@ -1,5 +1,5 @@
 import { apiClient, toHttpError } from '../marking/lib/honest-sign/httpClient';
-import type { SuzCatalogItem, SuzOrder, SuzReceipt } from './suz';
+import type { SuzCatalogItem, SuzCatalogProductsPage, SuzOrder, SuzReceipt } from './suz';
 async function request<T>(fn: () => Promise<{ data: T }>): Promise<T> {
   try {
     return (await fn()).data;
@@ -12,6 +12,13 @@ export const suzApi = {
   catalogItem: (gtin: string, subaccount: boolean) =>
     request(() =>
       apiClient.get<SuzCatalogItem>(`${base}/catalog-product`, { params: { gtin, subaccount } }),
+    ),
+  catalogProducts: (productGroup: string, page: number, signal: AbortSignal) =>
+    request(() =>
+      apiClient.get<SuzCatalogProductsPage>(`${base}/catalog-products`, {
+        params: { productGroup, page },
+        signal,
+      }),
     ),
   orders: (payload: unknown, signal?: AbortSignal) =>
     request(() =>

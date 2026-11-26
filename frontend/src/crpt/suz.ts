@@ -4,6 +4,7 @@ export type SuzRow = {
   id: string;
   group: string;
   gtin: string;
+  catalogProduct?: SuzCatalogProduct;
   quantity: string;
   cis: string;
   release: string;
@@ -30,10 +31,16 @@ export type SuzReceipt = {
   codes?: string[];
   message?: string;
 };
-export type SuzCatalogItem = {
+export type SuzCatalogProduct = {
   gtin: string;
   name: string;
   cisType: string;
+};
+export type SuzCatalogProductsPage = {
+  items: SuzCatalogProduct[];
+  hasNextPage: boolean;
+};
+export type SuzCatalogItem = SuzCatalogProduct & {
   status: string;
   contents: { gtin: string; quantity: number }[];
 };
@@ -43,6 +50,7 @@ export type SuzProduct = {
   status: string | null;
   availableCodes?: number | null;
   totalPassed?: number | null;
+  poolsExhausted?: boolean | null;
   rejectionReason?: string | null;
   expiredAtUtc?: string | null;
   cisType?: string | null;
@@ -75,19 +83,73 @@ export const cisOptions = {
 };
 export const orderStatuses: Record<string, string> = {
   CREATED: 'Создан',
-  PENDING: 'В очереди',
-  APPROVED: 'Одобрен',
+  PENDING: 'Ожидает подтверждения',
+  APPROVED: 'Подтверждён',
   READY: 'Готов',
   CLOSED: 'Закрыт',
   DECLINED: 'Отклонён',
 };
 export const bufferStatuses: Record<string, string> = {
   PENDING: 'Готовится',
-  ACTIVE: 'Доступен',
+  ACTIVE: 'Буфер создан',
   EXHAUSTED: 'Коды исчерпаны',
   REJECTED: 'Отказ в эмиссии',
   CLOSED: 'Закрыт',
 };
+
+type StatusColor = 'default' | 'warning' | 'info' | 'success' | 'secondary' | 'error';
+export const orderStatusColors: Record<string, StatusColor> = {
+  CREATED: 'default',
+  PENDING: 'warning',
+  APPROVED: 'info',
+  READY: 'success',
+  CLOSED: 'secondary',
+  DECLINED: 'error',
+};
+export const bufferStatusColors: Record<string, StatusColor> = {
+  PENDING: 'warning',
+  ACTIVE: 'success',
+  EXHAUSTED: 'default',
+  REJECTED: 'error',
+  CLOSED: 'secondary',
+};
+
+function fullyReceived(total: number | null, received: number | null | undefined) {
+  return total != null && total > 0 && received != null && received >= total;
+}
+
+export function isSuzProductExhausted(product: SuzProduct) {
+  return (
+    product.status === 'EXHAUSTED' ||
+    fullyReceived(product.totalCodes, product.totalPassed) ||
+    (product.poolsExhausted === true && product.availableCodes === 0)
+  );
+}
+
+export function isSuzOrderExhausted(order: SuzOrder) {
+  return (
+    fullyReceived(order.totalCodes, order.usedCodes) ||
+    (order.products.length > 0 && order.products.every(isSuzProductExhausted))
+  );
+}
+
+export function getSuzReceivingProducts(order: SuzOrder) {
+  if (order.status !== 'READY' || isSuzOrderExhausted(order)) return [];
+  return order.products.filter(
+    (product) =>
+      product.gtin &&
+      product.status === 'ACTIVE' &&
+      !isSuzProductExhausted(product) &&
+      (product.availableCodes == null || product.availableCodes > 0),
+  );
+}
+
+export function getSuzRecoveryProducts(order: SuzOrder) {
+  if (order.status !== 'READY') return [];
+  return order.products.filter(
+    (product) => product.gtin && (product.status === 'ACTIVE' || product.status === 'EXHAUSTED'),
+  );
+}
 export const operationStatuses: Record<string, string> = {
   Prepared: 'Ожидает подписи',
   Sending: 'Отправка — проверьте результат',

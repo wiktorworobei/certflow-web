@@ -171,6 +171,10 @@ export function UtilisationBatchQueue({
     const actorId = useAuthStore((state) => state.user?.id ?? "anonymous");
     const [skipItem, setSkipItem] = useState<UtilisationBatchItem | null>(null);
     const skipCancel = useRef<HTMLButtonElement>(null);
+    const refresh = useMutation({
+        mutationFn: () => documentsApiService.refreshUtilisationBatch(batchId),
+        onSuccess: (data) => client.setQueryData(utilisationBatchKeys.detail(companyId, actorId, batchId), data),
+    });
     const skip = useMutation({
         mutationFn: ({ itemId }: { itemId: string; owner: string }) =>
             documentsApiService.skipUtilisationBatchItem(batchId, itemId),
@@ -202,17 +206,19 @@ export function UtilisationBatchQueue({
                         {batchId}
                     </p>
                 </div>
-                <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={query.isFetching || processing}
-                    onClick={() => void query.refetch()}
-                >
-                    <RefreshCw aria-hidden="true" className="size-4" />
-                    {t("honestSign.catalog.refresh")}
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" disabled={query.isFetching || processing || refresh.isPending} onClick={() => void query.refetch()}>
+                        <RefreshCw aria-hidden="true" className="size-4" />
+                        {t("honestSign.catalog.refresh")}
+                    </Button>
+                    {batch?.items.some((item) => item.reportId) && (
+                        <Button type="button" variant="outline" size="sm" disabled={query.isFetching || processing || refresh.isPending} onClick={() => refresh.mutate()}>
+                            Обновить статусы СУЗ
+                        </Button>
+                    )}
+                </div>
             </div>
+            {refresh.isError && <Notice variant="error" role="alert">{refresh.error.message}</Notice>}
             {(query.isError || processError) && (
                 <Notice variant="error" role="alert">
                     {processError || query.error?.message}
@@ -290,6 +296,9 @@ export function UtilisationBatchQueue({
                                         <p className="text-sm wrap-anywhere text-destructive">
                                             {item.error}
                                         </p>
+                                    )}
+                                    {(item.providerError || item.statusCheckError) && (
+                                        <p className="text-sm break-words text-destructive">{item.providerError ?? item.statusCheckError}</p>
                                     )}
                                     {(item.upstreamErrorCode ||
                                         item.correlationId) && (

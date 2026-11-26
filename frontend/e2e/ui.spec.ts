@@ -1305,7 +1305,8 @@ test('standalone NK card creation needs no declaration and does not save or link
   await page.getByRole('button', { name: 'Включить тёмную тему' }).click();
   await page.getByRole('button', { name: 'Добавить новый товар', exact: true }).first().click();
   await expect(page.locator('#catalog-name')).toHaveValue('');
-  await page.locator('#catalog-productGroup').selectOption('43');
+  await page.locator('#catalog-productGroup').fill('43');
+  await page.locator('#catalog-productGroup').press('Enter');
   await expect(page.getByRole('textbox', { name: 'Название декларации', exact: true })).toHaveCount(0);
   expect(externalCard).toBeNull();
   await page.locator('#catalog-name').fill('Новое масло Premium');
@@ -1313,7 +1314,8 @@ test('standalone NK card creation needs no declaration and does not save or link
   await page.locator('#catalog-tnved').fill('2710198200');
   await page.locator('#catalog-brand').fill('Oil Brand');
   await page.getByRole('button', { name: 'Подобрать категории' }).click();
-  await page.getByRole('combobox', { name: 'Категория НК *', exact: true }).selectOption('100');
+  await page.getByRole('combobox', { name: 'Категория НК *', exact: true }).fill('100');
+  await page.getByRole('combobox', { name: 'Категория НК *', exact: true }).press('Enter');
   await page.screenshot({ path: path.resolve('..', 'artifacts', 'screenshots', 'standalone-catalog.png'), fullPage: true });
   await page.getByRole('button', { name: 'Сохранить в ZNAQ', exact: true }).click();
   await expect.poll(() => externalCard).toMatchObject({ name: 'Новое масло Premium', gtin: '05011846021161', categoryId: 100, brand: 'Oil Brand', sendToModeration: false });
@@ -1565,11 +1567,13 @@ test('motor oil catalog prefills product and declaration permit using loaded cat
   await page.getByRole('combobox', { name: 'Декларация для товара' }).click(); await page.getByRole('option', { name: /CF-26-100/ }).click();
   await page.getByRole('tab', { name: 'Честный знак', exact: true }).click(); await page.getByRole('button', { name: 'Национальный каталог', exact: true }).click();
   await page.getByRole('button', { name: 'Добавить новый товар', exact: true }).first().click();
-  await page.locator('#catalog-productGroup').selectOption('43');
+  await page.locator('#catalog-productGroup').fill('43');
+  await page.locator('#catalog-productGroup').press('Enter');
   await page.getByRole('button', { name: 'Подставить данные декларации' }).click();
   await expect(page.getByLabel('Полное наименование товара *', { exact: true })).toHaveValue('Масло 5W-30');
   await page.getByRole('button', { name: 'Подобрать категории' }).click();
-  await page.getByRole('combobox', { name: 'Категория НК *', exact: true }).selectOption('100');
+  await page.getByRole('combobox', { name: 'Категория НК *', exact: true }).fill('100');
+  await page.getByRole('combobox', { name: 'Категория НК *', exact: true }).press('Enter');
   await page.getByRole('button', { name: /^Разрешительные документы/ }).click();
   await expect(page.getByRole('group', { name: 'Декларация о соответствии' })).toBeVisible();
   await page.getByRole('button', { name: 'Подставить данные декларации' }).click();

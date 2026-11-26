@@ -7,9 +7,10 @@ import { Badge } from "@marking/components/ui/badge";
 import { Button } from "@marking/components/ui/button";
 import { Input } from "@marking/components/ui/input";
 import { validateUtilisationBatchFile } from "@marking/lib/honest-sign/utilisationBatch";
+import { getUtilisationDateRules } from "@marking/lib/honest-sign/utilisationIndustry";
+import { UtilisationIndustryFields } from "@marking/components/honest-sign/UtilisationIndustryFields";
 import {
     getDefaultUtilisationExpirationMode,
-    requiresUtilisationDates,
 } from "@marking/lib/honest-sign/utilisationReport";
 
 import type { UtilisationBatchDraftFile } from "@marking/lib/honest-sign/utilisationBatch";
@@ -50,8 +51,9 @@ export function UtilisationBatchFileFields({
         today,
         nowMinute,
     );
-    const required = requiresUtilisationDates(productGroup, file.cisType);
-    const omitDates = productGroup === "milk" && file.cisType !== "UNIT";
+    const rules = getUtilisationDateRules(productGroup, file.cisType);
+    const required = rules.expirationRequired;
+    const omitDates = rules.noDates;
     const fieldId = (name: string) => `batch-${file.id}-${name}`;
     const options =
         productGroup === "milk"
@@ -75,6 +77,8 @@ export function UtilisationBatchFileFields({
                       ? []
                       : [["not-specified", "expirationNotSpecified"]]),
                   ["specified", "expirationSpecified"],
+                  ...(rules.expiryTimestamp ? [["milk-under-72", "expirationDateTime"]] : []),
+                  ...(rules.expiryConditions ? [["milk-storage-conditions", "expirationStorageConditions"]] : []),
               ];
     return (
         <section
@@ -154,15 +158,15 @@ export function UtilisationBatchFileFields({
                     </Select>
                 </FormField>
                 <FormField
-                    label={`${t("honestSign.documents.batch.productionDate")}${required ? " *" : ""}`}
+                    label={`${t("honestSign.documents.batch.productionDate")}${rules.productionRequired ? " *" : ""}`}
                     htmlFor={fieldId("productionDate")}
                 >
                     <Input
                         id={fieldId("productionDate")}
-                        type="date"
-                        required={required}
+                        type={rules.productionTimestamp ? "datetime-local" : "date"}
+                        required={rules.productionRequired}
                         disabled={disabled || omitDates}
-                        max={today}
+                        max={rules.productionTimestamp ? nowMinute : today}
                         value={file.productionDate}
                         aria-invalid={showErrors && !valid.productionDate}
                         aria-describedby={
@@ -192,7 +196,7 @@ export function UtilisationBatchFileFields({
                     <Select
                         id={fieldId("expirationMode")}
                         value={file.expirationMode}
-                        disabled={disabled || omitDates}
+                        disabled={disabled || omitDates || !rules.expirationAllowed}
                         onChange={(event) =>
                             onChange({
                                 expirationMode: event.target
@@ -421,12 +425,16 @@ export function UtilisationBatchFileFields({
                         )}
                     </fieldset>
                 )}
-            {omitDates ? (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <UtilisationIndustryFields group={productGroup} cis={file.cisType} values={file.industryValues ?? {}} disabled={disabled} onChange={(industryValues) => onChange({ industryValues })} />
+            </div>
+            {showErrors && !valid.industryFields && <p className="text-xs text-destructive">Проверьте обязательные реквизиты товарной группы.</p>}
+            {omitDates && productGroup === "milk" ? (
                 <p className="text-xs text-muted-foreground">
                     {t("honestSign.documents.expirationSetHint")}
                 </p>
             ) : (
-                required && (
+                required && (productGroup === "milk" || productGroup === "autofluids") && (
                     <p className="text-xs text-muted-foreground">
                         {t(
                             productGroup === "autofluids"

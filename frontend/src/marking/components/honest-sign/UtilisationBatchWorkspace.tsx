@@ -39,6 +39,7 @@ import {
 } from "@marking/lib/honest-sign/utilisationBatch";
 import { MAX_UTILISATION_REPORT_CODES } from "@marking/lib/honest-sign/utilisationReport";
 import { useAuthStore } from "@marking/src/store/auth";
+import { assertMarkingScope, captureMarkingScope } from "@marking/lib/workspace-scope";
 
 import type {
     CreateUtilisationBatchRequest,
@@ -50,11 +51,13 @@ export function UtilisationBatchWorkspace({
     productGroups,
     selectedThumbprint,
     onBusyChange,
+    onDirtyChange,
 }: {
     companyId: string;
     productGroups: string[];
     selectedThumbprint: string;
     onBusyChange?: (busy: boolean) => void;
+    onDirtyChange?: (dirty: boolean) => void;
 }) {
     const { t } = useTranslation();
     const client = useQueryClient();
@@ -90,6 +93,8 @@ export function UtilisationBatchWorkspace({
     useEffect(() => {
         onBusyChange?.(busy);
     }, [busy, onBusyChange]);
+    const dirty = !selectedBatchId && (files.length > 0 || hasPreparedRequest);
+    useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
     const store = useMutation({
         mutationFn: ({
             request,
@@ -318,6 +323,7 @@ export function UtilisationBatchWorkspace({
         }
         action.current = true;
         setError("");
+        const scope = captureMarkingScope();
         try {
             if (!signedRequest.current) {
                 setStage("signing");
@@ -337,9 +343,11 @@ export function UtilisationBatchWorkspace({
                         {
                             thumbprint: selectedThumbprint,
                             message: payloadJson,
+                            cadesType: scope.crpt.environment ? "bes" : undefined,
                         },
                     );
                     if (!mounted.current) return;
+                    assertMarkingScope(scope);
                     const signature =
                         cryptoProSignatureService.normalizeDetachedSignature(
                             result.pkcs7,

@@ -7,6 +7,7 @@ import {
     Upload,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { CIS_TYPE_MAP } from "@marking/components/honest-sign/constants";
 import { FormField } from "@marking/components/honest-sign/ui/form-field";
@@ -19,6 +20,7 @@ import {
 import { Select } from "@marking/components/honest-sign/ui/select";
 import { WorkflowStepper } from "@marking/components/honest-sign/ui/workflow-stepper";
 import { UtilisationBatchWorkspace } from "@marking/components/honest-sign/UtilisationBatchWorkspace";
+import { UtilisationIndustryFields } from "@marking/components/honest-sign/UtilisationIndustryFields";
 import { UtilisationDocumentPicker } from "@marking/components/honest-sign/UtilisationDocumentPicker";
 import { formatProductGroupLabel } from "@marking/components/honest-sign/utils";
 import { Badge } from "@marking/components/ui/badge";
@@ -48,7 +50,6 @@ import {
     isExpirationDateTimeValid,
     isMilkPartNumberValid,
     isProductionDateValid,
-    requiresUtilisationDates,
     MAX_UTILISATION_REPORT_CODES,
     type SubmittedUtilisationReport,
     type UtilisationCisType,
@@ -56,6 +57,10 @@ import {
     type UtilisationExpirationMode,
 } from "@marking/lib/honest-sign/utilisationReport";
 import { useAuthStore } from "@marking/src/store/auth";
+import { assertMarkingScope, captureMarkingScope } from "@marking/lib/workspace-scope";
+import { suzApi } from "../../../crpt/suzApi";
+import { MAX_UTILISATION_BATCH_FILE_BYTES, parseUtilisationBatchFile } from "@marking/lib/honest-sign/utilisationBatch";
+import { areUtilisationIndustryFieldsValid, getUtilisationDateRules, type UtilisationIndustryValues } from "@marking/lib/honest-sign/utilisationIndustry";
 
 export type { SubmittedUtilisationReport } from "@marking/lib/honest-sign/utilisationReport";
 
@@ -66,6 +71,9 @@ type DocumentsWorkspaceProps = {
     onCancel?: () => void;
     onSubmitted?: (report: SubmittedUtilisationReport) => void;
     initialMode?: "single" | "batch";
+    allowSuzArchive?: boolean;
+    onBusyChange?: (busy: boolean) => void;
+    onDirtyChange?: (dirty: boolean) => void;
 };
 
 type UploadedCsvDocument = {
@@ -84,14 +92,6 @@ const createEmptyExpirationCondition = (): UtilisationExpirationCondition => ({
 });
 
 const EMPTY_DOCUMENT_CODES: string[] = [];
-
-function splitCsvRows(text: string): string[] {
-    return text
-        .replace(/^\uFEFF/, "")
-        .split(/\r?\n/)
-        .map((row) => row.trim())
-        .filter(Boolean);
-}
 
 function bufferSignature(codes: string[]): string {
     return codes.join("\u001e");
@@ -133,6 +133,11 @@ function DocumentsWorkspaceModes(props: DocumentsWorkspaceProps) {
     const [mode, setMode] = useState(props.initialMode ?? "single");
     const [batchBusy, setBatchBusy] = useState(false);
     const [singleBusy, setSingleBusy] = useState(false);
+    const [batchDirty, setBatchDirty] = useState(false);
+    const [singleDirty, setSingleDirty] = useState(false);
+    const { onBusyChange, onDirtyChange } = props;
+    useEffect(() => onBusyChange?.(batchBusy || singleBusy), [batchBusy, singleBusy, onBusyChange]);
+    useEffect(() => onDirtyChange?.(batchDirty || singleDirty), [batchDirty, singleDirty, onDirtyChange]);
     return (
         <Tabs
             value={mode}
@@ -162,6 +167,7 @@ function DocumentsWorkspaceModes(props: DocumentsWorkspaceProps) {
                 <SingleDocumentsWorkspace
                     {...props}
                     onBusyChange={setSingleBusy}
+                    onDirtyChange={setSingleDirty}
                 />
             </TabsContent>
             <TabsContent value="batch" forceMount hidden={mode !== "batch"}>
@@ -171,6 +177,7 @@ function DocumentsWorkspaceModes(props: DocumentsWorkspaceProps) {
                     productGroups={props.productGroups}
                     selectedThumbprint={props.selectedThumbprint}
                     onBusyChange={setBatchBusy}
+                    onDirtyChange={setBatchDirty}
                 />
             </TabsContent>
         </Tabs>
@@ -184,6 +191,8 @@ function SingleDocumentsWorkspace({
     onCancel,
     onSubmitted,
     onBusyChange,
+    onDirtyChange,
+    allowSuzArchive,
 }: DocumentsWorkspaceProps & { onBusyChange: (busy: boolean) => void }) {
     const { t, i18n } = useTranslation();
     const sourceControlId = useId();
@@ -200,6 +209,7 @@ function SingleDocumentsWorkspace({
     const [selectedProductGroup, setSelectedProductGroup] = useState("");
     const [productionDate, setProductionDate] = useState("");
     const [partNumber, setPartNumber] = useState("");
+    const [industryValues, setIndustryValues] = useState<UtilisationIndustryValues>({});
     const [cisType, setCisType] = useState<UtilisationCisType>("UNIT");
     const [expirationMode, setExpirationMode] =
         useState<UtilisationExpirationMode>("not-specified");
@@ -214,10 +224,26 @@ function SingleDocumentsWorkspace({
     const [loadingFile, setLoadingFile] = useState(false);
     const [checkingCodes, setCheckingCodes] = useState(false);
     const [submittingDocument, setSubmittingDocument] = useState(false);
-    const [codeSource, setCodeSource] = useState<"document" | "file">(
-        "document",
+    const [submissionUncertain, setSubmissionUncertain] = useState(false);
+    const [codeSource, setCodeSource] = useState<"document" | "file" | "suz">(
+        allowSuzArchive ? "suz" : "document",
     );
     const [selectedDocumentId, setSelectedDocumentId] = useState("");
+    const [archivePage, setArchivePage] = useState(1);
+    const [archiveId, setArchiveId] = useState("");
+    const archive = useQuery({
+        queryKey: ["utilisation-suz-archive", companyId, archivePage],
+        queryFn: ({ signal }) => suzApi.list(archivePage, signal),
+        enabled: Boolean(allowSuzArchive && activeStep === 2 && codeSource === "suz"),
+    });
+    const archivedDocument = useQuery({
+        queryKey: ["utilisation-suz-codes", companyId, archiveId],
+        queryFn: () => suzApi.get(archiveId),
+        enabled: Boolean(allowSuzArchive && activeStep === 2 && codeSource === "suz" && archiveId),
+    });
+    const archivedCodes = archivedDocument.data?.id === archiveId
+        ? archivedDocument.data.codes ?? EMPTY_DOCUMENT_CODES
+        : EMPTY_DOCUMENT_CODES;
     const documentCodesQuery = useUtilisationDocumentCodes(
         companyId,
         selectedDocumentId,
@@ -232,6 +258,9 @@ function SingleDocumentsWorkspace({
     useEffect(() => {
         onBusyChange(sourceBusy);
     }, [onBusyChange, sourceBusy]);
+    const dirty = Boolean(activeStep === 2 || productionDate || partNumber || expirationDate || Object.values(industryValues).some(Boolean) ||
+        expirationConditions.some((item) => item.expirationDate || item.storageConditionIndex) || cisType !== "UNIT");
+    useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
     const [codesCheckResult, setCodesCheckResult] =
         useState<CurrentCodesCheckResult | null>(null);
     const [errorMessage, setErrorMessage] = useState("");
@@ -262,6 +291,8 @@ function SingleDocumentsWorkspace({
         }
 
         expirationProductGroupRef.current = selectedProductGroup;
+        setIndustryValues({});
+        setProductionDate("");
         setExpirationMode(
             getDefaultUtilisationExpirationMode(selectedProductGroup, cisType),
         );
@@ -271,7 +302,7 @@ function SingleDocumentsWorkspace({
 
     useEffect(() => {
         if (selectedProductGroup === "milk") {
-            if (cisType !== "UNIT") {
+            if (cisType === "GROUP") {
                 if (expirationMode !== "not-specified") {
                     setExpirationMode("not-specified");
                 }
@@ -289,7 +320,9 @@ function SingleDocumentsWorkspace({
             expirationMode !== "specified"
         ) {
             setExpirationMode("specified");
-        } else if (expirationMode.startsWith("milk-")) {
+        } else if ((expirationMode === "milk-over-72") ||
+            (expirationMode === "milk-under-72" && !getUtilisationDateRules(selectedProductGroup, cisType).expiryTimestamp) ||
+            (expirationMode === "milk-storage-conditions" && !getUtilisationDateRules(selectedProductGroup, cisType).expiryConditions)) {
             setExpirationMode(
                 getDefaultUtilisationExpirationMode(
                     selectedProductGroup,
@@ -307,8 +340,8 @@ function SingleDocumentsWorkspace({
         () =>
             codeSource === "document"
                 ? documentCodes
-                : [...uploadedRows, ...manualCodes],
-        [codeSource, documentCodes, manualCodes, uploadedRows],
+                : codeSource === "suz" ? archivedCodes : [...uploadedRows, ...manualCodes],
+        [codeSource, documentCodes, archivedCodes, manualCodes, uploadedRows],
     );
     const currentSignature = bufferedCodes.length
         ? bufferSignature([selectedProductGroup, ...bufferedCodes])
@@ -323,7 +356,8 @@ function SingleDocumentsWorkspace({
         currentCheck.totalCount > 0 &&
         currentCheck.invalidCount === 0 &&
         (codeSource !== "document" ||
-            (!documentCodesQuery.isFetching && !documentCodesQuery.isError)),
+            (!documentCodesQuery.isFetching && !documentCodesQuery.isError)) &&
+        (codeSource !== "suz" || (!archivedDocument.isFetching && !archivedDocument.isError)),
     );
     const now = new Date();
     const today = [
@@ -334,17 +368,14 @@ function SingleDocumentsWorkspace({
     const nowMinute = `${today}T${String(now.getHours()).padStart(2, "0")}:${String(
         now.getMinutes(),
     ).padStart(2, "0")}`;
-    const requiredDates = requiresUtilisationDates(
-        selectedProductGroup,
-        cisType,
-    );
-    const omitDairyDates =
-        selectedProductGroup === "milk" && cisType !== "UNIT";
+    const dateRules = getUtilisationDateRules(selectedProductGroup, cisType);
+    const omitDates = dateRules.noDates;
     const productionDateValid =
-        omitDairyDates ||
-        (isProductionDateValid(productionDate, today) &&
-            (!requiredDates || productionDate !== ""));
+        omitDates ||
+        (isProductionDateValid(productionDate, today, dateRules.productionTimestamp) &&
+            (!dateRules.productionRequired || productionDate !== ""));
     const expirationDateValid = (() => {
+        if (omitDates || !dateRules.expirationAllowed) return true;
         if (expirationMode === "milk-storage-conditions") {
             return areExpirationConditionsValid(
                 expirationConditions,
@@ -360,13 +391,14 @@ function SingleDocumentsWorkspace({
             );
         }
         if (expirationMode === "not-specified") {
-            return !requiredDates;
+            return !dateRules.expirationRequired;
         }
         return isExpirationDateValid(
             expirationDate,
             productionDate,
             today,
-            selectedProductGroup === "autofluids",
+            dateRules.future,
+            selectedProductGroup === "bio",
         );
     })();
     const partNumberValid =
@@ -383,7 +415,7 @@ function SingleDocumentsWorkspace({
         productionDateValid &&
         expirationDateValid &&
         partNumberValid &&
-        cisTypeValid,
+        cisTypeValid && areUtilisationIndustryFieldsValid(selectedProductGroup, cisType, industryValues, bufferedCodes, today),
     );
     const stepComplete =
         activeStep === 1
@@ -409,6 +441,7 @@ function SingleDocumentsWorkspace({
         setSelectedProductGroup(initialProductGroup);
         setProductionDate("");
         setPartNumber("");
+        setIndustryValues({});
         setCisType("UNIT");
         setExpirationMode(
             getDefaultUtilisationExpirationMode(initialProductGroup, "UNIT"),
@@ -418,9 +451,12 @@ function SingleDocumentsWorkspace({
         setMarkingCode("");
         setManualCodes([]);
         setUploadedDocument(null);
-        setCodeSource("document");
+        setCodeSource(allowSuzArchive ? "suz" : "document");
         setSelectedDocumentId("");
+        setArchiveId("");
+        setArchivePage(1);
         setCodesCheckResult(null);
+        setSubmissionUncertain(false);
         setTouched({
             productGroup: false,
             productionDate: false,
@@ -471,15 +507,19 @@ function SingleDocumentsWorkspace({
 
     const uploadFile = async (file: File | null) => {
         if (!file) return;
-        if (!file.name.toLowerCase().endsWith(".csv")) {
-            setErrorMessage(t("honestSign.documents.errors.csvOnly"));
+        if (!/\.(csv|txt)$/i.test(file.name)) {
+            setErrorMessage(t("honestSign.documents.batch.errors.fileType"));
+            return;
+        }
+        if (file.size > MAX_UTILISATION_BATCH_FILE_BYTES) {
+            setErrorMessage(t("honestSign.documents.batch.errors.fileSize"));
             return;
         }
 
         setLoadingFile(true);
         invalidateCheck();
         try {
-            const rows = splitCsvRows(await file.text());
+            const rows = parseUtilisationBatchFile(await file.text());
             if (rows.length === 0) {
                 throw new Error(t("honestSign.documents.errors.csvEmpty"));
             }
@@ -560,6 +600,7 @@ function SingleDocumentsWorkspace({
     };
 
     const handleSubmit = async () => {
+        if (submissionUncertain) return;
         if (!stepOneComplete) {
             setActiveStep(1);
             setErrorMessage(t("honestSign.documents.errors.commonFields"));
@@ -576,8 +617,11 @@ function SingleDocumentsWorkspace({
 
         setSubmittingDocument(true);
         clearMessages();
+        let submitted = false;
         try {
+            const scope = captureMarkingScope();
             if (!(await checkCodes(false)) || !mountedRef.current) return;
+            assertMarkingScope(scope);
             const sntins =
                 codeSource === "document"
                     ? bufferedCodes
@@ -593,12 +637,16 @@ function SingleDocumentsWorkspace({
                 expirationDate,
                 expirationConditions,
                 sntins,
+                industryValues,
             });
             const signature = await cryptoProSignatureService.signDetached({
                 thumbprint: selectedThumbprint,
                 message: JSON.stringify(body),
+                cadesType: scope.crpt.environment ? "bes" : undefined,
             });
             if (!mountedRef.current) return;
+            assertMarkingScope(scope);
+            submitted = true;
             const response = await documentsApiService.submitUtilisationReport(
                 cryptoProSignatureService.normalizeDetachedSignature(
                     signature.pkcs7,
@@ -607,6 +655,7 @@ function SingleDocumentsWorkspace({
                 codeSource === "document" ? selectedDocumentId : undefined,
                 cisType,
             );
+            assertMarkingScope(scope);
             const reportId = responseValue(response, [
                 "reportId",
                 "report_id",
@@ -642,7 +691,13 @@ function SingleDocumentsWorkspace({
                 submittedAtUtc: new Date().toISOString(),
             });
         } catch (error) {
-            if (getHttpErrorStatus(error) === 409) setCodesCheckResult(null);
+            const statusCode = getHttpErrorStatus(error);
+            if (statusCode === 409) setCodesCheckResult(null);
+            if (submitted && (statusCode == null || statusCode >= 500 || statusCode === 408 || statusCode === 429)) {
+                setSubmissionUncertain(true);
+                setErrorMessage("Результат отправки неизвестен. Перед новой отправкой проверьте этот отчёт в разделе «Квитанции СУЗ».");
+                return;
+            }
             setErrorMessage(
                 error instanceof Error
                     ? error.message
@@ -773,10 +828,10 @@ function SingleDocumentsWorkspace({
                                 >
                                     <Input
                                         id="productionDate"
-                                        type="date"
-                                        required={requiredDates}
-                                        disabled={omitDairyDates}
-                                        max={today}
+                                        type={dateRules.productionTimestamp ? "datetime-local" : "date"}
+                                        required={dateRules.productionRequired}
+                                        disabled={omitDates}
+                                        max={dateRules.productionTimestamp ? nowMinute : today}
                                         value={productionDate}
                                         aria-invalid={
                                             touched.productionDate &&
@@ -797,14 +852,13 @@ function SingleDocumentsWorkspace({
                                     />
                                     <p className="text-xs text-muted-foreground">
                                         {t(
-                                            requiredDates
+                                            dateRules.productionRequired && dateRules.expirationRequired
                                                 ? "honestSign.documents.requiredDatesHint"
                                                 : "honestSign.documents.productionDateHint",
                                         )}
                                     </p>
                                 </FormField>
-                                {selectedProductGroup === "milk" ||
-                                selectedProductGroup === "autofluids" ? (
+                                {selectedProductGroup ? (
                                     <FormField
                                         label={t(
                                             "honestSign.workspace.markingType",
@@ -867,6 +921,7 @@ function SingleDocumentsWorkspace({
                                         </p>
                                     </FormField>
                                 ) : null}
+                                <UtilisationIndustryFields group={selectedProductGroup} cis={cisType} values={industryValues} onChange={(values) => { setIndustryValues(values); clearMessages(); }} />
                                 {selectedProductGroup === "milk" &&
                                 cisType === "UNIT" ? (
                                     <FormField
@@ -924,6 +979,7 @@ function SingleDocumentsWorkspace({
                                     <Select
                                         id="expirationMode"
                                         value={expirationMode}
+                                        disabled={!dateRules.expirationAllowed || omitDates}
                                         onBlur={() =>
                                             setTouched((value) => ({
                                                 ...value,
@@ -942,11 +998,11 @@ function SingleDocumentsWorkspace({
                                         }}
                                     >
                                         {selectedProductGroup === "milk" &&
-                                        cisType === "UNIT" ? (
+                                        cisType !== "GROUP" ? (
                                             <>
                                                 <option
                                                     value="not-specified"
-                                                    disabled
+                                                    disabled={dateRules.expirationRequired}
                                                 >
                                                     {t(
                                                         "honestSign.documents.expirationNotSpecified",
@@ -972,7 +1028,7 @@ function SingleDocumentsWorkspace({
                                             <>
                                                 <option
                                                     value="not-specified"
-                                                    disabled={requiredDates}
+                                                    disabled={dateRules.expirationRequired}
                                                 >
                                                     {t(
                                                         "honestSign.documents.expirationNotSpecified",
@@ -986,6 +1042,8 @@ function SingleDocumentsWorkspace({
                                                         )}
                                                     </option>
                                                 ) : null}
+                                                {selectedProductGroup !== "milk" && dateRules.expiryTimestamp && <option value="milk-under-72">Дата и время</option>}
+                                                {selectedProductGroup !== "milk" && dateRules.expiryConditions && <option value="milk-storage-conditions">По условиям хранения</option>}
                                             </>
                                         )}
                                     </Select>
@@ -1019,7 +1077,7 @@ function SingleDocumentsWorkspace({
                                         <Input
                                             id="expirationDate"
                                             type="date"
-                                            required={requiredDates}
+                                            required={dateRules.expirationRequired}
                                             min={productionDate || today}
                                             value={expirationDate}
                                             aria-invalid={
@@ -1280,12 +1338,15 @@ function SingleDocumentsWorkspace({
                                             setCodeSource(
                                                 event.target.value as
                                                     | "document"
-                                                    | "file",
+                                                    | "file"
+                                                    | "suz",
                                             );
                                             setSelectedDocumentId("");
+                                            setArchiveId("");
                                             invalidateCheck();
                                         }}
                                     >
+                                        {allowSuzArchive && <option value="suz">Архив полученных кодов СУЗ</option>}
                                         <option value="document">
                                             {t(
                                                 "honestSign.documents.source.fromDocument",
@@ -1367,6 +1428,25 @@ function SingleDocumentsWorkspace({
                                             </div>
                                         ) : null}
                                     </>
+                                ) : codeSource === "suz" ? (
+                                    <div className="space-y-3">
+                                        <FormField label="Документ с полученными кодами">
+                                            <Select aria-label="Документ с полученными кодами" value={archiveId} disabled={sourceBusy || archive.isFetching} onChange={(event) => { setArchiveId(event.target.value); invalidateCheck(); }}>
+                                                <option value="">Выберите документ</option>
+                                                {archive.data?.filter((item) => item.codesCount > 0).map((item) => (
+                                                    <option key={item.id} value={item.id}>{item.name} · {item.gtin ?? item.id} · {item.codesCount} КМ</option>
+                                                ))}
+                                            </Select>
+                                        </FormField>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <Button type="button" variant="outline" disabled={sourceBusy || archive.isFetching || archivePage <= 1} onClick={() => { setArchivePage(archivePage - 1); setArchiveId(""); invalidateCheck(); }}>Назад</Button>
+                                            <span>Страница {archivePage}</span>
+                                            <Button type="button" variant="outline" disabled={sourceBusy || archive.isFetching || (archive.data?.length ?? 0) < 50} onClick={() => { setArchivePage(archivePage + 1); setArchiveId(""); invalidateCheck(); }}>Далее</Button>
+                                        </div>
+                                        {archive.isError && <Notice variant="error" role="alert">{archive.error.message} <Button type="button" variant="outline" onClick={() => void archive.refetch()}>Повторить</Button></Notice>}
+                                        {archivedDocument.isError && <Notice variant="error" role="alert">{archivedDocument.error.message} <Button type="button" variant="outline" onClick={() => void archivedDocument.refetch()}>Повторить</Button></Notice>}
+                                        {archivedDocument.isFetching && <p role="status">Загружаем коды из архива…</p>}
+                                    </div>
                                 ) : (
                                     <>
                                         <div className="flex gap-2">
@@ -1403,7 +1483,7 @@ function SingleDocumentsWorkspace({
                                         <input
                                             ref={fileInputRef}
                                             type="file"
-                                            accept=".csv,text/csv"
+                                            accept=".csv,.txt,text/csv,text/plain"
                                             className="sr-only"
                                             onChange={(event) => {
                                                 const input =
@@ -1669,7 +1749,7 @@ function SingleDocumentsWorkspace({
                             </Button>
                             <Button
                                 type="button"
-                                disabled={sourceBusy || !currentBufferValid}
+                                disabled={sourceBusy || !currentBufferValid || submissionUncertain}
                                 onClick={() => void handleSubmit()}
                             >
                                 {submittingDocument

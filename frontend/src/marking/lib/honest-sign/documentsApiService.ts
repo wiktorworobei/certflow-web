@@ -24,6 +24,7 @@ export type HonestSignUtilisationReportStatus = {
 };
 
 export type HonestSignDocumentView = "all" | "in-work" | "processed";
+export type HonestSignDocumentDirection = "all" | "incoming" | "outgoing";
 
 export type UtilisationSourceDocument = {
     documentId: string;
@@ -55,6 +56,11 @@ export type HonestSignDocumentSummary = {
 export type HonestSignDocumentsResult = {
     items: HonestSignDocumentSummary[];
     hasNextPage: boolean;
+};
+
+export type HonestSignDocumentRegistryPage = {
+    items: HonestSignDocumentSummary[];
+    nextCursor: string | null;
 };
 
 export type HonestSignDocumentDetails = HonestSignDocumentSummary & {
@@ -159,6 +165,17 @@ export const documentsApiService = {
             );
         }
     },
+    async refreshUtilisationBatch(id: string, pendingOnly = false): Promise<UtilisationBatch> {
+        try {
+            return (await apiClient.post<UtilisationBatch>(
+                `${SUBMIT_UTILISATION_REPORT_URL}/batches/${encodeURIComponent(id)}/refresh`,
+                {},
+                { params: { pendingOnly } },
+            )).data;
+        } catch (error) {
+            throw toHttpError(i18n.t("honestSign.messages.reportStatusFailed"), error);
+        }
+    },
     async processUtilisationBatchNext(id: string): Promise<UtilisationBatch> {
         try {
             return (
@@ -238,6 +255,30 @@ export const documentsApiService = {
             const response = await apiClient.get<HonestSignDocumentsResult>(
                 DOCUMENTS_URL,
                 { params: { productGroup, limit, view } },
+            );
+            return response.data;
+        } catch (error) {
+            throw toHttpError(
+                i18n.t("honestSign.messages.documentsLoadFailed"),
+                error,
+            );
+        }
+    },
+
+    async listDocumentRegistry(
+        params: {
+            productGroup: string;
+            limit: number;
+            view: HonestSignDocumentView;
+            direction: HonestSignDocumentDirection;
+            cursor?: string;
+        },
+        signal?: AbortSignal,
+    ): Promise<HonestSignDocumentRegistryPage> {
+        try {
+            const response = await apiClient.get<HonestSignDocumentRegistryPage>(
+                `${DOCUMENTS_URL}/page`,
+                { params, signal },
             );
             return response.data;
         } catch (error) {

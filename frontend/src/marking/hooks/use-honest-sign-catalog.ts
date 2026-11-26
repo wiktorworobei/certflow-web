@@ -1,5 +1,6 @@
 import {
     keepPreviousData,
+    useInfiniteQuery,
     useMutation,
     useQuery,
     useQueryClient,
@@ -7,6 +8,7 @@ import {
 import { honestSignKeys } from "@marking/hooks/use-honest-sign";
 import { authApiService } from "@marking/lib/honest-sign/authApiService";
 import { catalogApiService } from "@marking/lib/honest-sign/catalogApiService";
+import { isCatalogProductReadyForSigning } from "@marking/lib/honest-sign/catalogProductView";
 import { getHttpErrorDiagnostics, getHttpErrorStatus } from "@marking/lib/honest-sign/httpClient";
 import {
     isValidCatalogTnved,
@@ -18,6 +20,7 @@ import { catalogProviderStatus } from "@marking/lib/honest-sign/catalogWorkflowO
 import type {
     CatalogCardRequest,
     CatalogFeedStatus,
+    CatalogProduct,
     CatalogProductFilters,
     CatalogSubmission,
 } from "@marking/lib/honest-sign/catalogTypes";
@@ -99,6 +102,35 @@ export const useCatalogProducts = (
         retry: false,
         placeholderData: keepPreviousData,
     });
+
+export const useCatalogProductsForSigning = (
+    companyId: string,
+    filters: CatalogProductFilters,
+    enabled: boolean,
+) => useInfiniteQuery({
+    queryKey: [...catalogKeys.productLists(companyId), "ready-for-signing", enabled ? filters : null],
+    initialPageParam: 1,
+    queryFn: async ({ pageParam, signal }) => {
+        // NK returns detailed statuses in the list but only filters by the technical status.
+        for (let page = pageParam; ; page++) {
+            const result = await catalogApiService.products(page, filters, signal, 100);
+            const items = result.items.filter(isCatalogProductReadyForSigning);
+            const nextPage = result.hasNextPage ? page + 1 : undefined;
+            if (items.length || nextPage === undefined) return { items, nextPage };
+        }
+    },
+    getNextPageParam: (page) => page.nextPage,
+    select: (data) => {
+        const items = new Map<number, CatalogProduct>();
+        for (const page of data.pages)
+            for (const row of page.items) items.set(row.goodId, row);
+        return { ...data, items: [...items.values()] };
+    },
+    enabled: Boolean(companyId) && enabled,
+    staleTime: 10_000,
+    retry: false,
+});
+
 export const useCatalogProductGroups = (companyId: string, enabled = true) =>
     useQuery({
         queryKey: catalogKeys.productGroups(companyId),

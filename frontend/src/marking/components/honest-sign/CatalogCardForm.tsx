@@ -3,10 +3,11 @@ import { captureMarkingScope, assertMarkingScope } from '@marking/lib/workspace-
 import { TnVedPicker } from '../../../TnVedPicker';
 import { declarationTnVedCodes } from '../../../declarationTnVedCodes';
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Autocomplete, createFilterOptions, TextField } from "@mui/material";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Loader2, Save } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useEffect, useMemo, useRef, useState, type Ref } from "react";
+import { Controller, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { CatalogAttributeGroups } from "@marking/components/honest-sign/CatalogAttributeGroups";
 import { CatalogBrandLookup } from "@marking/components/honest-sign/CatalogBrandLookup";
@@ -20,7 +21,6 @@ import {
 } from "@marking/components/honest-sign/CatalogStructureFields";
 import { FormField } from "@marking/components/honest-sign/ui/form-field";
 import { Notice } from "@marking/components/honest-sign/ui/notice";
-import { Select } from "@marking/components/honest-sign/ui/select";
 import { Button } from "@marking/components/ui/button";
 import {
     Collapsible,
@@ -61,6 +61,64 @@ import type {
     CatalogProductGroup,
     CatalogFeedStatus,
 } from "@marking/lib/honest-sign/catalogTypes";
+
+type ClassificationOption = { id: string; label: string };
+const filterClassification = createFilterOptions<ClassificationOption>({
+    stringify: ({ id, label }) => `${label} ${id}`,
+    trim: true,
+});
+
+function CatalogClassificationSelect({
+    id, value, options, placeholder, disabled, error, description, inputRef, onChange, onBlur,
+}: {
+    id: string;
+    value: string;
+    options: ClassificationOption[];
+    placeholder: string;
+    disabled: boolean;
+    error: boolean;
+    description?: string;
+    inputRef: Ref<HTMLInputElement>;
+    onChange: (value: string) => void;
+    onBlur: () => void;
+}) {
+    const { t } = useTranslation();
+    return (
+        <Autocomplete
+            id={id}
+            size="small"
+            fullWidth
+            disablePortal
+            openOnFocus
+            autoHighlight
+            options={options}
+            value={options.find((option) => option.id === value) ?? null}
+            disabled={disabled}
+            getOptionKey={(option) => option.id}
+            getOptionLabel={(option) => option.label}
+            isOptionEqualToValue={(option, selected) => option.id === selected.id}
+            filterOptions={filterClassification}
+            noOptionsText={t("honestSign.catalog.noClassificationMatches")}
+            openText={t("common.open")}
+            closeText={t("common.close")}
+            clearText={t("common.clear")}
+            onChange={(_, option) => onChange(option?.id ?? "")}
+            renderInput={(params) => (
+                <TextField
+                    {...params}
+                    placeholder={placeholder}
+                    error={error}
+                    inputRef={inputRef}
+                    onBlur={onBlur}
+                    inputProps={{
+                        ...params.inputProps,
+                        "aria-describedby": description,
+                    }}
+                />
+            )}
+        />
+    );
+}
 
 export function CatalogCardForm({
     companyId,
@@ -237,6 +295,20 @@ export function CatalogCardForm({
     const availableCategories = lookupConfirmed
         ? (matchingCategories.data ?? [])
         : [];
+    const groupOptions = useMemo(() => productGroups.map(({ code, name }) => ({
+        id: String(code), label: name,
+    })), [productGroups]);
+    const categoryOptions = useMemo(() => {
+        const options = (lookupConfirmed ? matchingCategories.data ?? [] : []).map(({ id, name, isActive }) => ({
+            id: String(id),
+            label: `${name} · ${id}${isActive ? "" : ` · ${t("honestSign.catalog.categoryInactive")}`}`,
+        }));
+        const selected = String(categoryId);
+        if (categoryId > 0 && !options.some((option) => option.id === selected)) {
+            options.unshift({ id: selected, label: t("honestSign.catalog.currentCategory", { id: categoryId }) });
+        }
+        return options;
+    }, [categoryId, lookupConfirmed, matchingCategories.data, t]);
     const completion = catalogLayerCompletion(model, values);
     const locked = readOnly || sentRequest !== null;
     const identityLocked = externalGoodId > 0;
@@ -443,33 +515,30 @@ export function CatalogCardForm({
                 label={`${t("honestSign.catalog.productGroup")} *`}
                 htmlFor={`${idPrefix}-productGroup`}
             >
-                <Select
-                    id={`${idPrefix}-productGroup`}
-                    {...form.register("productGroupCode")}
-                    value={values.productGroupCode}
-                    disabled={locked}
-                    aria-invalid={Boolean(
-                        form.formState.errors.productGroupCode,
+                <Controller
+                    control={form.control}
+                    name="productGroupCode"
+                    render={({ field, fieldState }) => (
+                        <CatalogClassificationSelect
+                            id={`${idPrefix}-productGroup`}
+                            value={field.value}
+                            options={groupOptions}
+                            placeholder={t("honestSign.catalog.searchProductGroup")}
+                            disabled={locked}
+                            error={Boolean(fieldState.error)}
+                            inputRef={field.ref}
+                            onBlur={field.onBlur}
+                            onChange={(value) => {
+                                if (value === field.value) return;
+                                field.onChange(value);
+                                form.setValue("categoryId", "", { shouldDirty: true });
+                                form.setValue("attributes", {}, { shouldDirty: true });
+                                setCategoryId(0);
+                                setLookupTnved("");
+                            }}
+                        />
                     )}
-                    onChange={(event) => {
-                        form.setValue("productGroupCode", event.target.value, {
-                            shouldDirty: true,
-                        });
-                        form.setValue("categoryId", "", { shouldDirty: true });
-                        form.setValue("attributes", {}, { shouldDirty: true });
-                        setCategoryId(0);
-                        setLookupTnved("");
-                    }}
-                >
-                    <option value="">
-                        {t("honestSign.catalog.selectProductGroup")}
-                    </option>
-                    {productGroups.map((group) => (
-                        <option key={group.code} value={group.code}>
-                            {group.name}
-                        </option>
-                    ))}
-                </Select>
+                />
                 {form.formState.errors.productGroupCode?.message && (
                     <p role="alert" className="text-xs text-destructive">
                         {form.formState.errors.productGroupCode.message}
@@ -650,53 +719,36 @@ export function CatalogCardForm({
                     htmlFor={`${idPrefix}-category`}
                     className="md:col-span-2"
                 >
-                    <Select
-                        id={`${idPrefix}-category`}
-                        {...form.register("categoryId")}
-                        value={values.categoryId}
-                        aria-describedby={`${idPrefix}-category-help ${idPrefix}-category-error`}
-                        aria-invalid={Boolean(form.formState.errors.categoryId)}
-                        disabled={
-                            locked ||
-                            !lookupConfirmed ||
-                            !availableCategories.length ||
-                            matchingCategories.isFetching ||
-                            matchingCategories.isError
-                        }
-                        onChange={(e) => {
-                            form.setValue("categoryId", e.target.value, {
-                                shouldDirty: true,
-                            });
-                            form.setValue(
-                                "attributes",
-                                {},
-                                { shouldDirty: true },
-                            );
-                            setCategoryId(Number(e.target.value));
-                        }}
-                    >
-                        <option value="">
-                            {t("honestSign.catalog.selectCategory")}
-                        </option>
-                        {categoryId > 0 &&
-                            !availableCategories.some(
-                                (category) => category.id === categoryId,
-                            ) && (
-                                <option value={categoryId}>
-                                    {t("honestSign.catalog.currentCategory", {
-                                        id: categoryId,
-                                    })}
-                                </option>
-                            )}
-                        {availableCategories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                                {c.name} · {c.id}
-                                {!c.isActive
-                                    ? ` · ${t("honestSign.catalog.categoryInactive")}`
-                                    : ""}
-                            </option>
-                        ))}
-                    </Select>
+                    <Controller
+                        control={form.control}
+                        name="categoryId"
+                        render={({ field, fieldState }) => (
+                            <CatalogClassificationSelect
+                                key={`${productGroupCode}:${lookupTnved}`}
+                                id={`${idPrefix}-category`}
+                                value={field.value}
+                                options={categoryOptions}
+                                placeholder={t("honestSign.catalog.searchCategory")}
+                                description={`${idPrefix}-category-help ${idPrefix}-category-error`}
+                                disabled={
+                                    locked ||
+                                    !lookupConfirmed ||
+                                    !availableCategories.length ||
+                                    matchingCategories.isFetching ||
+                                    matchingCategories.isError
+                                }
+                                error={Boolean(fieldState.error)}
+                                inputRef={field.ref}
+                                onBlur={field.onBlur}
+                                onChange={(value) => {
+                                    if (value === field.value) return;
+                                    field.onChange(value);
+                                    form.setValue("attributes", {}, { shouldDirty: true });
+                                    setCategoryId(Number(value));
+                                }}
+                            />
+                        )}
+                    />
                     <div
                         id={`${idPrefix}-category-help`}
                         className="text-xs text-muted-foreground"

@@ -11,8 +11,8 @@ import {
     isMilkPartNumberValid,
     isProductionDateValid,
     MAX_UTILISATION_REPORT_CODES,
-    requiresUtilisationDates,
 } from "./utilisationReport";
+import { areUtilisationIndustryFieldsValid, getUtilisationDateRules, type UtilisationIndustryValues } from './utilisationIndustry';
 
 import type {
     UtilisationCisType,
@@ -44,6 +44,9 @@ export type UtilisationBatchItem = {
     state: UtilisationBatchItemState;
     reportId: string | null;
     status: string | null;
+    providerError?: string | null;
+    lastCheckedAtUtc?: string | null;
+    statusCheckError?: string | null;
     error: string | null;
     upstreamErrorCode: string | null;
     correlationId: string | null;
@@ -88,6 +91,7 @@ export type UtilisationBatchDraftFile = {
     expirationDate: string;
     expirationConditions: UtilisationExpirationCondition[];
     partNumber: string;
+    industryValues?: UtilisationIndustryValues;
 };
 
 export function parseUtilisationBatchFile(text: string): string[] {
@@ -102,7 +106,7 @@ export function parseUtilisationBatchFile(text: string): string[] {
                     : trimmed;
             return normalizeDataMatrixCode(value);
         })
-        .filter(Boolean);
+        .filter((code, index) => Boolean(code) && !(index === 0 && /^(code|codes|Код|Код маркировки)$/i.test(code)));
 }
 
 export function createUtilisationBatchFile(
@@ -136,16 +140,16 @@ export function validateUtilisationBatchFile(
     today: string,
     nowMinute: string,
 ) {
-    const omitDairyDates = productGroup === "milk" && file.cisType !== "UNIT";
-    const requiredDates = requiresUtilisationDates(productGroup, file.cisType);
+    const rules = getUtilisationDateRules(productGroup, file.cisType);
+    const omitDates = rules.noDates;
     const productionDate =
-        omitDairyDates ||
-        (isProductionDateValid(file.productionDate, today) &&
-            (!requiredDates || file.productionDate !== ""));
+        omitDates ||
+        (isProductionDateValid(file.productionDate, today, rules.productionTimestamp) &&
+            (!rules.productionRequired || file.productionDate !== ""));
     const expirationDate =
-        omitDairyDates ||
+        omitDates || !rules.expirationAllowed ||
         (file.expirationMode === "not-specified"
-            ? !requiredDates
+            ? !rules.expirationRequired
             : file.expirationMode === "milk-storage-conditions"
               ? areExpirationConditionsValid(
                     file.expirationConditions,
@@ -162,7 +166,8 @@ export function validateUtilisationBatchFile(
                       file.expirationDate,
                       file.productionDate,
                       today,
-                      productGroup === "autofluids",
+                      rules.future,
+                      productGroup === "bio",
                   ));
     const partNumber =
         productGroup !== "milk" ||
@@ -171,17 +176,19 @@ export function validateUtilisationBatchFile(
     const codes =
         file.codes.length > 0 &&
         file.codes.length <= MAX_UTILISATION_REPORT_CODES;
+    const industryFields = areUtilisationIndustryFieldsValid(productGroup, file.cisType, file.industryValues ?? {}, file.codes, today);
     return {
         productionDate,
         expirationDate,
         partNumber,
         codes,
+        industryFields,
         valid: Boolean(
             productGroup &&
             productionDate &&
             expirationDate &&
             partNumber &&
-            codes,
+            codes && industryFields,
         ),
     };
 }
@@ -214,6 +221,7 @@ export function buildUtilisationBatchFilePayload(
         expirationMode: file.expirationMode,
         expirationDate: file.expirationDate,
         expirationConditions: file.expirationConditions,
+        industryValues: file.industryValues,
         sntins: file.codes.map(normalizeDataMatrixCode),
     });
 }

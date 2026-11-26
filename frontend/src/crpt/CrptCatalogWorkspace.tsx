@@ -31,9 +31,14 @@ import {
 import {
   useCatalogProductGroups,
   useCatalogProducts,
+  useCatalogProductsForSigning,
   catalogKeys,
 } from '../marking/hooks/use-honest-sign-catalog';
 import { catalogApiService } from '../marking/lib/honest-sign/catalogApiService';
+import {
+  catalogProductStatuses,
+  isCatalogProductReadyForSigning,
+} from '../marking/lib/honest-sign/catalogProductView';
 import { catalogProviderActions } from '../marking/lib/honest-sign/catalogWorkflowOutcome';
 import type {
   CatalogCardAction,
@@ -79,10 +84,10 @@ const columns = [
   ['status', 'Статус карточки'],
   ['updatedAt', 'Обновление'],
 ] as const;
+const awaitingSignatureLabel = 'Ожидает подписания';
 type Column = (typeof columns)[number][0];
 type Editor = { title: string; card?: CatalogCardRequest; batch?: boolean };
 type Outcome = { gtin: string; message: string; error?: boolean };
-
 type ProductAction =
   | { kind: 'open'; product?: CatalogProduct; focusAction?: CatalogCardAction }
   | { kind: 'similar' | 'set' | 'export' };
@@ -113,6 +118,8 @@ export function CrptCatalogWorkspace({
   const [search, setSearch] = useState('');
   const [detailStatus, setDetailStatus] = useState('all');
   const [gtinSearch, setGtinSearch] = useState('');
+  const signingOnly = detailStatus === 'notsigned';
+  const signingList = signingOnly && !gtinSearch;
   const lookup = useQuery({
     queryKey: [...catalogKeys.productLists(companyId), 'search', gtinSearch],
     queryFn: ({ signal }) => crptApi.search(gtinSearch, signal),
@@ -156,9 +163,16 @@ export function CrptCatalogWorkspace({
   const [confirmation, setConfirmation] = useState<'Moderate' | 'Sign' | null>(null);
   const [confirmSign, setConfirmSign] = useState(false);
   const groups = useCatalogProductGroups(companyId);
-  const products = useCatalogProducts(companyId, page, filters);
+  const products = useCatalogProducts(companyId, page, filters, !signingOnly && !gtinSearch);
+  const signingProducts = useCatalogProductsForSigning(
+    companyId,
+    filters,
+    signingList && tab === 'products',
+  );
+  const productQuery = signingList ? signingProducts : products;
+  const isLoadingProducts = gtinSearch ? lookup.isFetching : productQuery.isFetching;
   const opening = useRef(false);
-  const items = gtinSearch ? (lookup.data ?? []) : (products.data?.items ?? []);
+  const items = gtinSearch ? (lookup.data ?? []) : (productQuery.data?.items ?? []);
   const filtered = useMemo(() => {
     const terms = search
       .toLocaleLowerCase('ru')
@@ -173,24 +187,24 @@ export function CrptCatalogWorkspace({
                 .toLocaleLowerCase('ru')
                 .includes(term),
             )) &&
-          (detailStatus === 'all' ||
-            row.detailedStatuses.includes(detailStatus) ||
-            row.status === detailStatus),
+          (signingOnly
+            ? isCatalogProductReadyForSigning(row)
+            : detailStatus === 'all' || catalogProductStatuses(row).includes(detailStatus)),
       )
       .sort(
         (a, b) =>
           (ascending ? 1 : -1) *
           String(a[sort] ?? '').localeCompare(String(b[sort] ?? ''), 'ru', { numeric: true }),
       );
-  }, [items, search, detailStatus, sort, ascending]);
-  const selected = items.filter((x) => selection.has(x.goodId));
+  }, [items, search, signingOnly, detailStatus, sort, ascending]);
+  const selected = filtered.filter((x) => selection.has(x.goodId));
   const canModerateSelected =
     selected.length > 0 &&
     selected.every((row) => Boolean(row.gtin) && catalogProviderActions(row).canModerate);
   const canSignSelected =
     Boolean(selectedThumbprint) &&
     selected.length > 0 &&
-    selected.every((row) => Boolean(row.gtin) && catalogProviderActions(row).canSign);
+    selected.every(isCatalogProductReadyForSigning);
   const busy = formBusy || childBusy;
   const clearSelection = () => setSelection(new Set());
   const refresh = async () => {
@@ -476,10 +490,21 @@ export function CrptCatalogWorkspace({
               >
                 Действия{selected.length ? ` · ${selected.length}` : ''}
               </Button>
+              <Button
+                variant={signingOnly ? 'contained' : 'outlined'}
+                aria-pressed={signingOnly}
+                disabled={locked}
+                onClick={() => {
+                  setDetailStatus(signingOnly ? 'all' : 'notsigned');
+                  clearSelection();
+                }}
+              >
+                {awaitingSignatureLabel}
+              </Button>
               <div className="crpt-toolbar-spacer" />
               <Button
                 startIcon={<RefreshRounded />}
-                disabled={products.isFetching || locked}
+                disabled={isLoadingProducts || locked}
                 onClick={() => void refresh()}
               >
                 Запросить список карточек
@@ -581,7 +606,7 @@ export function CrptCatalogWorkspace({
               <TextField
                 select
                 size="small"
-                label="Уточнить статус на странице"
+                label="Состояние карточки"
                 value={detailStatus}
                 onChange={(e) => {
                   setDetailStatus(e.target.value);
@@ -589,9 +614,12 @@ export function CrptCatalogWorkspace({
                 }}
               >
                 <MenuItem value="all">Все состояния</MenuItem>
+                <MenuItem value="draft">Черновик</MenuItem>
                 <MenuItem value="moderation">На модерации</MenuItem>
-                <MenuItem value="notsigned">Ожидают подписи</MenuItem>
-                <MenuItem value="errors">Ошибка модерации</MenuItem>
+                <MenuItem value="notsigned">{awaitingSignatureLabel}</MenuItem>
+                <MenuItem value="errors">Требует изменений</MenuItem>
+                <MenuItem value="published">Опубликована</MenuItem>
+                <MenuItem value="archived">В архиве</MenuItem>
               </TextField>
               <TextField
                 size="small"
@@ -603,7 +631,11 @@ export function CrptCatalogWorkspace({
                   if (gtinSearch) setGtinSearch('');
                   clearSelection();
                 }}
-                helperText="Название и бренд — на странице. GTIN можно искать по всему НК."
+                helperText={
+                  signingList
+                    ? 'Название и бренд — среди загруженных карточек. GTIN можно искать по всему НК.'
+                    : 'Название и бренд — на странице. GTIN можно искать по всему НК.'
+                }
                 InputProps={{
                   startAdornment: <SearchRounded fontSize="small" sx={{ mr: 1, opacity: 0.5 }} />,
                 }}
@@ -650,11 +682,11 @@ export function CrptCatalogWorkspace({
                 }}
               />
             </div>
-            {(products.isFetching ||
-              lookup.isFetching ||
-              action.isPending ||
-              bulk.isPending ||
-              addPermit.isPending) && <LinearProgress />}
+            {(isLoadingProducts || action.isPending || bulk.isPending || addPermit.isPending) && (
+              <LinearProgress
+                aria-label={signingList ? 'Поиск карточек для подписания' : undefined}
+              />
+            )}
             {gtinSearch && (
               <Alert severity="info">
                 Поиск указанных GTIN по всему каталогу.{' '}
@@ -671,10 +703,18 @@ export function CrptCatalogWorkspace({
             )}
             {lookup.isError && gtinSearch && <Alert severity="error">{lookup.error.message}</Alert>}
             {addPermit.isError && <Alert severity="error">{addPermit.error.message}</Alert>}
-            {products.isError && (
+            {!gtinSearch && productQuery.isError && (
               <Alert severity="error">
-                {products.error.message}{' '}
-                <Button onClick={() => void products.refetch()}>Повторить</Button>
+                {productQuery.error.message}{' '}
+                <Button
+                  onClick={() =>
+                    void (signingList && signingProducts.isFetchNextPageError
+                      ? signingProducts.fetchNextPage()
+                      : productQuery.refetch())
+                  }
+                >
+                  Повторить
+                </Button>
               </Alert>
             )}
             {action.isError && <Alert severity="error">{action.error.message}</Alert>}
@@ -816,35 +856,57 @@ export function CrptCatalogWorkspace({
                 </tbody>
               </table>
             </div>
-            {!filtered.length && !products.isFetching && !products.isError && (
-              <div className="crpt-empty">
-                <Inventory2Outlined />
-                <h3>
-                  {search || detailStatus !== 'all'
-                    ? 'На этой странице совпадений нет'
-                    : 'Здесь будут ваши карточки'}
-                </h3>
-                <p>
-                  {search || detailStatus !== 'all'
-                    ? 'Измените фильтры или перейдите на другую страницу.'
-                    : 'Создайте новую позицию или запросите актуальный список из Национального каталога.'}
-                </p>
-                <Button
-                  variant="outlined"
-                  onClick={() => startEditor({ title: 'Новая карточка товара' })}
-                >
-                  Создать карточку
-                </Button>
-              </div>
-            )}
+            {!filtered.length &&
+              !isLoadingProducts &&
+              !(gtinSearch ? lookup.isError : productQuery.isError) && (
+                <div className="crpt-empty">
+                  <Inventory2Outlined />
+                  <h3>
+                    {signingOnly
+                      ? search && signingProducts.hasNextPage && signingList
+                        ? 'Среди загруженных карточек совпадений нет'
+                        : 'Нет карточек, ожидающих подписания'
+                      : search || detailStatus !== 'all'
+                        ? 'На этой странице совпадений нет'
+                        : 'Здесь будут ваши карточки'}
+                  </h3>
+                  {!signingOnly && (
+                    <>
+                      <p>
+                        {search || detailStatus !== 'all'
+                          ? 'Измените фильтры или перейдите на другую страницу.'
+                          : 'Создайте новую позицию или запросите актуальный список из Национального каталога.'}
+                      </p>
+                      <Button
+                        variant="outlined"
+                        onClick={() => startEditor({ title: 'Новая карточка товара' })}
+                      >
+                        Создать карточку
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
             <div className="crpt-pagination">
               <span>
-                На странице: {filtered.length}
-                {!gtinSearch && products.data?.total !== null && products.data?.total !== undefined
+                {signingOnly ? 'Найдено' : 'На странице'}: {filtered.length}
+                {!gtinSearch &&
+                !signingList &&
+                products.data?.total !== null &&
+                products.data?.total !== undefined
                   ? ` · Всего в НК: ${products.data.total}`
                   : ''}
               </span>
-              {!gtinSearch && (
+              {signingList && signingProducts.hasNextPage && (
+                <Button
+                  variant="outlined"
+                  disabled={signingProducts.isFetching || locked}
+                  onClick={() => void signingProducts.fetchNextPage()}
+                >
+                  Показать ещё
+                </Button>
+              )}
+              {!gtinSearch && !signingList && (
                 <div>
                   <Button
                     aria-label="Предыдущая страница карточек"
@@ -993,8 +1055,17 @@ export function CrptCatalogWorkspace({
             </DialogDescription>
           </DialogHeader>
           {editor ? (
-            groups.isError ? (
-              <Alert severity="error">{groups.error.message}</Alert>
+            !groups.data && groups.isError ? (
+              <Alert
+                severity="error"
+                action={
+                  <Button color="inherit" onClick={() => void groups.refetch()}>
+                    Повторить
+                  </Button>
+                }
+              >
+                {groups.error.message}
+              </Alert>
             ) : groups.isPending ? (
               <LinearProgress />
             ) : (
@@ -1020,8 +1091,8 @@ export function CrptCatalogWorkspace({
           ) : (
             detail && (
               <CatalogCardWorkflow
-                companyId={companyId}
                 key={detail.id}
+                companyId={companyId}
                 submissionId={detail.id}
                 initialEditorOpen={detail.retry}
                 focusAction={detail.focusAction}

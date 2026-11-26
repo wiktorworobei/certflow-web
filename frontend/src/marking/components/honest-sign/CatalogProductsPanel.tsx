@@ -27,6 +27,7 @@ import { Skeleton } from "@marking/components/ui/skeleton";
 import {
     catalogKeys,
     useCatalogProducts,
+    useCatalogProductsForSigning,
 } from "@marking/hooks/use-honest-sign-catalog";
 import { catalogApiService } from "@marking/lib/honest-sign/catalogApiService";
 import { validCatalogProductDateRange } from "@marking/lib/honest-sign/catalogProductView";
@@ -61,8 +62,15 @@ export function CatalogProductsPanel({
     const [draftFilters, setDraftFilters] = useState(filters);
     const [dateError, setDateError] = useState(false);
     const [filtersOpen, setFiltersOpen] = useState(false);
+    const [onlySigning, setOnlySigning] = useState(false);
     const opening = useRef(false);
-    const products = useCatalogProducts(companyId, page, filters);
+    const products = useCatalogProducts(companyId, page, filters, !onlySigning);
+    const signingProducts = useCatalogProductsForSigning(
+        companyId,
+        filters,
+        onlySigning,
+    );
+    const activeProducts = onlySigning ? signingProducts : products;
     const track = useMutation({
         retry: false,
         mutationFn: ({
@@ -88,7 +96,12 @@ export function CatalogProductsPanel({
         opening.current = true;
         track.mutate({ product, focusAction });
     };
-    const items = products.data?.items ?? [];
+    const items = activeProducts.data?.items ?? [];
+    const loadingLabel = t(
+        onlySigning
+            ? "honestSign.catalog.products.signingLoading"
+            : "honestSign.catalog.products.loading",
+    );
     const formatFilterDate = (value: string) =>
         new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language, {
             day: "2-digit",
@@ -107,14 +120,14 @@ export function CatalogProductsPanel({
         <section
             className="min-w-0 overflow-hidden rounded-xl border bg-card shadow-xs"
             aria-label={t("honestSign.catalog.products.title")}
-            aria-busy={products.isFetching || track.isPending}
+            aria-busy={activeProducts.isFetching || track.isPending}
         >
             <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
                 <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
                     <div className="min-w-0">
                         <h3 className="flex flex-wrap items-center gap-2 font-semibold">
                             {t("honestSign.catalog.products.registry")}
-                            {!products.isFetching && products.data && (
+                            {!onlySigning && !products.isFetching && products.data && (
                                 <span
                                     className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground tabular-nums"
                                     aria-label={t(
@@ -132,12 +145,23 @@ export function CatalogProductsPanel({
                             className="mt-1 text-xs text-muted-foreground"
                             role="status"
                         >
-                            {products.isFetching
-                                ? t("honestSign.catalog.products.loading")
+                            {activeProducts.isFetching
+                                ? loadingLabel
                                 : t("honestSign.catalog.products.source")}
                         </p>
                     </div>
-                    <div className="flex w-full items-center gap-2 sm:w-auto">
+                    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                        <Button
+                            type="button"
+                            variant={onlySigning ? "secondary" : "outline"}
+                            size="sm"
+                            className="w-full sm:w-auto"
+                            aria-pressed={onlySigning}
+                            disabled={track.isPending}
+                            onClick={() => setOnlySigning((value) => !value)}
+                        >
+                            {t("honestSign.catalog.workflow.cardStates.notsigned")}
+                        </Button>
                         <CollapsibleTrigger asChild>
                             <Button
                                 type="button"
@@ -165,12 +189,12 @@ export function CatalogProductsPanel({
                             variant="outline"
                             size="sm"
                             className="flex-1 sm:flex-none"
-                            disabled={products.isFetching || track.isPending}
-                            onClick={() => void products.refetch()}
+                            disabled={activeProducts.isFetching || track.isPending}
+                            onClick={() => void activeProducts.refetch()}
                         >
                             <RefreshCw
                                 className={
-                                    products.isFetching
+                                    activeProducts.isFetching
                                         ? "size-4 animate-spin motion-reduce:animate-none"
                                         : "size-4"
                                 }
@@ -307,7 +331,7 @@ export function CatalogProductsPanel({
                         <Button
                             type="submit"
                             variant="secondary"
-                            disabled={products.isFetching || track.isPending}
+                            disabled={activeProducts.isFetching || track.isPending}
                         >
                             {t("honestSign.catalog.products.applyFilters")}
                         </Button>
@@ -325,10 +349,10 @@ export function CatalogProductsPanel({
                     </form>
                 </CollapsibleContent>
             </Collapsible>
-            {products.isError && (
+            {activeProducts.isError && (
                 <Notice variant="error" role="alert" className="m-4">
-                    <p>{products.error.message}</p>
-                    <CatalogErrorDetails error={products.error} />
+                    <p>{activeProducts.error.message}</p>
+                    <CatalogErrorDetails error={activeProducts.error} />
                     {items.length > 0 && (
                         <p className="mt-2">
                             {t("honestSign.catalog.products.stale")}
@@ -342,29 +366,37 @@ export function CatalogProductsPanel({
                     <CatalogErrorDetails error={track.error} />
                 </Notice>
             )}
-            {products.isPending ? (
+            {activeProducts.isPending ? (
                 <div
                     className="space-y-2 border-t p-4"
-                    aria-label={t("honestSign.catalog.products.loading")}
+                    aria-label={loadingLabel}
                 >
                     <Skeleton className="h-10 w-full" />
                     <Skeleton className="h-32 w-full" />
                 </div>
-            ) : !items.length && !products.isError ? (
+            ) : !items.length && !activeProducts.isError ? (
                 <div className="flex flex-col items-center gap-3 border-t px-4 py-14 text-center">
                     <div className="mb-1 flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                         <PackageSearch className="size-7" aria-hidden="true" />
                     </div>
                     <p className="font-medium">
-                        {t("honestSign.catalog.products.empty")}
+                        {t(
+                            onlySigning
+                                ? "honestSign.catalog.products.signingEmpty"
+                                : "honestSign.catalog.products.empty",
+                        )}
                     </p>
-                    <p className="max-w-lg text-sm text-muted-foreground">
-                        {t("honestSign.catalog.products.emptyHelp")}
-                    </p>
-                    <Button type="button" onClick={onCreate}>
-                        <Plus className="size-4" aria-hidden="true" />
-                        {t("honestSign.catalog.products.add")}
-                    </Button>
+                    {!onlySigning && (
+                        <>
+                            <p className="max-w-lg text-sm text-muted-foreground">
+                                {t("honestSign.catalog.products.emptyHelp")}
+                            </p>
+                            <Button type="button" onClick={onCreate}>
+                                <Plus className="size-4" aria-hidden="true" />
+                                {t("honestSign.catalog.products.add")}
+                            </Button>
+                        </>
+                    )}
                 </div>
             ) : items.length > 0 ? (
                 <CatalogProductsTable
@@ -378,7 +410,29 @@ export function CatalogProductsPanel({
                     onOpen={open}
                 />
             ) : null}
-            {products.data && (
+            {onlySigning && signingProducts.data && items.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/15 px-4 py-3 text-sm">
+                    <p className="text-muted-foreground" role="status">
+                        {signingProducts.isFetching
+                            ? loadingLabel
+                            : t("honestSign.catalog.products.signingCount", {
+                                  count: items.length,
+                              })}
+                    </p>
+                    {signingProducts.hasNextPage && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={signingProducts.isFetching || track.isPending}
+                            onClick={() => void signingProducts.fetchNextPage()}
+                        >
+                            {t("honestSign.catalog.products.showMore")}
+                        </Button>
+                    )}
+                </div>
+            )}
+            {!onlySigning && products.data && (
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/15 px-4 py-3 text-sm">
                     <p className="text-muted-foreground" role="status">
                         {products.isFetching

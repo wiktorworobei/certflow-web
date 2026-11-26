@@ -108,6 +108,122 @@ test('SUZ adds a subaccount set with multiplied unit quantities from the Nationa
   expect(f.requests.some(x => x.path.endsWith('/suz/catalog-product'))).toBe(true);
 });
 
+test('SUZ colors official order states and keeps new code collection closed for exhausted orders', async ({ page }) => {
+  const f = await fixture(page);
+  const pendingGtin = '00460000000015';
+  const issued = { gtin, status: 'ACTIVE', totalCodes: 1, totalPassed: 1, availableCodes: 0 };
+  const remaining = { gtin: pendingGtin, status: 'ACTIVE', totalCodes: 3, totalPassed: 0, availableCodes: 3 };
+  const items = [
+    ['Созданный заказ', 'CREATED', 'Создан', 'Default'],
+    ['Заказ в ожидании', 'PENDING', 'Ожидает подтверждения', 'Warning'],
+    ['Подтверждённый заказ', 'APPROVED', 'Подтверждён', 'Info'],
+    ['Готовый частичный заказ', 'READY', 'Готов', 'Success'],
+    ['Закрытый заказ', 'CLOSED', 'Закрыт', 'Secondary'],
+    ['Отклонённый заказ', 'DECLINED', 'Отклонён', 'Error'],
+    ['Полностью полученный заказ', 'READY', 'Готов', 'Success'],
+  ] as const;
+  await page.route('**/honest-sign/orders/search', (route) => route.fulfill({ json: {
+    totalItems: items.length,
+    items: items.map(([name, status], index) => ({
+      orderId: `33333333-3333-4333-8333-33333333333${index}`, productionOrderId: name,
+      status, createdAtUtc: null, declineReason: null, totalCodes: index === 3 ? 4 : 1,
+      usedCodes: 1, remainingCodes: index === 3 ? 3 : 0,
+      products: index === 3 ? [issued, remaining] : [issued],
+    })),
+  } }));
+  await page.getByRole('button', { name: 'Обновить', exact: true }).click();
+  for (const [name, , label, color] of items) {
+    const row = page.getByRole('row').filter({ has: page.getByRole('button', { name, exact: true }) });
+    const chip = row.locator(`.MuiChip-color${color}`).getByText(label, { exact: true });
+    await expect(chip).toBeVisible();
+  }
+  const done = page.getByRole('row').filter({ has: page.getByRole('button', { name: 'Полностью полученный заказ' }) });
+  await expect(done.getByText('Коды исчерпаны')).toBeVisible();
+  await expect(done.getByRole('button', { name: 'Получить коды', exact: true })).toBeDisabled();
+  await expect(page.getByRole('dialog', { name: 'Получить коды маркировки' })).toHaveCount(0);
+  await done.getByRole('button', { name: 'Восстановить выданный блок' }).click();
+  const recovery = page.getByRole('dialog', { name: 'Восстановить выданный блок' });
+  await expect(recovery.getByRole('button', { name: 'Восстановить блок' })).toBeDisabled();
+  await expect(recovery.getByRole('button', { name: 'Получить и сохранить' })).toHaveCount(0);
+  await recovery.getByRole('button', { name: 'Отмена' }).click();
+  const partial = page.getByRole('row').filter({ has: page.getByRole('button', { name: 'Готовый частичный заказ' }) });
+  await partial.getByRole('button', { name: 'Получить коды', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Получить коды маркировки' });
+  await expect(dialog.getByRole('combobox', { name: /^GTIN заказа/ })).toContainText(pendingGtin);
+  await expect(dialog.getByLabel('Количество кодов')).toHaveValue('3');
+  expect(f.requests.some((request) => request.path.endsWith('/suz/codes'))).toBe(false);
+});
+
+test('SUZ loads catalog products by order group and fills the selected name and GTIN', async ({ page }) => {
+  const f = await fixture(page);
+  const milk = { gtin, name: 'Молоко пастеризованное', cisType: 'UNIT' };
+  const milkPack = { gtin: '00460000000015', name: 'Упаковка молока', cisType: 'SET' };
+  const oil = { gtin: '05011846021161', name: 'Масло моторное 5W-30', cisType: 'UNIT' };
+  const reads: { group: string | null; page: number }[] = [];
+  await page.route('**/suz/catalog-products?*', route => {
+    const request = route.request();
+    expect(request.method()).toBe('GET');
+    const url = new URL(request.url());
+    expect(url.pathname).toBe(`/api/firms/${firmId}/crpt/sandbox/honest-sign/suz/catalog-products`);
+    const group = url.searchParams.get('productGroup');
+    const pageNumber = Number(url.searchParams.get('page'));
+    reads.push({ group, page: pageNumber });
+    const items = group === 'milk' ? (pageNumber === 0 ? [milk] : [milkPack]) : [oil];
+    return route.fulfill({ json: { items, hasNextPage: group === 'milk' && pageNumber === 0 } });
+  });
+
+  await page.getByRole('tab', { name: 'Создать заказ', exact: true }).click();
+  expect(reads).toEqual([]);
+  await page.getByRole('button', { name: 'Добавить товар', exact: true }).click();
+  const group = page.getByRole('combobox', { name: /^Группа товара/ });
+  await group.click();
+  await page.getByRole('option', { name: 'Молочная продукция', exact: true }).click();
+  await expect(group).toContainText('Молочная продукция');
+  const catalog = page.getByRole('combobox', { name: 'Товар из Национального каталога', exact: true });
+  const gtinField = page.getByLabel('GTIN · 14 цифр', { exact: true });
+  const nameField = page.getByLabel('Наименование (для работы)', { exact: true });
+  const quantity = page.getByLabel('Количество КМ', { exact: true });
+  await quantity.fill('17');
+  await expect.poll(() => reads[0]).toEqual({ group: 'milk', page: 0 });
+
+  await catalog.click();
+  await catalog.fill('Упаковка');
+  await page.getByRole('option', { name: `${milkPack.name} — ${milkPack.gtin}`, exact: true }).click();
+  await expect(gtinField).toHaveValue(milkPack.gtin);
+  await expect(nameField).toHaveValue(milkPack.name);
+  await expect(quantity).toHaveValue('17');
+  await expect(page.getByRole('combobox', { name: /^Тип КМ/ })).toContainText('Набор');
+  expect(reads).toContainEqual({ group: 'milk', page: 1 });
+
+  await group.click();
+  await page.getByRole('option', { name: 'Моторные масла', exact: true }).click();
+  await expect(gtinField).toHaveValue('');
+  await expect(nameField).toHaveValue('');
+  await expect(quantity).toHaveValue('17');
+  await expect.poll(() => reads.at(-1)).toEqual({ group: 'autofluids', page: 0 });
+
+  await gtinField.fill('00012345600012');
+  await nameField.fill('Товар из ручного ввода');
+  await expect(gtinField).toHaveValue('00012345600012');
+  await expect(nameField).toHaveValue('Товар из ручного ввода');
+  await catalog.click();
+  await expect(page.getByRole('option', { name: `${milk.name} — ${milk.gtin}`, exact: true })).toHaveCount(0);
+  await page.getByRole('option', { name: `${oil.name} — ${oil.gtin}`, exact: true }).click();
+  await expect(gtinField).toHaveValue(oil.gtin);
+  await expect(nameField).toHaveValue(oil.name);
+  await expect(quantity).toHaveValue('17');
+
+  await page.getByRole('combobox', { name: /^Формат КМ/ }).click();
+  await page.getByRole('option', { name: /#20 ·/ }).click();
+  await page.getByRole('button', { name: 'Подготовить заказы (1)', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: /Проверка и подписание/ })).toBeVisible();
+  expect(f.requests.find(x => x.path.endsWith('/suz/prepare'))?.body).toMatchObject({
+    kind: 'Create',
+    payload: { productGroup: 'autofluids', products: [{ gtin: oil.gtin, quantity: 17, cisType: 'UNIT' }] },
+  });
+  expect(f.requests.some(x => x.path.endsWith('/sign'))).toBe(false);
+});
+
 test('SUZ retains a download request ID after an unknown result and reopening the dialog', async ({ page }) => {
   await fixture(page); const attempts: Record<string, unknown>[] = [];
   await page.route('**/honest-sign/suz/codes', async route => { const data = route.request().postDataJSON(); attempts.push(data); await route.fulfill({ json: { id: data.requestId, kind: 'Codes', state: 'Unknown', codesCount: 0, sources: [], message: 'Результат неизвестен. Восстановите выданный блок.' } }); });

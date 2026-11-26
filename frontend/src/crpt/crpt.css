@@ -490,9 +490,30 @@
 }
 .crpt-suz-filters {
   flex-wrap: wrap;
+  margin-block-end: 14px;
 }
 .crpt-suz-filters > .MuiTextField-root {
   flex: 1;
+}
+.crpt-document-report {
+  display: grid;
+  gap: 10px;
+  margin-block: 16px;
+  min-width: 0;
+}
+.crpt-document-lookup {
+  margin-block-end: 16px;
+}
+.crpt-document-json {
+  max-height: 300px;
+  margin-block: 12px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  padding: 14px;
+  border: 1px solid var(--cf-border);
+  border-radius: 8px;
+  background: var(--cf-surface-soft);
 }
 .crpt-suz .crpt-table small {
   display: block;
@@ -508,6 +529,11 @@
 .crpt-suz-row-actions {
   display: grid;
   white-space: nowrap;
+}
+.crpt-suz-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .crpt-suz-order-link {
   color: var(--cf-accent-text);
@@ -576,6 +602,9 @@
 }
 .crpt-suz-fields .MuiInputBase-root {
   background: var(--cf-surface);
+}
+.crpt-suz-order-product-picker {
+  grid-column: 2 / -1;
 }
 .crpt-suz-fields .MuiFormHelperText-root {
   font-size: 10px;
@@ -651,6 +680,9 @@
   .crpt-suz-fields,
   .crpt-suz-status-grid {
     grid-template-columns: 1fr;
+  }
+  .crpt-suz-order-product-picker {
+    grid-column: auto;
   }
   .crpt-suz-product {
     padding: 14px;

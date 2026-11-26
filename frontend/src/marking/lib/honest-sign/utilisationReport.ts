@@ -1,3 +1,5 @@
+import { buildUtilisationIndustryAttributes, formatUtilisationProductionTime, getUtilisationDateRules, type UtilisationIndustryValues } from './utilisationIndustry';
+
 export const MAX_UTILISATION_REPORT_CODES = 30_000;
 export const UTILISATION_CODE_CHECK_BATCH_SIZE = 1_000;
 
@@ -16,13 +18,14 @@ export type UtilisationExpirationCondition = {
 };
 
 export type UtilisationReportAttributes = {
+    [field: string]: string | number | Record<string, string> | undefined;
     productionDate?: string;
     expDate?: string;
     expDate72?: string;
     expDateConditions?: Record<string, string>;
     expirationDate?: string;
     batchNumber?: string;
-    usedInProduction?: 0;
+    usedInProduction?: number;
 };
 
 export type UtilisationReportPayload = {
@@ -49,22 +52,23 @@ export type BuildUtilisationReportPayloadInput = {
     partNumber: string;
     cisType?: UtilisationCisType;
     sntins: string[];
+    industryValues?: UtilisationIndustryValues;
 };
 
 export function getDefaultUtilisationExpirationMode(
     productGroup: string,
     cisType: UtilisationCisType,
 ): UtilisationExpirationMode {
-    if (cisType !== "UNIT") return "not-specified";
-    if (productGroup.trim() === "milk") return "milk-over-72";
-    return productGroup.trim() === "autofluids" ? "specified" : "not-specified";
+    const group = productGroup.trim();
+    if (!getUtilisationDateRules(group, cisType).expirationRequired) return "not-specified";
+    return group === "milk" ? "milk-over-72" : "specified";
 }
-
 export function requiresUtilisationDates(
     productGroup: string,
     cisType: UtilisationCisType,
 ): boolean {
-    return cisType === "UNIT" && ["milk", "autofluids"].includes(productGroup);
+    const rules = getUtilisationDateRules(productGroup, cisType);
+    return rules.productionRequired && rules.expirationRequired;
 }
 
 export function buildUtilisationReportPayload({
@@ -76,17 +80,16 @@ export function buildUtilisationReportPayload({
     partNumber,
     cisType = "UNIT",
     sntins,
+    industryValues = {},
 }: BuildUtilisationReportPayloadInput): UtilisationReportPayload {
     const normalizedProductGroup = productGroup.trim();
-    const attributes: UtilisationReportAttributes = {};
-    const omitDairyDates =
-        normalizedProductGroup === "milk" && cisType !== "UNIT";
-
-    if (productionDate && !omitDairyDates) {
-        attributes.productionDate = productionDate;
+    const attributes: UtilisationReportAttributes = buildUtilisationIndustryAttributes(normalizedProductGroup, cisType, industryValues);
+    const rules = getUtilisationDateRules(normalizedProductGroup, cisType);
+    if (productionDate && !rules.noDates) {
+        attributes.productionDate = rules.productionTimestamp ? formatUtilisationProductionTime(productionDate) : productionDate;
     }
 
-    if (normalizedProductGroup === "milk" && !omitDairyDates) {
+    if (normalizedProductGroup === "milk" && !rules.noDates) {
         if (
             (expirationMode === "specified" ||
                 expirationMode === "milk-over-72") &&
@@ -104,18 +107,20 @@ export function buildUtilisationReportPayload({
             );
         }
     } else if (
-        normalizedProductGroup !== "milk" &&
-        expirationMode === "specified" &&
-        expirationDate
+        normalizedProductGroup !== "milk" && rules.expirationAllowed
     ) {
-        attributes.expirationDate = expirationDate;
+        if (expirationMode === "specified" && expirationDate) attributes.expirationDate = expirationDate;
+        if (expirationMode === "milk-under-72" && rules.expiryTimestamp && expirationDate) attributes.expDate72 = expirationDate;
+        if (expirationMode === "milk-storage-conditions" && rules.expiryConditions) {
+            attributes.expDateConditions = Object.fromEntries(expirationConditions.map((condition) => [condition.storageConditionIndex.trim(), condition.expirationDate]));
+        }
     }
 
     if (normalizedProductGroup === "milk") {
         if (cisType === "UNIT" && partNumber.trim()) {
             attributes.batchNumber = partNumber.trim();
         }
-        attributes.usedInProduction = 0;
+        attributes.usedInProduction ??= 0;
     }
 
     return {
@@ -125,8 +130,11 @@ export function buildUtilisationReportPayload({
     };
 }
 
-export function isProductionDateValid(value: string, today: string): boolean {
-    return value === "" || (isIsoDate(value) && value <= today);
+export function isProductionDateValid(value: string, today: string, timestamp = false): boolean {
+    if (!value) return true;
+    if (!timestamp) return isIsoDate(value) && value <= today;
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:[+-]\d{4})?)?$/.test(value) &&
+        isIsoDate(value.slice(0, 10)) && new Date(value).getTime() <= Date.now();
 }
 
 export function isExpirationDateValid(
@@ -134,11 +142,12 @@ export function isExpirationDateValid(
     productionDate: string,
     today: string,
     strictlyFuture = false,
+    allowPast = false,
 ): boolean {
     return (
         isIsoDate(value) &&
-        (strictlyFuture ? value > today : value >= today) &&
-        (productionDate === "" || value >= productionDate)
+        (allowPast || (strictlyFuture ? value > today : value >= today)) &&
+        (productionDate === "" || value >= productionDate.slice(0, 10))
     );
 }
 

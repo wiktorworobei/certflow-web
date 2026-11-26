@@ -8,6 +8,7 @@ import {
     Loader2,
     RefreshCw,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Notice } from "@marking/components/honest-sign/ui/notice";
@@ -32,8 +33,10 @@ import {
     useHonestSignDocument,
     useHonestSignDocuments,
 } from "@marking/hooks/use-honest-sign";
+import { documentsApiService } from "@marking/lib/honest-sign/documentsApiService";
 
 import type {
+    HonestSignDocumentDirection,
     HonestSignDocumentSummary,
     HonestSignDocumentView,
 } from "@marking/lib/honest-sign/documentsApiService";
@@ -43,6 +46,7 @@ type HonestSignDocumentsRegistryProps = {
     productGroups: string[];
     view?: HonestSignDocumentView;
     allowExport?: boolean;
+    paginated?: boolean;
 };
 
 function formatDate(value: string | null, locale: string): string {
@@ -101,10 +105,19 @@ export function HonestSignDocumentsRegistry({
     productGroups,
     view = "all",
     allowExport = false,
+    paginated = false,
 }: HonestSignDocumentsRegistryProps) {
     const { t, i18n } = useTranslation();
     const [productGroup, setProductGroup] = useState("");
     const [selectedDocumentId, setSelectedDocumentId] = useState("");
+    const [direction, setDirection] =
+        useState<HonestSignDocumentDirection>("outgoing");
+    const [trail, setTrail] = useState<{ key: string; cursors: string[] }>(
+        { key: "", cursors: [] },
+    );
+    const pageKey = JSON.stringify([companyId, productGroup, view, direction]);
+    const cursors = trail.key === pageKey ? trail.cursors : [];
+    const cursor = cursors.at(-1);
 
     useEffect(() => {
         setProductGroup((current) =>
@@ -118,12 +131,27 @@ export function HonestSignDocumentsRegistry({
         setSelectedDocumentId("");
     }, [productGroup]);
 
-    const documentsQuery = useHonestSignDocuments(
+    const recentDocuments = useHonestSignDocuments(
         companyId,
         productGroup,
         20,
         view,
+        !paginated,
     );
+    const documentRegistry = useQuery({
+        queryKey: ["honest-sign-document-registry", companyId, productGroup, view, direction, cursor],
+        queryFn: ({ signal }) => documentsApiService.listDocumentRegistry(
+            { productGroup, limit: 20, view, direction, cursor },
+            signal,
+        ),
+        enabled: paginated && Boolean(companyId && productGroup),
+    });
+    const documentsQuery = paginated ? documentRegistry : recentDocuments;
+    const nextCursor = documentRegistry.data?.nextCursor;
+    const changePage = (next: string[]) => {
+        setSelectedDocumentId("");
+        setTrail({ key: pageKey, cursors: next });
+    };
     const documentQuery = useHonestSignDocument(
         companyId,
         productGroup,
@@ -179,9 +207,11 @@ export function HonestSignDocumentsRegistry({
                         aria-label={t(
                             "honestSign.documentRegistry.productGroup",
                         )}
-                        onChange={(event) =>
-                            setProductGroup(event.target.value)
-                        }
+                        onChange={(event) => {
+                            setSelectedDocumentId("");
+                            setTrail({ key: "", cursors: [] });
+                            setProductGroup(event.target.value);
+                        }}
                     >
                         <option value="">
                             {t("honestSign.documentRegistry.productGroup")}
@@ -192,6 +222,21 @@ export function HonestSignDocumentsRegistry({
                             </option>
                         ))}
                     </Select>
+                    {paginated && (
+                        <Select
+                            aria-label={t("honestSign.documentRegistry.direction")}
+                            value={direction}
+                            onChange={(event) => {
+                                setSelectedDocumentId("");
+                                setTrail({ key: "", cursors: [] });
+                                setDirection(event.target.value as HonestSignDocumentDirection);
+                            }}
+                        >
+                            <option value="outgoing">{t("honestSign.documentRegistry.outgoing")}</option>
+                            <option value="incoming">{t("honestSign.documentRegistry.incoming")}</option>
+                            <option value="all">{t("honestSign.documentRegistry.allDirections")}</option>
+                        </Select>
+                    )}
                     <Button
                         type="button"
                         variant="outline"
@@ -377,6 +422,28 @@ export function HonestSignDocumentsRegistry({
                                 ))}
                             </WorkspaceTableBody>
                         </WorkspaceTable>
+                    </div>
+                )}
+
+                {paginated && productGroup && (documentRegistry.data || cursors.length > 0) && (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-sm text-muted-foreground">
+                            {t("honestSign.documentRegistry.page", { page: cursors.length + 1 })}
+                        </span>
+                        <div className="flex gap-2">
+                            <Button type="button" variant="outline" size="sm"
+                                disabled={!cursors.length || documentRegistry.isFetching}
+                                onClick={() => changePage(cursors.slice(0, -1))}
+                            >
+                                {t("common.back")}
+                            </Button>
+                            <Button type="button" variant="outline" size="sm"
+                                disabled={!nextCursor || nextCursor === cursor || documentRegistry.isFetching}
+                                onClick={() => nextCursor && changePage([...cursors, nextCursor])}
+                            >
+                                {t("common.next")}
+                            </Button>
+                        </div>
                     </div>
                 )}
 
